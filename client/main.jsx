@@ -63,8 +63,8 @@ const S = {
     display: "flex", flexDirection: "column", gap: 8,
   },
   cardHover: { borderColor: "#c9a84c", boxShadow: "0 4px 24px rgba(201,168,76,0.15)", transform: "translateY(-2px)" },
-  cardName: { fontFamily: font, fontSize: 20, fontWeight: 700, color: "#e8d5a3", letterSpacing: 2 },
-  cardDesc: { fontSize: 12, color: "#888", lineHeight: 1.4, flex: 1 },
+  cardName: { fontFamily: font, fontSize: 20, fontWeight: 700, color: "#e8d5a3", letterSpacing: 2, textShadow: "0 1px 6px rgba(0,0,0,0.9)" },
+  cardDesc: { fontSize: 12, color: "#aaa", lineHeight: 1.4, flex: 1, textShadow: "0 1px 4px rgba(0,0,0,0.9)" },
   cardMeta: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 },
   cardPlayers: { fontSize: 11, color: "#555", padding: "2px 8px", borderRadius: 4, background: "rgba(255,255,255,0.04)", border: "1px solid #30363d" },
   playBtn: { fontFamily: font, fontSize: 11, padding: "4px 14px", borderRadius: 5, border: "1px solid #c9a84c", background: "transparent", color: "#c9a84c", cursor: "pointer", fontWeight: 600, transition: "all 0.2s" },
@@ -85,10 +85,17 @@ const S = {
 };
 
 // ─── Game Card ─────────────────────────────────────────
+// Box art lives in client/public/boxart/<game.id>.jpg (sourced from BGG).
+const boxartUrl = (gameId) => `${import.meta.env.BASE_URL}boxart/${gameId}.jpg`;
+
 function GameCard({ game, onClick }) {
   const [hovered, setHovered] = useState(false);
+  const boxart = {
+    backgroundImage: `linear-gradient(135deg, rgba(13,17,23,${hovered ? 0.82 : 0.9}) 0%, rgba(13,17,23,${hovered ? 0.55 : 0.72}) 100%), url("${boxartUrl(game.id)}")`,
+    backgroundSize: "cover", backgroundPosition: "center",
+  };
   return (
-    <div style={{ ...S.card, ...(hovered ? S.cardHover : {}) }}
+    <div style={{ ...S.card, ...(hovered ? S.cardHover : {}), ...boxart }}
       onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onClick={onClick}>
       <div style={S.cardName}>{game.name}</div>
       <div style={S.cardDesc}>{game.desc}</div>
