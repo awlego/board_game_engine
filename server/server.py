@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 
 import websockets
 
+from server import persistence
 from server.game_engine import GameEngine
 
 
@@ -73,14 +74,32 @@ class GameServer:
     Game-agnostic — delegates all game logic to the engine.
     """
 
-    def __init__(self):
+    def __init__(self, data_dir=None):
         self.rooms: dict[str, Room] = {}               # code -> Room
         self.tokens: dict[str, tuple] = {}             # token -> (room_code, player_id_or_"spectator")
         self.engines: dict[str, type] = {}              # game_name -> GameEngine class
+        self.data_dir = data_dir                        # room snapshot dir; None = in-memory only
 
     def register_engine(self, game_name, engine_class):
         """Register a game engine class by name."""
         self.engines[game_name] = engine_class
+
+    # ── Persistence ──────────────────────────────────────────────────
+
+    def _save(self, room):
+        """Snapshot a room to disk (no-op when persistence is disabled)."""
+        if self.data_dir:
+            persistence.save_room(self.data_dir, room)
+
+    def load_persisted_rooms(self):
+        """Restore saved rooms. Call after all engines are registered."""
+        if not self.data_dir:
+            return
+        self.rooms, self.tokens = persistence.load_rooms(
+            self.data_dir, self.engines, Room, Player, Spectator,
+        )
+        if self.rooms:
+            print(f"Restored {len(self.rooms)} room(s) from {self.data_dir}")
 
     # ── Room Management ──────────────────────────────────────────────
 
@@ -102,6 +121,7 @@ class GameServer:
 
         self.rooms[code] = room
         self.tokens[token] = (code, player_id)
+        self._save(room)
 
         return code, player_id, token
 
@@ -122,6 +142,7 @@ class GameServer:
         player = Player(player_id=player_id, name=name, token=token)
         room.players[player_id] = player
         self.tokens[token] = (code, player_id)
+        self._save(room)
 
         return player_id, token
 
@@ -134,6 +155,7 @@ class GameServer:
         spectator = Spectator(token=token, name=name)
         room.spectators[token] = spectator
         self.tokens[token] = (code, "spectator")
+        self._save(room)
 
         return token
 
@@ -154,6 +176,7 @@ class GameServer:
 
         room.game_state = room.engine.initial_state(player_ids, player_names)
         room.started = True
+        self._save(room)
 
         return room.game_state
 
@@ -469,6 +492,7 @@ class GameServer:
         try:
             result = room.engine.apply_action(room.game_state, player_id, action)
             room.game_state = result.new_state
+            self._save(room)
 
             # Broadcast log to everyone
             if result.log:
@@ -518,6 +542,7 @@ class GameServer:
         if target.token in self.tokens:
             del self.tokens[target.token]
         del room.players[target_id]
+        self._save(room)
 
         # Broadcast updated player list
         await self._broadcast(room, {
@@ -535,6 +560,7 @@ class GameServer:
             return
 
         room.locked = lock
+        self._save(room)
         await self._broadcast(room, {
             "type": "lobby_update",
             "players": room.player_list,
@@ -605,7 +631,7 @@ class GameServer:
 
 # ── Server Entry Point ───────────────────────────────────────────────
 
-async def run_server(host="0.0.0.0", port=8765):
+async def run_server(host="0.0.0.0", port=8765, data_dir="data/rooms"):
     from server.dragon.engine import DragonEngine
     from server.battleline.engine import BattleLineEngine
     from server.arboretum.engine import ArboretumEngine
@@ -620,7 +646,7 @@ async def run_server(host="0.0.0.0", port=8765):
     from server.punct.engine import PunctEngine
     from server.lyngk.engine import LyngkEngine
 
-    server = GameServer()
+    server = GameServer(data_dir=data_dir)
     server.register_engine("dragon", DragonEngine)
     server.register_engine("battleline", BattleLineEngine)
     server.register_engine("arboretum", ArboretumEngine)
@@ -635,6 +661,8 @@ async def run_server(host="0.0.0.0", port=8765):
     server.register_engine("punct", PunctEngine)
     server.register_engine("lyngk", LyngkEngine)
 
+    server.load_persisted_rooms()
+
     print(f"Game server starting on ws://{host}:{port}")
     print(f"Registered games: {list(server.engines.keys())}")
 
@@ -644,4 +672,9 @@ async def run_server(host="0.0.0.0", port=8765):
 
 def main():
     """Entry point for run_server.py."""
-    asyncio.run(run_server())
+    import os
+    host = os.environ.get("BGE_HOST", "0.0.0.0")
+    port = int(os.environ.get("BGE_PORT", "8765"))
+    # Set BGE_DATA_DIR="" to disable room persistence.
+    data_dir = os.environ.get("BGE_DATA_DIR", "data/rooms") or None
+    asyncio.run(run_server(host=host, port=port, data_dir=data_dir))
