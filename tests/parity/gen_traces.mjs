@@ -15,7 +15,10 @@
 // Regenerate traces with:
 //   node tests/parity/gen_traces.mjs
 //
-// (Requires the overnightlemons.com repo at the path below.)
+// NOTE: the JS engine was RETIRED from overnightlemons.com on 2026-07-06
+// (removed in its commit 4232012) after the port was play-verified; the
+// committed traces are now the frozen ground truth. To regenerate, check
+// out overnightlemons.com at 4a99a11 or earlier so the path below exists.
 
 import { gzipSync } from 'node:zlib';
 import { writeFileSync, mkdirSync } from 'node:fs';
