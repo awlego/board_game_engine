@@ -62,7 +62,7 @@ const S = {
     cursor: "pointer", transition: "all 0.25s ease", boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
     display: "flex", flexDirection: "column", gap: 8,
   },
-  cardHover: { borderColor: "#c9a84c", boxShadow: "0 4px 24px rgba(201,168,76,0.15)", transform: "translateY(-2px)" },
+  cardHover: { border: "1px solid #c9a84c", boxShadow: "0 4px 24px rgba(201,168,76,0.15)", transform: "translateY(-2px)" },
   cardName: { fontFamily: font, fontSize: 20, fontWeight: 700, color: "#e8d5a3", letterSpacing: 2, textShadow: "0 1px 6px rgba(0,0,0,0.9)" },
   cardDesc: { fontSize: 12, color: "#aaa", lineHeight: 1.4, flex: 1, textShadow: "0 1px 4px rgba(0,0,0,0.9)" },
   cardMeta: { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 },
