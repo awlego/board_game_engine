@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
-const WS_URL = `ws://${window.location.hostname}:8765`;
+import { WS_URL } from "../ws.js";
 
 const AXIAL_DIRS = [[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
 const COLOR_HEX = {

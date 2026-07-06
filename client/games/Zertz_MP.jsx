@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
 // ─── CONFIGURATION ─────────────────────────────────────────────────
-const WS_URL = `ws://${window.location.hostname}:8765`;
+import { WS_URL } from "../ws.js";
 
 // ─── CONSTANTS ─────────────────────────────────────────────────────
 

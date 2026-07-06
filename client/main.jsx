@@ -16,7 +16,7 @@ import GipfApp from "./games/Gipf_MP.jsx";
 import PunctApp from "./games/Punct_MP.jsx";
 import LyngkApp from "./games/Lyngk_MP.jsx";
 
-const WS_URL = `ws://${window.location.hostname}:8765`;
+import { WS_URL } from "./ws.js";
 
 // ─── Game Registry ─────────────────────────────────────
 const GAMES = [

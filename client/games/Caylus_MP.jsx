@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 
-const WS_URL = `ws://${window.location.hostname}:8765`;
+import { WS_URL } from "../ws.js";
 
 // ============================================================
 // CONSTANTS (mirrored from server/caylus/state.py)
