@@ -16,6 +16,7 @@ import GipfApp from "./games/Gipf_MP.jsx";
 import PunctApp from "./games/Punct_MP.jsx";
 import LyngkApp from "./games/Lyngk_MP.jsx";
 import ShardsApp from "./games/Shards_MP.jsx";
+import AgricolaApp from "./games/Agricola_MP.jsx";
 
 import { WS_URL } from "./ws.js";
 
@@ -35,6 +36,7 @@ const GAMES = [
   { id: "dragon",  name: "In the Year of the Dragon", players: "2–5", component: DragonApp, series: "other", desc: "Survive disasters in medieval China" },
   { id: "caylus",  name: "Caylus",         players: "2–5", component: CaylusApp,     series: "other", desc: "Build a castle for the king, manage workers" },
   { id: "shards",  name: "Shards of Creation", players: "2–4", component: ShardsApp, series: "other", desc: "Cosmere trick-taking — win tricks, forge shards" },
+  { id: "agricola", name: "Agricola", players: "1–4", component: AgricolaApp, series: "other", desc: "Worker-placement farming — grow your family and feed it" },
 ];
 
 // ─── Styles ────────────────────────────────────────────

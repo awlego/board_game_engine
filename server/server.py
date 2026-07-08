@@ -646,6 +646,7 @@ async def run_server(host="0.0.0.0", port=8765, data_dir="data/rooms"):
     from server.punct.engine import PunctEngine
     from server.lyngk.engine import LyngkEngine
     from server.shards.engine import ShardsEngine
+    from server.agricola.engine import AgricolaEngine
 
     server = GameServer(data_dir=data_dir)
     server.register_engine("dragon", DragonEngine)
@@ -662,6 +663,7 @@ async def run_server(host="0.0.0.0", port=8765, data_dir="data/rooms"):
     server.register_engine("punct", PunctEngine)
     server.register_engine("lyngk", LyngkEngine)
     server.register_engine("shards", ShardsEngine)
+    server.register_engine("agricola", AgricolaEngine)
 
     server.load_persisted_rooms()
 
