@@ -4,9 +4,10 @@ from server.agricola.state import (
     MAJOR_IMPROVEMENTS, BUILDING_RESOURCES,
     animal_counts, compute_pastures, table_score,
 )
+from server.agricola import cards
 
 
-def score_player(player):
+def score_player(player, state=None):
     """Return a dict of category scores plus 'total' for one player."""
     cells = player["cells"]
     pastures = compute_pastures(player)
@@ -22,6 +23,14 @@ def score_player(player):
                 grain += c["crops"]["count"]
             else:
                 vegetable += c["crops"]["count"]
+    # Crops growing on card fields (e.g. Beanfield) count as crops
+    # but not as field tiles.
+    for inst in cards.card_fields(player):
+        if inst["crops"]:
+            if inst["crops"]["type"] == "grain":
+                grain += inst["crops"]["count"]
+            else:
+                vegetable += inst["crops"]["count"]
 
     unused = sum(
         1 for i, c in enumerate(cells)
@@ -39,6 +48,7 @@ def score_player(player):
     improvement_points = sum(
         MAJOR_IMPROVEMENTS[i]["points"] for i in player["improvements"]
     )
+    improvement_points += cards.printed_points(player)
 
     bonus = 0
     for imp in player["improvements"]:
@@ -50,6 +60,8 @@ def score_player(player):
                 if have >= minimum:
                     bonus += points
                     break
+    if state is not None:
+        bonus += cards.score_bonuses(state, player)
     bonus -= 3 * player["begging"]
 
     scores = {
@@ -75,7 +87,7 @@ def final_scores(state):
     """Score every player; returns (scores list, winner indices)."""
     results = []
     for p in state["players"]:
-        s = score_player(p)
+        s = score_player(p, state)
         s["player_index"] = p["index"]
         s["name"] = p["name"]
         s["tiebreak_resources"] = sum(

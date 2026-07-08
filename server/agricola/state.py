@@ -1,9 +1,8 @@
 """
 Agricola (Revised Edition) — constants, board geometry, and setup helpers.
 
-Implements the base game in the official "without hand cards" beginner
-variant (see rules/rules.md): no occupations or minor improvements,
-Meeting Place accumulates 1 food, and the "Side Job" tile is in play.
+Implements the full game: each player is dealt 7 occupations and 7 minor
+improvements (see cards.py and CARDS.md for the card system).
 
 Farmyard geometry
 -----------------
@@ -221,29 +220,37 @@ def validate_fence_layout(player, fences):
     return True, "", pastures
 
 
-def pasture_capacity(player, pasture):
-    """Capacity of a pasture: 2 per cell, doubled per stable inside."""
+def pasture_capacity(player, pasture, bonus=0):
+    """Capacity of a pasture: 2 per cell, doubled per stable inside,
+    plus a flat card bonus (e.g. Drinking Trough)."""
     stables = sum(1 for i in pasture if player["cells"][i]["stable"])
-    return 2 * len(pasture) * (2 ** stables)
+    return 2 * len(pasture) * (2 ** stables) + bonus
 
 
 def animal_counts(player):
-    """Total animals on the farm (cells + pet), by type."""
+    """Total animals on the farm (cells + house pets), by type."""
     totals = {t: 0 for t in ANIMAL_TYPES}
     for cell in player["cells"]:
         a = cell.get("animal")
         if a:
             totals[a["type"]] += a["count"]
-    if player.get("pet"):
-        totals[player["pet"]] += 1
+    for t, n in player.get("pets", {}).items():
+        totals[t] += n
     return totals
 
 
-def validate_animal_placement(player):
+def validate_animal_placement(player, house_cap=1, pasture_bonus=0):
     """
     Check the current animal placement against husbandry rules.
+    `house_cap` and `pasture_bonus` come from card modifiers.
     Returns (ok, error_message).
     """
+    pets = player.get("pets", {})
+    if any(n < 0 for n in pets.values()):
+        return False, "Invalid pets"
+    if sum(pets.values()) > house_cap:
+        return False, f"Your house holds at most {house_cap} animal(s)"
+
     pastures = compute_pastures(player)
     pasture_of = {}
     for pi, p in enumerate(pastures):
@@ -267,12 +274,26 @@ def validate_animal_placement(player):
             if a["count"] > 1:
                 return False, "An unfenced stable holds only 1 animal"
         else:
-            return False, "Animals must be in pastures, unfenced stables, or the pet slot"
+            return False, "Animals must be in pastures, unfenced stables, or the house"
 
     for pi, info in per_pasture.items():
-        if info["count"] > pasture_capacity(player, pastures[pi]):
+        if info["count"] > pasture_capacity(player, pastures[pi], pasture_bonus):
             return False, "Pasture over capacity"
     return True, ""
+
+
+def plowable_cells(player):
+    """Cells where a field tile may be placed right now."""
+    pasture_cells = {i for p in compute_pastures(player) for i in p}
+    fields = [i for i, c in enumerate(player["cells"]) if c["type"] == "field"]
+    eligible = []
+    for i, c in enumerate(player["cells"]):
+        if c["type"] != "empty" or c["stable"] or i in pasture_cells:
+            continue
+        if fields and not any(nb in fields for nb in orthogonal_neighbors(i)):
+            continue
+        eligible.append(i)
+    return eligible
 
 
 # ── Action spaces ────────────────────────────────────────────────────
@@ -284,12 +305,15 @@ PERMANENT_SPACES = [
     {"id": "farm_expansion", "name": "Farm Expansion",
      "desc": "Build rooms and/or build stables", "counts": (1, 2, 3, 4)},
     {"id": "meeting_place", "name": "Meeting Place",
-     "desc": "Become starting player (accumulates 1 food)",
-     "counts": (1, 2, 3, 4), "acc": {"food": 1}},
+     "desc": "Become starting player, then you may play a minor improvement",
+     "counts": (1, 2, 3, 4)},
     {"id": "grain_seeds", "name": "Grain Seeds",
      "desc": "Get 1 grain", "counts": (1, 2, 3, 4)},
     {"id": "farmland", "name": "Farmland",
      "desc": "Plow 1 field", "counts": (1, 2, 3, 4)},
+    {"id": "lessons", "name": "Lessons",
+     "desc": "Play an occupation (your first is free, then 1 food)",
+     "counts": (1, 2, 3, 4)},
     {"id": "day_laborer", "name": "Day Laborer",
      "desc": "Get 2 food", "counts": (1, 2, 3, 4)},
     {"id": "forest", "name": "Forest",
@@ -300,8 +324,6 @@ PERMANENT_SPACES = [
      "desc": "Accumulation: 1 reed", "counts": (1, 2, 3, 4), "acc": {"reed": 1}},
     {"id": "fishing", "name": "Fishing",
      "desc": "Accumulation: 1 food", "counts": (1, 2, 3, 4), "acc": {"food": 1}},
-    {"id": "side_job", "name": "Side Job",
-     "desc": "Build 1 stable for 1 wood and/or Bake Bread", "counts": (1, 2, 3, 4)},
     # 3-player spaces
     {"id": "grove", "name": "Grove",
      "desc": "Accumulation: 2 wood", "counts": (3, 4), "acc": {"wood": 2}},
@@ -309,6 +331,9 @@ PERMANENT_SPACES = [
      "desc": "Accumulation: 1 clay", "counts": (3,), "acc": {"clay": 1}},
     {"id": "resource_market_3p", "name": "Resource Market",
      "desc": "Get 1 reed or 1 stone, plus 1 food", "counts": (3,)},
+    {"id": "lessons_b", "name": "Lessons",
+     "desc": "Play an occupation (3p: 2 food; 4p: first two cost 1 food, then 2)",
+     "counts": (3, 4)},
     # 4-player spaces
     {"id": "copse", "name": "Copse",
      "desc": "Accumulation: 1 wood", "counts": (4,), "acc": {"wood": 1}},
@@ -457,9 +482,14 @@ def create_player(index, player_id, name):
         "people_total": 2,
         "people_placed": 0,
         "newborns": 0,
-        "pet": None,
+        "pets": {},
         "begging": 0,
         "improvements": [],
+        "hand_occupations": [],
+        "hand_minors": [],
+        "occupations": [],
+        "minors": [],
+        "occs_played": 0,
         "harvest_conversions_used": [],
         "fed": False,
     }

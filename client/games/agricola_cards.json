@@ -1,0 +1,588 @@
+{
+ "minor_animal_pen": {
+  "cost": {
+   "wood": 1
+  },
+  "deck": "base",
+  "house_capacity": 1,
+  "min_players": 1,
+  "name": "Animal Pen",
+  "points": 1,
+  "prereq_text": "1 occupations",
+  "text": "Your house can hold 1 additional pet.",
+  "type": "minor"
+ },
+ "minor_basket": {
+  "cost": {
+   "reed": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Basket",
+  "points": 1,
+  "text": "Each time you use the \"Reed Bank\" accumulation space, you also get 1 food.",
+  "type": "minor"
+ },
+ "minor_beanfield": {
+  "cost": {
+   "food": 1,
+   "grain": 1
+  },
+  "deck": "base",
+  "field": {
+   "crops": [
+    "vegetable"
+   ]
+  },
+  "min_players": 1,
+  "name": "Beanfield",
+  "points": 1,
+  "prereq_text": "2 occupations",
+  "text": "This card is a field that can only grow vegetables.",
+  "type": "minor"
+ },
+ "minor_bread_paddle": {
+  "bake_bonus_flat": 1,
+  "cost": {
+   "wood": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Bread Paddle",
+  "text": "Each time you bake bread, you get 1 additional food.",
+  "type": "minor"
+ },
+ "minor_butter_churn": {
+  "cost": {
+   "clay": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Butter Churn",
+  "points": 1,
+  "text": "In the field phase of each harvest, you get 1 food for every 3 sheep and 1 food for every 2 cattle you have.",
+  "type": "minor"
+ },
+ "minor_canoe": {
+  "cost": {
+   "wood": 2
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Canoe",
+  "points": 1,
+  "prereq_text": "1 occupations",
+  "text": "Each time you use the \"Fishing\" accumulation space, you also get 1 food and 1 reed.",
+  "type": "minor"
+ },
+ "minor_caravan": {
+  "cost": {
+   "food": 3,
+   "wood": 3
+  },
+  "deck": "base",
+  "extra_rooms": 1,
+  "min_players": 1,
+  "name": "Caravan",
+  "text": "This card provides room for 1 person.",
+  "type": "minor"
+ },
+ "minor_clay_deposit": {
+  "cost": {
+   "food": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Clay Deposit",
+  "text": "When you play this card, you immediately get 3 clay.",
+  "type": "minor"
+ },
+ "minor_clay_shovel": {
+  "cost": {
+   "wood": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Clay Shovel",
+  "text": "Each time you use the \"Clay Pit\" or \"Hollow\" accumulation space, you get 1 additional clay.",
+  "type": "minor"
+ },
+ "minor_corn_scoop": {
+  "cost": {
+   "wood": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Corn Scoop",
+  "text": "Each time you use the \"Grain Seeds\" action space, you get 1 additional grain.",
+  "type": "minor"
+ },
+ "minor_drinking_trough": {
+  "cost": {
+   "wood": 2
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Drinking Trough",
+  "pasture_capacity_bonus": 2,
+  "points": 1,
+  "text": "Each of your pastures (with or without a stable) can hold 2 more animals.",
+  "type": "minor"
+ },
+ "minor_fish_trap": {
+  "cost": {
+   "wood": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Fish Trap",
+  "text": "Each time you use the \"Fishing\" accumulation space, you also get 1 food.",
+  "type": "minor"
+ },
+ "minor_harvest_totem": {
+  "cost": {
+   "wood": 1
+  },
+  "deck": "custom",
+  "min_players": 1,
+  "name": "Harvest Totem",
+  "points": 1,
+  "prereq_text": "3 occupations and 1 grain field(s)",
+  "text": "Each time you play an occupation, you get 1 wild boar.",
+  "type": "minor"
+ },
+ "minor_herb_patch": {
+  "cost": {
+   "food": 1
+  },
+  "deck": "base",
+  "field": {
+   "crops": [
+    "grain"
+   ]
+  },
+  "min_players": 1,
+  "name": "Herb Patch",
+  "points": 1,
+  "prereq_text": "3 occupations",
+  "text": "This card is a field that can only grow grain.",
+  "type": "minor"
+ },
+ "minor_hermits_stick": {
+  "deck": "custom",
+  "min_players": 1,
+  "name": "Hermit's Stick",
+  "text": "At the end of the game, you get 1/2/4 bonus points for having exactly 4/3/2 family members.",
+  "type": "minor"
+ },
+ "minor_lasso": {
+  "cost": {
+   "reed": 1
+  },
+  "deck": "base",
+  "lasso": true,
+  "min_players": 1,
+  "name": "Lasso",
+  "text": "You can place exactly two people immediately after one another if at least one of them uses the \"Sheep Market\", \"Pig Market\", or \"Cattle Market\" accumulation space.",
+  "type": "minor"
+ },
+ "minor_loom": {
+  "cost": {
+   "wood": 2
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Loom",
+  "points": 1,
+  "prereq_text": "2 occupations",
+  "text": "In the field phase of each harvest, if you have at least 1/4/7 sheep, you get 1/2/3 food. During scoring, you get 1 bonus point for every 3 sheep.",
+  "type": "minor"
+ },
+ "minor_manger": {
+  "cost": {
+   "wood": 2
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Manger",
+  "text": "During scoring, if your pastures cover at least 6/7/8/10 farmyard spaces, you get 1/2/3/4 bonus points.",
+  "type": "minor"
+ },
+ "minor_market_stall": {
+  "cost": {
+   "grain": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Market Stall",
+  "text": "When you play this card, you immediately get 1 vegetable. Then pass this card to the player on your left, who adds it to their hand.",
+  "traveling": true,
+  "type": "minor"
+ },
+ "minor_milk_jug": {
+  "cost": {
+   "clay": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Milk Jug",
+  "points": 1,
+  "text": "Each time ANY player uses the \"Cattle Market\" accumulation space, you get 2 food.",
+  "type": "minor"
+ },
+ "minor_mining_hammer": {
+  "cost": {
+   "wood": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Mining Hammer",
+  "text": "When you play this card, you immediately get 1 food. Each time you renovate, you can also build 1 stable without paying wood.",
+  "type": "minor"
+ },
+ "minor_pond_hut": {
+  "cost": {
+   "wood": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Pond Hut",
+  "points": 1,
+  "prereq_text": "exactly 2 occupations",
+  "text": "When you play this card, place 1 food on each of the next 3 round spaces. At the start of these rounds, you get the food.",
+  "type": "minor"
+ },
+ "minor_private_forest": {
+  "cost": {
+   "food": 2
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Private Forest",
+  "text": "When you play this card, place 1 wood on each of the next 5 round spaces. At the start of these rounds, you get the wood.",
+  "type": "minor"
+ },
+ "minor_quarry_cart": {
+  "cost": {
+   "wood": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Quarry Cart",
+  "prereq_text": "1 occupations",
+  "text": "Each time you use the \"Western Quarry\" or \"Eastern Quarry\" accumulation space, you get 1 additional stone.",
+  "type": "minor"
+ },
+ "minor_sack_cart": {
+  "cost": {
+   "wood": 2
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Sack Cart",
+  "points": 1,
+  "prereq_text": "2 occupations",
+  "text": "When you play this card, place 1 grain on each of the remaining round spaces for rounds 5, 8, 11, and 14.",
+  "type": "minor"
+ },
+ "minor_scythe": {
+  "cost": {
+   "wood": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Scythe",
+  "points": 1,
+  "prereq_text": "1 grain field(s)",
+  "text": "In the field phase of each harvest, if you have at least 2 grain fields, you get 1 additional grain.",
+  "type": "minor"
+ },
+ "minor_seed_drill": {
+  "cost": {
+   "wood": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Seed Drill",
+  "points": 1,
+  "prereq_text": "1 occupations",
+  "text": "Each time you sow, the first grain field you sow gets 1 additional grain on it.",
+  "type": "minor"
+ },
+ "minor_seed_pouch": {
+  "cost": {
+   "wood": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Seed Pouch",
+  "prereq_text": "1 occupations",
+  "text": "When you play this card, you immediately get 1 grain and 1 vegetable.",
+  "type": "minor"
+ },
+ "minor_shepherds_crook": {
+  "cost": {
+   "wood": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Shepherd's Crook",
+  "text": "Each time you fence a new pasture covering at least 4 farmyard spaces, you immediately get 2 sheep.",
+  "type": "minor"
+ },
+ "minor_shifting_cultivation": {
+  "cost": {
+   "food": 2
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Shifting Cultivation",
+  "text": "When you play this card, immediately plow 1 field. Then pass this card to the player on your left, who adds it to their hand.",
+  "traveling": true,
+  "type": "minor"
+ },
+ "minor_threshing_board": {
+  "bake_on_spaces": [
+   "farmland",
+   "cultivation"
+  ],
+  "cost": {
+   "wood": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Threshing Board",
+  "points": 1,
+  "prereq_text": "2 occupations",
+  "text": "Each time you use the \"Farmland\" or \"Cultivation\" action space, you also get a \"Bake Bread\" action.",
+  "type": "minor"
+ },
+ "minor_wool_blankets": {
+  "cost": {
+   "wood": 1
+  },
+  "deck": "base",
+  "min_players": 1,
+  "name": "Wool Blankets",
+  "points": 1,
+  "text": "During scoring, you get 2 bonus points if you live in a wooden house with at least 3 rooms.",
+  "type": "minor"
+ },
+ "occ_animal_tamer": {
+  "deck": "base",
+  "house_capacity": "per_room",
+  "min_players": 1,
+  "name": "Animal Tamer",
+  "text": "Instead of just 1 animal total, you can keep 1 animal in each room of your house.",
+  "type": "occupation"
+ },
+ "occ_baker": {
+  "bake_bonus_per_grain": 1,
+  "deck": "base",
+  "min_players": 1,
+  "name": "Baker",
+  "text": "Each time you bake bread, you get 1 additional food per grain baked.",
+  "type": "occupation"
+ },
+ "occ_braggart": {
+  "deck": "base",
+  "min_players": 1,
+  "name": "Braggart",
+  "text": "During scoring, you get 2/3/4/5/7/9 bonus points for having at least 5/6/7/8/9/10 improvements in front of you.",
+  "type": "occupation"
+ },
+ "occ_carpenter": {
+  "deck": "base",
+  "min_players": 1,
+  "name": "Carpenter",
+  "text": "Each new room costs you only 3 of the appropriate building resource (and 2 reed).",
+  "type": "occupation"
+ },
+ "occ_cattle_feeder": {
+  "deck": "base",
+  "min_players": 4,
+  "name": "Cattle Feeder",
+  "text": "Each time you take cattle from an action space, you get 1 additional cattle.",
+  "type": "occupation"
+ },
+ "occ_clay_digger": {
+  "deck": "base",
+  "min_players": 1,
+  "name": "Clay Digger",
+  "text": "Each time you take clay from an action space, you get 1 additional clay.",
+  "type": "occupation"
+ },
+ "occ_conjurer": {
+  "deck": "base",
+  "min_players": 4,
+  "name": "Conjurer",
+  "text": "Each time you use the \"Traveling Players\" accumulation space, you also get 1 wood and 1 grain.",
+  "type": "occupation"
+ },
+ "occ_cook": {
+  "deck": "base",
+  "min_players": 1,
+  "name": "Cook",
+  "raw_values": {
+   "grain": 2,
+   "vegetable": 3
+  },
+  "text": "At any time, you can convert grain to 2 food and vegetables to 3 food.",
+  "type": "occupation"
+ },
+ "occ_deaconess": {
+  "deck": "custom",
+  "min_players": 1,
+  "name": "Deaconess",
+  "text": "As long as you have exactly 2 family members, in the field phase of harvest 1/2/3/4/5/6, you get 1 wood and 1/2/3/4/5/6 food.",
+  "type": "occupation"
+ },
+ "occ_estate_manager": {
+  "deck": "custom",
+  "min_players": 3,
+  "name": "Estate Manager",
+  "text": "At the end of the game, if no player has more animals of 1/2/3 types than you (and you have at least 1 of the type), you get 2/4/5 bonus points.",
+  "type": "occupation"
+ },
+ "occ_firewood_collector": {
+  "deck": "base",
+  "min_players": 1,
+  "name": "Firewood Collector",
+  "text": "Each time you use the \"Grain Seeds\", \"Farmland\", \"Grain Utilization\", or \"Cultivation\" action space, you also get 1 wood.",
+  "type": "occupation"
+ },
+ "occ_fisherman": {
+  "deck": "base",
+  "min_players": 1,
+  "name": "Fisherman",
+  "text": "Each time you use the \"Fishing\" action space, you get 2 additional food.",
+  "type": "occupation"
+ },
+ "occ_forager": {
+  "deck": "base",
+  "min_players": 1,
+  "name": "Forager",
+  "text": "Each time you use the \"Forest\" accumulation space, you also get 1 food.",
+  "type": "occupation"
+ },
+ "occ_grain_farmer": {
+  "deck": "base",
+  "min_players": 3,
+  "name": "Grain Farmer",
+  "text": "Each time you use the \"Grain Seeds\" action space, you get 1 additional grain.",
+  "type": "occupation"
+ },
+ "occ_greengrocer": {
+  "deck": "base",
+  "min_players": 1,
+  "name": "Greengrocer",
+  "text": "Each time you use the \"Grain Seeds\" action space, you also get 1 vegetable.",
+  "type": "occupation"
+ },
+ "occ_hedge_keeper": {
+  "deck": "base",
+  "min_players": 1,
+  "name": "Hedge Keeper",
+  "text": "Each time you build fences, up to 3 of them are free.",
+  "type": "occupation"
+ },
+ "occ_house_steward": {
+  "deck": "base",
+  "min_players": 1,
+  "name": "House Steward",
+  "text": "If there are still 1/3/6/9 complete rounds left to play, you immediately get 1/2/3/4 wood. During scoring, each player with the most rooms gets 3 bonus points.",
+  "type": "occupation"
+ },
+ "occ_market_crier": {
+  "deck": "base",
+  "min_players": 4,
+  "name": "Market Crier",
+  "text": "Each time you use the \"Vegetable Seeds\" action space, you get 1 additional vegetable.",
+  "type": "occupation"
+ },
+ "occ_pig_breeder": {
+  "deck": "base",
+  "min_players": 3,
+  "name": "Pig Breeder",
+  "text": "Each time you take wild boar from an action space, you get 1 additional wild boar.",
+  "type": "occupation"
+ },
+ "occ_quarryman": {
+  "deck": "base",
+  "min_players": 3,
+  "name": "Quarryman",
+  "text": "Each time you use the \"Western Quarry\" or \"Eastern Quarry\" accumulation space, you also get 1 food.",
+  "type": "occupation"
+ },
+ "occ_reed_collector": {
+  "deck": "base",
+  "min_players": 1,
+  "name": "Reed Collector",
+  "text": "Each time you take reed from an action space, you get 1 additional reed.",
+  "type": "occupation"
+ },
+ "occ_roofer": {
+  "deck": "base",
+  "min_players": 3,
+  "name": "Roofer",
+  "text": "When you renovate, you do not need to pay reed.",
+  "type": "occupation"
+ },
+ "occ_seasonal_worker": {
+  "deck": "base",
+  "min_players": 1,
+  "name": "Seasonal Worker",
+  "text": "Each time you use the \"Day Laborer\" action space, you also get 1 grain.",
+  "type": "occupation"
+ },
+ "occ_shepherd": {
+  "deck": "base",
+  "min_players": 3,
+  "name": "Shepherd",
+  "text": "Each time you take sheep from an action space, you get 1 additional sheep.",
+  "type": "occupation"
+ },
+ "occ_small_scale_farmer": {
+  "deck": "base",
+  "min_players": 1,
+  "name": "Small-Scale Farmer",
+  "text": "As long as you live in a house with exactly 2 rooms, you get 1 wood at the start of each round.",
+  "type": "occupation"
+ },
+ "occ_stable_hand": {
+  "deck": "base",
+  "min_players": 4,
+  "name": "Stable Hand",
+  "text": "Each time you build one or more stables, you also get 1 food per stable.",
+  "type": "occupation"
+ },
+ "occ_stonecutter": {
+  "deck": "base",
+  "min_players": 1,
+  "name": "Stonecutter",
+  "text": "Every room, renovation, and major improvement costs you 1 stone less.",
+  "type": "occupation"
+ },
+ "occ_tutor": {
+  "deck": "base",
+  "min_players": 1,
+  "name": "Tutor",
+  "occ_cost_delta": -1,
+  "text": "Each occupation you play after this one costs you 1 food less.",
+  "type": "occupation"
+ },
+ "occ_water_carrier": {
+  "deck": "base",
+  "min_players": 4,
+  "name": "Water Carrier",
+  "text": "At the start of each round, you get 1 food.",
+  "type": "occupation"
+ },
+ "occ_woodcutter": {
+  "deck": "base",
+  "min_players": 1,
+  "name": "Woodcutter",
+  "text": "Each time you take wood from an action space, you get 1 additional wood.",
+  "type": "occupation"
+ }
+}

@@ -5,20 +5,25 @@ Uwe Rosenberg. 1–4 players, 14 rounds.
 
 ## Implementation scope
 
-This engine implements the **base game using the official "Beginner's Variant
-without Hand Cards"** (appendix p.1): no occupation and no minor-improvement
-decks. Per the appendix, in this variant:
+This engine implements the **full game with hand cards**: each player is
+dealt 7 occupations and 7 minor improvements at setup (dealt from the
+implemented card pool — see `../cards.py` and `../CARDS.md`; cards are
+filtered by player count like the official occ-1/occ-3/occ-4 classes).
 
-- The **Meeting Place** becomes an accumulation space (+1 food per round); it
-  still grants the starting player token.
-- The **"Side Job"** special tile is added: Build exactly 1 stable for 1 wood
-  and/or Bake Bread.
-- The "Lessons" action spaces are omitted (there are no occupations to play).
-- Action spaces that read "and afterward Minor Improvement" simply lose that
-  bonus; "Major or Minor Improvement" means major improvement only.
+- **Lessons** (all counts): play an occupation — your first is free, each
+  after that costs 1 food. The second Lessons space (3–4 players) costs
+  2 food per occupation; in the 4-player game the first two occupations you
+  play there cost 1 food each, later ones 2.
+- **Meeting Place**: become starting player, then you may play a minor
+  improvement. **Basic Wish for Children**: family growth, then you may play
+  a minor improvement. **Major Improvement space** and **House
+  Redevelopment**: build a major improvement *or* play a minor improvement.
+- Minor improvements have costs (any goods) and prerequisites; traveling
+  cards pass to the left neighbor after being played (removed in solo).
 
-All 10 major improvements, full fencing/animal-husbandry rules, harvests, and
-the complete scoring are implemented. Solo rules are supported (see below).
+All 10 major improvements, full fencing/animal-husbandry rules, harvests,
+and the complete scoring (including card points and bonus points) are
+implemented. Solo rules are supported (see below).
 
 ## Setup
 
@@ -52,20 +57,21 @@ Permanent, all player counts (this variant):
 | Space | Action |
 |---|---|
 | Farm Expansion | Build rooms (5 wood/clay/stone + 2 reed each, by house type) and/or build stables (2 wood each) |
-| Meeting Place | Become starting player; accumulation +1 food (variant) |
+| Meeting Place | Become starting player, then may play a minor improvement |
 | Grain Seeds | Get 1 grain |
 | Farmland | Plow 1 field |
+| Lessons | Play an occupation (first free, then 1 food) |
 | Day Laborer | Get 2 food |
 | Forest | Accumulation +3 wood (+2 solo) |
 | Clay Pit | Accumulation +1 clay |
 | Reed Bank | Accumulation +1 reed |
 | Fishing | Accumulation +1 food |
-| Side Job | Build exactly 1 stable for 1 wood and/or Bake Bread (variant tile) |
 
 3-player extras: Grove (+2 wood), Hollow (+1 clay), Resource Market (1 reed OR
-1 stone, plus 1 food). 4-player extras: Copse (+1 wood), Grove (+2 wood),
-Hollow (+2 clay), Resource Market (1 reed AND 1 stone AND 1 food), Traveling
-Players (+1 food).
+1 stone, plus 1 food), Lessons #2 (occupation for 2 food). 4-player extras:
+Copse (+1 wood), Grove (+2 wood), Hollow (+2 clay), Resource Market (1 reed
+AND 1 stone AND 1 food), Traveling Players (+1 food), Lessons #2 (first two
+occupations 1 food each, then 2).
 
 Stage cards: Sheep/Pig/Cattle Market and the Quarries are accumulation spaces
 (+1 of their good per round). Fencing = Build Fences. Grain Utilization = Sow

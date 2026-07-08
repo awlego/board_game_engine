@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 import { WS_URL } from "../ws.js";
+import CARD_CATALOG from "./agricola_cards.json";
 
 // ============================================================
 // CONSTANTS (mirrored from server/agricola/state.py)
@@ -52,15 +53,66 @@ const CRAFT_HARVEST = { joinery: ["wood", 2], pottery: ["clay", 2], basketmaker:
 
 const HARVEST_ROUNDS = [4, 7, 9, 11, 13, 14];
 
+function inPlay(player) {
+  return [...(player.occupations || []), ...(player.minors || [])];
+}
+
+function cardSpec(cid) {
+  return CARD_CATALOG[cid] || { name: cid, text: "", cost: {} };
+}
+
 function bestCook(player) {
   let cook = null;
+  const tables = [];
   for (const imp of player.improvements) {
-    const table = FIREPLACES.includes(imp) ? COOK_FIREPLACE : HEARTHS.includes(imp) ? COOK_HEARTH : null;
-    if (!table) continue;
+    if (FIREPLACES.includes(imp)) tables.push(COOK_FIREPLACE);
+    if (HEARTHS.includes(imp)) tables.push(COOK_HEARTH);
+  }
+  for (const inst of inPlay(player)) {
+    if (cardSpec(inst.id).cook) tables.push(cardSpec(inst.id).cook);
+  }
+  for (const table of tables) {
     if (!cook) cook = { ...table };
-    else for (const k of Object.keys(table)) cook[k] = Math.max(cook[k], table[k]);
+    else for (const k of Object.keys(table)) cook[k] = Math.max(cook[k] || 0, table[k]);
   }
   return cook;
+}
+
+function rawValues(player) {
+  const best = { grain: 1, vegetable: 1 };
+  for (const inst of inPlay(player)) {
+    const rv = cardSpec(inst.id).raw_values;
+    if (rv) for (const k of Object.keys(rv)) best[k] = Math.max(best[k], rv[k]);
+  }
+  return best;
+}
+
+function houseCapacity(player) {
+  let cap = 1, perRoom = false;
+  for (const inst of inPlay(player)) {
+    const hc = cardSpec(inst.id).house_capacity;
+    if (hc === "per_room") perRoom = true;
+    else if (typeof hc === "number") cap += hc;
+  }
+  if (perRoom) {
+    const rooms = player.cells.filter((c) => c.type === "room").length;
+    cap = Math.max(cap, rooms);
+  }
+  return cap;
+}
+
+function pastureBonus(player) {
+  return inPlay(player).reduce(
+    (sum, inst) => sum + (cardSpec(inst.id).pasture_capacity_bonus || 0), 0);
+}
+
+function hasLasso(player) {
+  return inPlay(player).some((inst) => cardSpec(inst.id).lasso);
+}
+
+function costStr(cost) {
+  const parts = Object.entries(cost || {}).map(([g, n]) => `${n}${GOODS[g].icon}`);
+  return parts.length ? parts.join(" ") : "free";
 }
 
 // ── Farmyard geometry (mirror of state.py) ──────────────────
@@ -429,8 +481,14 @@ function PlayerPanel({ player, color, isYou, isCurrent, isStarting, state, child
         <span style={{ fontSize: 11, color: "#57534e" }}>
           👤{player.people_total - player.people_placed}/{player.people_total}
         </span>
-        {player.pet && <span title="Pet" style={{ fontSize: 11 }}>🏠{GOODS[player.pet].icon}</span>}
+        {Object.entries(player.pets || {}).map(([t, n]) => n > 0 && (
+          <span key={t} title="House pets" style={{ fontSize: 11 }}>🏠{GOODS[t].icon}{n > 1 ? `×${n}` : ""}</span>
+        ))}
         {player.begging > 0 && <span style={{ fontSize: 11, color: "#dc2626", fontWeight: 700 }}>🥺×{player.begging}</span>}
+        <span title="Hand: occupations + minor improvements" style={{ fontSize: 11, color: "#57534e", marginLeft: "auto" }}>
+          🂠{(Array.isArray(player.hand_occupations) ? player.hand_occupations.length : player.hand_occupations)
+            + (Array.isArray(player.hand_minors) ? player.hand_minors.length : player.hand_minors)}
+        </span>
       </div>
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
         {Object.keys(GOODS).filter((g) => !ANIMALS.includes(g)).map((g) => (
@@ -439,13 +497,81 @@ function PlayerPanel({ player, color, isYou, isCurrent, isStarting, state, child
         {ANIMALS.map((a) => <GoodChip key={a} good={a} count={totals[a]} small />)}
       </div>
       {children}
-      {player.improvements.length > 0 && (
+      {(player.improvements.length > 0 || inPlay(player).length > 0) && (
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
           {player.improvements.map((imp) => (
             <span key={imp} title={IMPROVEMENTS[imp].desc} style={{
               fontSize: 10, background: "#fecaca55", border: "1px solid #f87171",
               borderRadius: 6, padding: "1px 6px", fontWeight: 700, color: "#7f1d1d",
             }}>{IMPROVEMENTS[imp].name}</span>
+          ))}
+          {(player.occupations || []).map((inst) => (
+            <span key={inst.id} title={cardSpec(inst.id).text} style={{
+              fontSize: 10, background: "#fef9c3", border: "1px solid #eab308",
+              borderRadius: 6, padding: "1px 6px", fontWeight: 700, color: "#713f12",
+            }}>{cardSpec(inst.id).name}</span>
+          ))}
+          {(player.minors || []).map((inst) => (
+            <span key={inst.id} title={cardSpec(inst.id).text + (inst.crops ? ` — planted: ${inst.crops.count} ${inst.crops.type}` : "")} style={{
+              fontSize: 10, background: "#ffedd5", border: "1px solid #fb923c",
+              borderRadius: 6, padding: "1px 6px", fontWeight: 700, color: "#7c2d12",
+            }}>{cardSpec(inst.id).name}{inst.crops ? ` ${GOODS[inst.crops.type].icon}×${inst.crops.count}` : ""}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Hand panel (own cards) ──────────────────────────────────
+
+function HandCard({ cid, playable, selected, onClick, extra }) {
+  const spec = cardSpec(cid);
+  const isOcc = spec.type === "occupation";
+  return (
+    <div onClick={onClick}
+      title={`${spec.text}${spec.prereq_text ? `\nPrereq: ${spec.prereq_text}` : ""}`}
+      style={{
+        border: selected ? "2px solid #d97706" : `1px solid ${isOcc ? "#eab308" : "#fb923c"}`,
+        background: playable === false ? "#f5f5f4" : isOcc ? "#fefce8" : "#fff7ed",
+        opacity: playable === false ? 0.55 : 1,
+        borderRadius: 8, padding: "5px 7px", cursor: onClick ? "pointer" : "default",
+        width: 148, flexShrink: 0,
+      }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 4, fontSize: 11 }}>
+        <b>{spec.name}</b>
+        <span>{spec.points ? `⭐${spec.points}` : ""}{spec.traveling ? "↩" : ""}</span>
+      </div>
+      <div style={{ fontSize: 9, color: "#78716c", margin: "1px 0" }}>
+        {isOcc ? `Occupation${spec.min_players > 1 ? ` (${spec.min_players}+)` : ""}` : `Minor · ${costStr(spec.cost)}`}
+        {spec.deck === "custom" ? " · custom" : ""}
+        {spec.prereq_text ? ` · needs ${spec.prereq_text}` : ""}
+      </div>
+      <div style={{ fontSize: 9.5, color: "#44403c", lineHeight: 1.35, maxHeight: 52, overflow: "hidden" }}>
+        {spec.text}
+      </div>
+      {extra}
+    </div>
+  );
+}
+
+function HandPanel({ me, playableMinors }) {
+  const [open, setOpen] = useState(true);
+  if (!me || !Array.isArray(me.hand_occupations)) return null;
+  const total = me.hand_occupations.length + me.hand_minors.length;
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+        <div style={{ fontSize: 11, fontWeight: 800, color: "#57534e", textTransform: "uppercase" }}>
+          Your hand ({total})
+        </div>
+        <Btn small variant="secondary" onClick={() => setOpen(!open)}>{open ? "Hide" : "Show"}</Btn>
+      </div>
+      {open && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {me.hand_occupations.map((cid) => <HandCard key={cid} cid={cid} />)}
+          {me.hand_minors.map((cid) => (
+            <HandCard key={cid} cid={cid} playable={playableMinors?.includes(cid)} />
           ))}
         </div>
       )}
@@ -557,39 +683,90 @@ function BakePlanner({ me, bake, setBake, grainBudget }) {
 }
 
 function SowPlanner({ me, sow, setSow }) {
-  // sow: {cellIdx: "grain"|"vegetable"}
-  const emptyFields = me.cells.map((c, i) => ({ c, i }))
-    .filter(({ c }) => c.type === "field" && !c.crops).map(({ i }) => i);
+  // sow: {targetKey: "grain"|"vegetable"}; targetKey = cell index (number
+  // as string) or "card:<id>" for card fields (Beanfield etc.)
+  const targets = me.cells.map((c, i) => ({ key: String(i), label: `Field ${i}`, allowed: ["grain", "vegetable"], empty: c.type === "field" && !c.crops }))
+    .filter((t) => t.empty);
+  for (const inst of (me.minors || [])) {
+    const spec = cardSpec(inst.id);
+    if (spec.field && !inst.crops) {
+      targets.push({ key: `card:${inst.id}`, label: spec.name, allowed: spec.field.crops, empty: true });
+    }
+  }
   const used = { grain: 0, vegetable: 0 };
   Object.values(sow).forEach((crop) => used[crop]++);
-  const cycle = (idx) => {
-    const cur = sow[idx];
+  const cycle = (t) => {
+    const cur = sow[t.key];
     const next = { ...sow };
-    if (!cur) {
-      if (me.resources.grain - used.grain > 0) next[idx] = "grain";
-      else if (me.resources.vegetable - used.vegetable > 0) next[idx] = "vegetable";
-      else return;
-    } else if (cur === "grain") {
-      if (me.resources.vegetable - used.vegetable > 0) next[idx] = "vegetable";
-      else delete next[idx];
-    } else delete next[idx];
+    const options = t.allowed.filter((crop) => me.resources[crop] - used[crop] > 0 || sow[t.key] === crop);
+    const seq = [undefined, ...options];
+    const pos = seq.indexOf(cur);
+    const nxt = seq[(pos + 1) % seq.length];
+    if (nxt === undefined) delete next[t.key];
+    else next[t.key] = nxt;
     setSow(next);
   };
-  if (!emptyFields.length) return <div style={{ fontSize: 12 }}>No empty fields to sow.</div>;
+  if (!targets.length) return <div style={{ fontSize: 12 }}>No empty fields to sow.</div>;
   return (
     <div style={{ fontSize: 12 }}>
       <div style={{ fontWeight: 700, marginBottom: 4 }}>
-        Sow (click a field to cycle grain → vegetable → none):
+        Sow (click a field to cycle crops):
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {emptyFields.map((idx) => (
-          <Btn key={idx} small variant="secondary" onClick={() => cycle(idx)}>
-            Field {idx}: {sow[idx] ? GOODS[sow[idx]].icon : "—"}
+        {targets.map((t) => (
+          <Btn key={t.key} small variant="secondary" onClick={() => cycle(t)}>
+            {t.label}: {sow[t.key] ? GOODS[sow[t.key]].icon : "—"}
           </Btn>
         ))}
       </div>
     </div>
   );
+}
+
+function sowListFrom(sow) {
+  return Object.entries(sow).map(([key, crop]) =>
+    key.startsWith("card:") ? { card: key.slice(5), crop } : { cell: +key, crop });
+}
+
+// Picker for playing a minor improvement from hand.
+function MinorPicker({ me, playableMinors, chosen, setChosen, params, setParams, optional }) {
+  if (!Array.isArray(me.hand_minors) || !me.hand_minors.length) {
+    return <div style={{ fontSize: 12 }}>No minor improvements in hand.</div>;
+  }
+  const needsCell = chosen === "minor_shifting_cultivation";
+  return (
+    <div>
+      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+        {optional ? "Optionally play a minor improvement:" : "Play a minor improvement:"}
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {me.hand_minors.map((cid) => {
+          const playable = playableMinors?.includes(cid);
+          return (
+            <HandCard key={cid} cid={cid} playable={playable}
+              selected={chosen === cid}
+              onClick={playable ? () => setChosen(chosen === cid ? null : cid) : undefined} />
+          );
+        })}
+      </div>
+      {needsCell && (
+        <div style={{ marginTop: 6 }}>
+          <div style={{ fontSize: 12, marginBottom: 4 }}>Choose a space to plow:</div>
+          <FarmYard player={me} mode="cells"
+            plannedCells={new Set(params?.cell !== undefined ? [params.cell] : [])}
+            onCellClick={(i) => setParams({ cell: i })} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function minorAction(chosen, params) {
+  if (!chosen) return undefined;
+  const m = { card: chosen };
+  if (chosen === "minor_shifting_cultivation" && params?.cell !== undefined)
+    m.params = { cell: params.cell };
+  return m;
 }
 
 function ImprovementPicker({ state, me, chosen, setChosen, upgrade, setUpgrade }) {
@@ -632,7 +809,7 @@ function ImprovementPicker({ state, me, chosen, setChosen, upgrade, setUpgrade }
   );
 }
 
-function Planner({ space, state, me, submit, cancel, error }) {
+function Planner({ space, state, me, actionInfo, submit, cancel, error }) {
   const [cells, setCells] = useState([]);         // rooms / stables / plow
   const [mode, setMode] = useState("rooms");      // farm_expansion toggle
   const [fences, setFences] = useState(new Set());
@@ -641,12 +818,16 @@ function Planner({ space, state, me, submit, cancel, error }) {
   const [chosenImp, setChosenImp] = useState(null);
   const [upgrade, setUpgrade] = useState(false);
   const [choice, setChoice] = useState("reed");
+  const [chosenCard, setChosenCard] = useState(null);   // occupation or minor
+  const [cardParams, setCardParams] = useState(null);
+  const [tab, setTab] = useState("major");
+  const [useLasso, setUseLasso] = useState(false);
 
+  const playableMinors = state.playable_minors || [];
   const grainBudget = me.resources.grain - Object.values(sow).filter((c) => c === "grain").length;
-  const sowList = Object.entries(sow).map(([cell, crop]) => ({ cell: +cell, crop }));
+  const sowList = sowListFrom(sow);
   const bakeDict = Object.fromEntries(Object.entries(bake).filter(([, v]) => v > 0));
 
-  const toggleCell = (idx) => setCells(cells.includes(idx) ? cells.filter((c) => c !== idx) : [...cells, idx]);
   const toggleEdge = (edge) => {
     const next = new Set(fences);
     if (next.has(edge)) next.delete(edge); else next.add(edge);
@@ -654,28 +835,83 @@ function Planner({ space, state, me, submit, cancel, error }) {
   };
 
   const farmProps = { player: me, plannedFences: fences };
+  const canBakeOnSpace = (sid) => inPlay(me).some((inst) =>
+    (cardSpec(inst.id).bake_on_spaces || []).includes(sid));
 
   let title = "", body = null, action = null, disabled = false;
 
   if (space === "farmland" || space === "cultivation") {
     title = space === "farmland" ? "Plow 1 field" : "Cultivation: plow and/or sow";
     const plowCell = cells[0];
+    const extraBake = canBakeOnSpace(space);
     body = (
       <>
         <div style={{ fontSize: 12, marginBottom: 6 }}>Click an empty space to plow{space === "cultivation" ? " (optional)" : ""}.</div>
         <FarmYard {...farmProps} mode="cells" plannedCells={new Set(cells)}
           onCellClick={(i) => setCells(cells[0] === i ? [] : [i])} />
         {space === "cultivation" && <div style={{ marginTop: 8 }}><SowPlanner me={me} sow={sow} setSow={setSow} /></div>}
+        {extraBake && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 11, color: "#78716c" }}>Threshing Board: extra Bake Bread action</div>
+            <BakePlanner me={me} bake={bake} setBake={setBake} grainBudget={grainBudget} />
+          </div>
+        )}
       </>
     );
     if (space === "farmland") {
       action = { kind: "place", space, cell: plowCell };
+      if (Object.keys(bakeDict).length) action.bake = bakeDict;
       disabled = plowCell === undefined;
     } else {
       action = { kind: "place", space, plow: plowCell ?? null, sow: sowList };
       if (plowCell === undefined) delete action.plow;
+      if (Object.keys(bakeDict).length) action.bake = bakeDict;
       disabled = plowCell === undefined && !sowList.length;
     }
+  } else if (space === "lessons" || space === "lessons_b") {
+    const cost = actionInfo?.occ_cost ?? state.occ_costs?.[space] ?? 1;
+    title = `Lessons: play an occupation (${cost} food)`;
+    body = (
+      <>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {(me.hand_occupations || []).map((cid) => (
+            <HandCard key={cid} cid={cid} selected={chosenCard === cid}
+              playable={me.resources.food >= cost}
+              onClick={me.resources.food >= cost
+                ? () => setChosenCard(chosenCard === cid ? null : cid) : undefined} />
+          ))}
+        </div>
+      </>
+    );
+    action = { kind: "place", space, card: chosenCard };
+    disabled = !chosenCard;
+  } else if (space === "meeting_place") {
+    title = "Meeting Place: become starting player";
+    body = (
+      <MinorPicker me={me} playableMinors={playableMinors} optional
+        chosen={chosenCard} setChosen={setChosenCard}
+        params={cardParams} setParams={setCardParams} />
+    );
+    action = { kind: "place", space };
+    const m = minorAction(chosenCard, cardParams);
+    if (m) action.minor = m;
+    disabled = chosenCard === "minor_shifting_cultivation" && cardParams?.cell === undefined;
+  } else if (space === "basic_wish") {
+    title = "Basic Wish for Children: family growth";
+    body = (
+      <>
+        <div style={{ fontSize: 12, marginBottom: 6 }}>
+          Your family grows by one person (needs more room than people).
+        </div>
+        <MinorPicker me={me} playableMinors={playableMinors} optional
+          chosen={chosenCard} setChosen={setChosenCard}
+          params={cardParams} setParams={setCardParams} />
+      </>
+    );
+    action = { kind: "place", space };
+    const m = minorAction(chosenCard, cardParams);
+    if (m) action.minor = m;
+    disabled = chosenCard === "minor_shifting_cultivation" && cardParams?.cell === undefined;
   } else if (space === "farm_expansion") {
     title = "Farm Expansion: build rooms and/or stables";
     body = (
@@ -705,25 +941,10 @@ function Planner({ space, state, me, submit, cancel, error }) {
     const stables = cells.filter((c) => c.t === "stable").map((c) => c.i);
     action = { kind: "place", space, rooms, stables };
     disabled = !rooms.length && !stables.length;
-  } else if (space === "side_job") {
-    title = "Side Job: 1 stable (1 wood) and/or bake";
-    const stableCell = cells[0];
-    body = (
-      <>
-        <div style={{ fontSize: 12, marginBottom: 6 }}>Click a cell for the stable (optional):</div>
-        <FarmYard {...farmProps} mode="cells" plannedCells={new Set(cells)}
-          onCellClick={(i) => setCells(cells[0] === i ? [] : [i])} />
-        <div style={{ marginTop: 8 }}>
-          <BakePlanner me={me} bake={bake} setBake={setBake} grainBudget={grainBudget} />
-        </div>
-      </>
-    );
-    action = { kind: "place", space, bake: bakeDict };
-    if (stableCell !== undefined) action.stable = stableCell;
-    disabled = stableCell === undefined && !Object.keys(bakeDict).length;
   } else if (space === "fencing" || space === "farm_redevelopment") {
     const isReno = space === "farm_redevelopment";
     title = isReno ? "Farm Redevelopment: renovate, then fences" : "Build fences (1 wood each)";
+    const hasMiningHammer = inPlay(me).some((i) => i.id === "minor_mining_hammer");
     body = (
       <>
         {isReno && (
@@ -737,10 +958,23 @@ function Planner({ space, state, me, submit, cancel, error }) {
           Fences must fully enclose pastures.
         </div>
         <FarmYard {...farmProps} mode="edges" onEdgeClick={toggleEdge} />
+        {isReno && hasMiningHammer && (
+          <div style={{ fontSize: 12, marginTop: 6 }}>
+            Mining Hammer free stable cell:{" "}
+            <Btn small variant="secondary" onClick={() => setCells(cells.length ? [] : [0])}>
+              {cells.length ? `cell ${cells[0]}` : "none"}
+            </Btn>
+            {cells.length > 0 && (
+              <FarmYard player={me} mode="cells" plannedCells={new Set(cells)}
+                onCellClick={(i) => setCells([i])} />
+            )}
+          </div>
+        )}
       </>
     );
     action = { kind: "place", space };
     if (fences.size) action.fences = [...fences];
+    if (isReno && cells.length) action.stable = cells[0];
     disabled = isReno ? false : !fences.size;
   } else if (space === "grain_utilization") {
     title = "Grain Utilization: sow and/or bake";
@@ -756,35 +990,70 @@ function Planner({ space, state, me, submit, cancel, error }) {
     disabled = !sowList.length && !Object.keys(bakeDict).length;
   } else if (space === "major_improvement" || space === "house_redevelopment") {
     const isReno = space === "house_redevelopment";
-    title = isReno ? "House Redevelopment: renovate, then improvement" : "Build a major improvement";
+    title = isReno ? "House Redevelopment: renovate, then improvement"
+      : "Major or Minor Improvement";
     const spec = chosenImp ? IMPROVEMENTS[chosenImp] : null;
+    const hasMiningHammer = inPlay(me).some((i) => i.id === "minor_mining_hammer");
     body = (
       <>
         {isReno && (
           <div style={{ fontSize: 12, marginBottom: 6 }}>
             Renovates your house to {me.house_type === "wood" ? "clay" : "stone"}
-            (1🌿 + 1 per room). Optionally also build an improvement:
+            (1🌿 + 1 per room). Optionally also:
           </div>
         )}
-        <ImprovementPicker state={state} me={me} chosen={chosenImp} setChosen={setChosenImp}
-          upgrade={upgrade} setUpgrade={setUpgrade} />
-        {spec?.oven && me.resources.grain > 0 && (
-          <div style={{ marginTop: 8 }}>
-            <div style={{ fontSize: 12, fontWeight: 700 }}>Bake immediately (optional):</div>
-            <Stepper value={bake[chosenImp] || 0} min={0}
-              max={Math.min(spec.bakeLimit, me.resources.grain)}
-              onChange={(v) => setBake({ [chosenImp]: v })} />
+        <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+          <Btn small variant={tab === "major" ? "primary" : "secondary"}
+            onClick={() => { setTab("major"); setChosenCard(null); }}>Major improvement</Btn>
+          <Btn small variant={tab === "minor" ? "primary" : "secondary"}
+            onClick={() => { setTab("minor"); setChosenImp(null); }}>Minor improvement</Btn>
+        </div>
+        {tab === "major" ? (
+          <>
+            <ImprovementPicker state={state} me={me} chosen={chosenImp} setChosen={setChosenImp}
+              upgrade={upgrade} setUpgrade={setUpgrade} />
+            {spec?.oven && me.resources.grain > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 700 }}>Bake immediately (optional):</div>
+                <Stepper value={bake[chosenImp] || 0} min={0}
+                  max={Math.min(spec.bakeLimit, me.resources.grain)}
+                  onChange={(v) => setBake({ [chosenImp]: v })} />
+              </div>
+            )}
+          </>
+        ) : (
+          <MinorPicker me={me} playableMinors={playableMinors} optional={isReno}
+            chosen={chosenCard} setChosen={setChosenCard}
+            params={cardParams} setParams={setCardParams} />
+        )}
+        {isReno && hasMiningHammer && (
+          <div style={{ fontSize: 12, marginTop: 6 }}>
+            Mining Hammer free stable cell:{" "}
+            <Btn small variant="secondary" onClick={() => setCells(cells.length ? [] : [0])}>
+              {cells.length ? `cell ${cells[0]}` : "none"}
+            </Btn>
+            {cells.length > 0 && (
+              <FarmYard player={me} mode="cells" plannedCells={new Set(cells)}
+                onCellClick={(i) => setCells([i])} />
+            )}
           </div>
         )}
       </>
     );
     action = { kind: "place", space };
-    if (chosenImp) {
+    if (tab === "major" && chosenImp) {
       action.improvement = chosenImp;
       if (upgrade) action.upgrade = true;
       if (bakeDict[chosenImp]) action.bake = { [chosenImp]: bakeDict[chosenImp] };
+    } else if (tab === "minor") {
+      const m = minorAction(chosenCard, cardParams);
+      if (m) action.minor = m;
     }
-    disabled = isReno ? false : !chosenImp;
+    if (isReno && cells.length) action.stable = cells[0];
+    const pickedSomething = (tab === "major" && chosenImp) || (tab === "minor" && chosenCard);
+    disabled = isReno
+      ? (chosenCard === "minor_shifting_cultivation" && cardParams?.cell === undefined)
+      : !pickedSomething;
   } else if (space === "resource_market_3p") {
     title = "Resource Market";
     body = (
@@ -798,6 +1067,18 @@ function Planner({ space, state, me, submit, cancel, error }) {
       </div>
     );
     action = { kind: "place", space, choice };
+  } else if (space.endsWith("_market")) {
+    // Animal market with the Lasso option.
+    title = "Animal market";
+    body = (
+      <label style={{ fontSize: 12 }}>
+        <input type="checkbox" checked={useLasso}
+          onChange={(e) => setUseLasso(e.target.checked)} />{" "}
+        Use Lasso: place a second person immediately after this one
+      </label>
+    );
+    action = { kind: "place", space };
+    if (useLasso) action.lasso = true;
   }
 
   return (
@@ -818,9 +1099,10 @@ function FeedDialog({ me, state, foodNeeded, submit, error }) {
   const cook = bestCook(me);
   const totals = animalTotals(me);
 
+  const raw = rawValues(me);
   const options = [];
-  options.push({ key: "grain_raw", label: "Grain → 1 food", good: "grain", via: "raw", value: 1, max: me.resources.grain });
-  options.push({ key: "veg_raw", label: "Vegetable → 1 food", good: "vegetable", via: "raw", value: 1, max: me.resources.vegetable });
+  options.push({ key: "grain_raw", label: `Grain → ${raw.grain} food`, good: "grain", via: "raw", value: raw.grain, max: me.resources.grain });
+  options.push({ key: "veg_raw", label: `Vegetable → ${raw.vegetable} food`, good: "vegetable", via: "raw", value: raw.vegetable, max: me.resources.vegetable });
   if (cook) {
     options.push({ key: "veg_cook", label: `Cook vegetable → ${cook.vegetable} food`, good: "vegetable", via: "cook", value: cook.vegetable, max: me.resources.vegetable });
     for (const a of ANIMALS) {
@@ -897,12 +1179,15 @@ function AccommodateDialog({ me, gained, submit, error }) {
   const stables = me.cells.map((c, i) => ({ c, i }))
     .filter(({ c, i }) => c.stable && c.type === "empty" && !pastures.some((p) => p.includes(i)))
     .map(({ i }) => i);
+  const houseCap = houseCapacity(me);
+  const pBonus = pastureBonus(me);
 
   // Pool: current farm animals + gained.
   const pool = animalTotals(me);
   for (const [a, n] of Object.entries(gained || {})) pool[a] += n;
 
-  // Assignment state: pastures[i] → {type, count}; stables → {idx: type|null}; pet.
+  // Assignment state: pastures[i] → {type, count}; stables → {idx: type|null};
+  // pets → {animal: count} in the house.
   const [pastureAssign, setPastureAssign] = useState(() =>
     pastures.map((p) => {
       // Start from current contents if they exist.
@@ -917,7 +1202,7 @@ function AccommodateDialog({ me, gained, submit, error }) {
     for (const i of stables) out[i] = me.cells[i].animal ? me.cells[i].animal.type : null;
     return out;
   });
-  const [pet, setPet] = useState(me.pet);
+  const [pets, setPets] = useState({ ...(me.pets || {}) });
   const [cookN, setCookN] = useState({});
   const [discardN, setDiscardN] = useState({});
   const cook = bestCook(me);
@@ -925,14 +1210,14 @@ function AccommodateDialog({ me, gained, submit, error }) {
   const placed = { sheep: 0, boar: 0, cattle: 0 };
   pastureAssign.forEach((a) => { if (a.type) placed[a.type] += a.count; });
   Object.values(stableAssign).forEach((t) => { if (t) placed[t] += 1; });
-  if (pet) placed[pet] += 1;
-  const cooked = { ...cookN }, discarded = { ...discardN };
+  for (const [a, n] of Object.entries(pets)) placed[a] += n;
+  const petsTotal = Object.values(pets).reduce((x, y) => x + y, 0);
   const leftover = {};
   for (const a of ANIMALS) {
-    leftover[a] = pool[a] - placed[a] - (cooked[a] || 0) - (discarded[a] || 0);
+    leftover[a] = pool[a] - placed[a] - (cookN[a] || 0) - (discardN[a] || 0);
   }
-  const balanced = ANIMALS.every((a) => leftover[a] === 0);
-  const overPlaced = ANIMALS.some((a) => leftover[a] < 0);
+  const balanced = ANIMALS.every((a) => leftover[a] === 0) && petsTotal <= houseCap;
+  const overPlaced = ANIMALS.some((a) => leftover[a] < 0) || petsTotal > houseCap;
 
   const cycleType = (cur, allowNull = true) => {
     const order = allowNull ? [null, ...ANIMALS] : ANIMALS;
@@ -948,7 +1233,8 @@ function AccommodateDialog({ me, gained, submit, error }) {
     for (const [idx, t] of Object.entries(stableAssign)) {
       if (t) placements.push({ cell: +idx, type: t, count: 1 });
     }
-    const act = { kind: "accommodate", placements, pet };
+    const act = { kind: "accommodate", placements,
+                  pets: Object.fromEntries(Object.entries(pets).filter(([, v]) => v > 0)) };
     const cookOut = Object.fromEntries(Object.entries(cookN).filter(([, v]) => v > 0));
     const discOut = Object.fromEntries(Object.entries(discardN).filter(([, v]) => v > 0));
     if (Object.keys(cookOut).length) act.cook = cookOut;
@@ -972,7 +1258,7 @@ function AccommodateDialog({ me, gained, submit, error }) {
         </div>
 
         {pastures.map((p, i) => {
-          const cap = pastureCapacity(me.cells, p);
+          const cap = pastureCapacity(me.cells, p) + pBonus;
           const a = pastureAssign[i];
           return (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, marginBottom: 4 }}>
@@ -1001,11 +1287,15 @@ function AccommodateDialog({ me, gained, submit, error }) {
             }>{stableAssign[idx] ? GOODS[stableAssign[idx]].icon : "—"}</Btn>
           </div>
         ))}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, marginBottom: 8 }}>
-          <span style={{ minWidth: 170 }}>Pet (in your house, cap 1):</span>
-          <Btn small variant="secondary" onClick={() => setPet(cycleType(pet))}>
-            {pet ? GOODS[pet].icon : "—"}
-          </Btn>
+        <div style={{ fontSize: 12, marginBottom: 8 }}>
+          <div style={{ fontWeight: 700 }}>House pets (capacity {houseCap}):</div>
+          {ANIMALS.map((a) => (
+            <div key={a} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ minWidth: 170 }}>{GOODS[a].icon} in the house</span>
+              <Stepper value={pets[a] || 0} min={0} max={houseCap}
+                onChange={(v) => setPets({ ...pets, [a]: v })} />
+            </div>
+          ))}
         </div>
 
         {cook && (
@@ -1095,12 +1385,13 @@ function ScoreSheet({ state }) {
 // ============================================================
 
 const SIMPLE_SPACES = new Set([
-  "meeting_place", "grain_seeds", "vegetable_seeds", "day_laborer",
+  "grain_seeds", "vegetable_seeds", "day_laborer",
   "forest", "clay_pit", "reed_bank", "fishing", "copse", "grove",
   "hollow_3p", "hollow_4p", "traveling_players", "sheep_market",
   "pig_market", "cattle_market", "western_quarry", "eastern_quarry",
-  "resource_market_4p", "basic_wish", "urgent_wish",
+  "resource_market_4p", "urgent_wish",
 ]);
+const MARKETS = new Set(["sheep_market", "pig_market", "cattle_market"]);
 
 function GameBoard({ game }) {
   const { gameState: state, gameLogs, submitAction, error, playerId } = game;
@@ -1125,6 +1416,12 @@ function GameBoard({ game }) {
   const phase = game.phaseInfo || {};
 
   const pick = (spaceId) => {
+    // Markets open a planner only when the Lasso is available.
+    if (MARKETS.has(spaceId) && me && hasLasso(me)
+        && me.people_total - me.people_placed >= 2) {
+      setPlanner(spaceId);
+      return;
+    }
     if (SIMPLE_SPACES.has(spaceId)) submitAction({ kind: "place", space: spaceId });
     else setPlanner(spaceId);
   };
@@ -1191,6 +1488,7 @@ function GameBoard({ game }) {
             )}
             {planner && me && (
               <Planner space={planner} state={state} me={me} error={error}
+                actionInfo={validActions.find((a) => a.space === planner)}
                 submit={(a) => { submitAction(a); setPlanner(null); }}
                 cancel={() => setPlanner(null)} />
             )}
@@ -1205,6 +1503,7 @@ function GameBoard({ game }) {
                 </PlayerPanel>
               ))}
             </div>
+            {me && <HandPanel me={me} playableMinors={state.playable_minors} />}
           </div>
 
           {/* Right: log */}
