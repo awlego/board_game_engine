@@ -96,8 +96,7 @@ sows/builds/bakes..." cards are expressible without disturbing the
 existing owner-only cards. See `decks/GUIDE.md`'s hook table for the
 full ctx shape of every event, including `converted` and
 `returning_home` (fired once per player at the end of the work phase,
-before `occupied_by` resets — see that file for the prompt-safety
-caveat).
+before `occupied_by` resets).
 
 ### 3. Modifier queries (pull)
 
@@ -133,9 +132,13 @@ Mid-effect decisions use the **prompt queue** (`state["prompts"]`): a hook
 calls `prompt_choice(state, player, card_id, question, options)`; the engine
 blocks until the target player answers `{"kind":"choice","index":i}`, which
 dispatches to the card's `resolve_choice` hook. Gaining animals enqueues the
-same accommodation prompt the Sheep Market uses. Prefer parameters (known up
-front, one round trip) when the decision space is a board choice; prefer
-prompts for "your choice of X or Y" effects.
+same accommodation prompt the Sheep Market uses. This is safe to do from any
+hook point, including `round_start` and `returning_home` — the engine holds
+the game on the prompt's target player and resumes the round/harvest
+transition correctly once it's answered (see `decks/GUIDE.md`), the one
+exception being a traveling card's own `play` hook (see that file). Prefer
+parameters (known up front, one round trip) when the decision space is a
+board choice; prefer prompts for "your choice of X or Y" effects.
 
 **Activated abilities** are the third input channel: a card with a
 `card_action` spec ({available, apply, description}) is offered as an extra

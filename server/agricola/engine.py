@@ -355,7 +355,17 @@ class AgricolaEngine(GameEngine):
         rnd = state["round"]
         state["stage"] = stage_of_round(rnd)
         state["phase"] = "work"
-        state["prompts"] = []
+        # Prompts must never be wiped here: a returning_home hook (fired
+        # by the previous round's _end_work_phase) or a round_start hook
+        # from an earlier player this same round may have queued one
+        # that hasn't been answered yet. _end_work_phase and
+        # _advance_work now refuse to cascade into a new round while any
+        # prompt is pending (they stash where to resume and stop), so
+        # state["prompts"] is always empty by the time we get here.
+        # Assert instead of silently wiping so a future regression fails
+        # loudly instead of discarding a card's queued decision.
+        assert not state["prompts"], \
+            "_start_round entered with unresolved prompts pending"
         log.append(f"— Round {rnd} (stage {state['stage']}) —")
 
         # Reveal this round's action space card.
@@ -421,10 +431,25 @@ class AgricolaEngine(GameEngine):
         people to place and at least one usable action space. Players
         with people but no usable space forfeit their remaining
         placements. Ends the work phase when nobody can place.
+
+        If a prompt (choice/accommodate) is already pending -- e.g. a
+        round_start hook queued one before anyone placed -- this must
+        NOT run the forfeit loop: every player's placement query is
+        legitimately empty while a prompt blocks them, and that is not
+        the same as "cannot use any space". Stash where we meant to
+        resume and stop; _apply_choice/_apply_accommodate re-invoke this
+        (via the default start_pidx lookup below) once the prompt queue
+        drains.
         """
         n = state["player_count"]
         if start_pidx is None:
-            start_pidx = (state["current_player"] + 1) % n
+            start_pidx = state.pop("_pending_work_start", None)
+            if start_pidx is None:
+                start_pidx = (state["current_player"] + 1) % n
+
+        if self._prompt(state):
+            state["_pending_work_start"] = start_pidx
+            return
 
         for step in range(n):
             pidx = (start_pidx + step) % n
@@ -455,6 +480,17 @@ class AgricolaEngine(GameEngine):
                    "extra": {}}
             cards.fire_player(state, p, "returning_home", ctx)
             self._apply_extras(state, p, ctx["extra"], log)
+        # A returning_home hook may have queued a prompt (choice, or an
+        # animal grant via ctx["extra"]). Don't cascade into harvest/the
+        # next round until it's answered -- stash that we still owe this
+        # decision; _apply_choice/_apply_accommodate call
+        # _finish_end_work_phase once the prompt queue drains.
+        if self._prompt(state):
+            state["_end_work_phase_pending"] = True
+            return
+        self._finish_end_work_phase(state, log)
+
+    def _finish_end_work_phase(self, state, log):
         if state["round"] in HARVEST_ROUNDS:
             self._start_harvest(state, log)
         else:
@@ -1245,7 +1281,12 @@ class AgricolaEngine(GameEngine):
         for give, get in converted_events:
             self._fire_converted(state, p, give, get, "cook", log)
 
-        if state["phase"] == "work" and not self._prompt(state):
+        if not self._prompt(state) and state.pop("_end_work_phase_pending", False):
+            # This prompt was the last thing blocking the round/harvest
+            # transition (a returning_home hook queued it) -- resume
+            # exactly where _end_work_phase left off.
+            self._finish_end_work_phase(state, log)
+        elif state["phase"] == "work" and not self._prompt(state):
             if lasso and p["people_placed"] < p["people_total"]:
                 log.append(f"{p['name']} uses the Lasso to place again")
                 self._advance_work(state, log, start_pidx=pidx)
@@ -1365,7 +1406,12 @@ class AgricolaEngine(GameEngine):
         state["prompts"].pop(0)
         fn(state, p, inst, ctx)
         self._apply_extras(state, p, ctx["extra"], log)
-        if state["phase"] == "work" and not self._prompt(state):
+        if not self._prompt(state) and state.pop("_end_work_phase_pending", False):
+            # This prompt was the last thing blocking the round/harvest
+            # transition (a returning_home hook queued it) -- resume
+            # exactly where _end_work_phase left off.
+            self._finish_end_work_phase(state, log)
+        elif state["phase"] == "work" and not self._prompt(state):
             if prompt.get("after_lasso") and \
                     p["people_placed"] < p["people_total"]:
                 self._advance_work(state, log, start_pidx=pidx)

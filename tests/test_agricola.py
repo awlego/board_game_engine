@@ -1344,12 +1344,12 @@ def test_returning_home_spaces_harvest_round(engine, temp_card):
     assert inst["data"]["fires"] == [["forest"]]  # fired exactly once
 
 
-def test_returning_home_prompt_discarded_on_non_harvest_round(engine, temp_card):
-    """Prompting (or granting animals via ctx["extra"]) from
-    returning_home is unsafe except on harvest rounds: on a non-harvest
-    round the very next _start_round wipes state["prompts"] before the
-    player ever gets to respond -- the same hazard already documented
-    for round_start hooks. See decks/GUIDE.md."""
+def test_returning_home_prompt_survives_non_harvest_round(engine, temp_card):
+    """Prompting from returning_home is now safe on a non-harvest round
+    too: the queued prompt blocks the _end_work_phase -> _end_round ->
+    _start_round cascade (instead of being silently wiped by the next
+    _start_round) until the owning player answers it, and answering it
+    resumes the cascade into the next round. See decks/GUIDE.md."""
     s = make_state(engine, 2)
     cid = "test_returning_home_prompt_nh"
 
@@ -1357,10 +1357,11 @@ def test_returning_home_prompt_discarded_on_non_harvest_round(engine, temp_card)
         cards.prompt_choice(state, player, inst["id"], "Take wood or clay?",
                              ["wood", "clay"])
 
+    def resolve(state, player, inst, ctx):
+        inst["data"]["resolved"] = ctx["option"]
+
     temp_card(cid, "Test Card", "minor", "test",
-               hooks={"returning_home": hook},
-               resolve_choice=lambda state, player, inst, ctx:
-                   inst["data"].setdefault("resolved", True))
+               hooks={"returning_home": hook}, resolve_choice=resolve)
     put_in_play(s, 0, cid)
     s["round"] = 2  # not a harvest round
     s["phase"] = "work"
@@ -1368,9 +1369,195 @@ def test_returning_home_prompt_discarded_on_non_harvest_round(engine, temp_card)
         pl["people_placed"] = pl["people_total"]
     log = []
     engine._end_work_phase(s, log)
-    assert s["prompts"] == []  # queued, then silently wiped
+    # The cascade stops at the pending prompt instead of steamrolling
+    # into round 3.
+    assert s["round"] == 2
+    assert len(s["prompts"]) == 1
+    owner_pid = s["players"][0]["player_id"]
+    assert engine.get_waiting_for(s) == [owner_pid]
+    other_pid = s["players"][1]["player_id"]
+    assert engine.get_valid_actions(s, other_pid) == []
+
+    s = engine.apply_action(s, owner_pid, {"kind": "choice", "index": 1}).new_state
     inst = next(i for i in s["players"][0]["minors"] if i["id"] == cid)
-    assert "resolved" not in inst["data"]
+    assert inst["data"]["resolved"] == "clay"
+    # Resolving it lets the cascade continue into round 3; nobody's
+    # placements were forfeited by the stall.
+    assert s["round"] == 3
+    assert s["prompts"] == []
+    assert all(p["people_placed"] == 0 for p in s["players"])
+
+
+def test_returning_home_prompt_resolves_through_harvest_round(engine, temp_card):
+    """Same hazard, on a harvest round: the queued prompt must resolve
+    before the harvest's field/feeding flow proceeds, and answering it
+    correctly continues into the harvest."""
+    s = make_state(engine, 2)
+    cid = "test_returning_home_prompt_h"
+
+    def hook(state, player, inst, ctx):
+        cards.prompt_choice(state, player, inst["id"], "Take wood or clay?",
+                             ["wood", "clay"])
+
+    def resolve(state, player, inst, ctx):
+        inst["data"]["resolved"] = ctx["option"]
+
+    temp_card(cid, "Test Card", "minor", "test",
+               hooks={"returning_home": hook}, resolve_choice=resolve)
+    put_in_play(s, 0, cid)
+    s["round"] = 4  # a harvest round
+    s["phase"] = "work"
+    for pl in s["players"]:
+        pl["people_placed"] = pl["people_total"]
+    log = []
+    engine._end_work_phase(s, log)
+    # Harvest hasn't started yet -- still "work" phase, waiting on the
+    # prompt.
+    assert s["phase"] == "work"
+    assert len(s["prompts"]) == 1
+    owner_pid = s["players"][0]["player_id"]
+
+    s = engine.apply_action(s, owner_pid, {"kind": "choice", "index": 0}).new_state
+    inst = next(i for i in s["players"][0]["minors"] if i["id"] == cid)
+    assert inst["data"]["resolved"] == "wood"
+    # Resolving it runs the harvest: field phase applied, phase moves to
+    # feeding.
+    assert s["phase"] == "feeding"
+    assert s["harvest_index"] == 1
+
+
+def test_round_start_choice_prompt_does_not_forfeit_round(engine, temp_card):
+    """A round_start hook may safely prompt: the engine holds the game
+    on the prompt's owner (instead of every player's placement query
+    coming back empty and _advance_work treating that as "nobody can
+    place, forfeit the round") until it's answered, then placement
+    continues normally."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = 1 - first
+    cid = "test_round_start_choice"
+
+    def hook(state, player, inst, ctx):
+        cards.prompt_choice(state, player, inst["id"], "Wood or clay?",
+                             ["wood", "clay"])
+
+    def resolve(state, player, inst, ctx):
+        player["resources"][ctx["option"]] += 1
+
+    temp_card(cid, "Test Card", "minor", "test",
+               hooks={"round_start": hook}, resolve_choice=resolve)
+    put_in_play(s, first, cid)
+    log = []
+    engine._start_round(s, log)
+
+    prompt = s["prompts"][0]
+    assert prompt["type"] == "choice"
+    assert prompt["player"] == first
+    owner_pid = s["players"][first]["player_id"]
+    other_pid = s["players"][other]["player_id"]
+    assert engine.get_waiting_for(s) == [owner_pid]
+    assert engine.get_valid_actions(s, other_pid) == []
+
+    wood_before = s["players"][first]["resources"]["wood"]
+    s = engine.apply_action(s, owner_pid, {"kind": "choice", "index": 0}).new_state
+    assert s["players"][first]["resources"]["wood"] == wood_before + 1
+    assert s["prompts"] == []
+    # The round was not forfeited: nobody's placements were consumed,
+    # and real placement actions are available again.
+    assert all(p["people_placed"] == 0 for p in s["players"])
+    cur_pid = s["players"][s["current_player"]]["player_id"]
+    actions = engine.get_valid_actions(s, cur_pid)
+    assert any(a["kind"] == "place" for a in actions)
+
+
+def test_round_start_animal_grant_accommodates(engine, temp_card):
+    """A round_start hook granting an animal via ctx["extra"] queues the
+    normal accommodation prompt (instead of the grant being silently
+    discarded, or every player's round being forfeited)."""
+    s, first = sheep_pasture_state(engine)
+    other = 1 - first
+    cid = "test_round_start_sheep_grant"
+    temp_card(cid, "Test Card", "minor", "test",
+               hooks={"round_start": lambda state, player, inst, ctx:
+                      ctx["extra"].update({"sheep": 1})})
+    put_in_play(s, first, cid)
+    log = []
+    engine._start_round(s, log)
+
+    prompt = s["prompts"][0]
+    assert prompt["type"] == "accommodate"
+    assert prompt["player"] == first
+    assert prompt["gained"] == {"sheep": 1}
+    owner_pid = s["players"][first]["player_id"]
+    other_pid = s["players"][other]["player_id"]
+    assert engine.get_waiting_for(s) == [owner_pid]
+    assert engine.get_valid_actions(s, other_pid) == []
+
+    s = engine.apply_action(s, owner_pid, {
+        "kind": "accommodate",
+        "placements": [{"cell": 4, "type": "sheep", "count": 1}],
+    }).new_state
+    assert s["prompts"] == []
+    assert s["players"][first]["cells"][4]["animal"] == {"type": "sheep", "count": 1}
+    # The round was not forfeited: nobody's placements were consumed.
+    assert all(p["people_placed"] == 0 for p in s["players"])
+
+
+def test_returning_home_and_round_start_prompts_cascade_in_one_call(engine, temp_card):
+    """A single apply_action resolving a returning_home prompt can
+    cascade all the way through _end_round/_start_round into a NEW
+    prompt queued by the next round's own round_start hook. The
+    cascade must stop at that new prompt (not steamroll past it into
+    forfeited placements), and round setup for the next round must run
+    exactly once (no double-firing round_start)."""
+    s = make_state(engine, 2)
+    cid = "test_double_stall"
+    starts = []
+
+    def returning_home_hook(state, player, inst, ctx):
+        cards.prompt_choice(state, player, inst["id"],
+                             "Returning: wood or clay?", ["wood", "clay"],
+                             data={"stage": "returning"})
+
+    def round_start_hook(state, player, inst, ctx):
+        starts.append(ctx["round"])
+        cards.prompt_choice(state, player, inst["id"],
+                             "Round start: wood or clay?", ["wood", "clay"],
+                             data={"stage": "round_start"})
+
+    def resolve(state, player, inst, ctx):
+        inst["data"].setdefault("resolved", []).append(
+            (ctx["data"]["stage"], ctx["option"]))
+
+    temp_card(cid, "Test Card", "minor", "test",
+               hooks={"returning_home": returning_home_hook,
+                      "round_start": round_start_hook},
+               resolve_choice=resolve)
+    put_in_play(s, 0, cid)
+    s["round"] = 2  # not a harvest round
+    s["phase"] = "work"
+    for pl in s["players"]:
+        pl["people_placed"] = pl["people_total"]
+    log = []
+    engine._end_work_phase(s, log)
+    assert s["round"] == 2
+    assert len(s["prompts"]) == 1
+    owner_pid = s["players"][0]["player_id"]
+
+    s = engine.apply_action(s, owner_pid, {"kind": "choice", "index": 0}).new_state
+    # Round setup for round 3 ran, and its own round_start prompt is now
+    # pending -- the cascade stopped there instead of skipping it.
+    assert s["round"] == 3
+    assert starts == [3]  # round_start fired exactly once, for round 3
+    assert len(s["prompts"]) == 1
+    inst = next(i for i in s["players"][0]["minors"] if i["id"] == cid)
+    assert inst["data"]["resolved"] == [("returning", "wood")]
+
+    s = engine.apply_action(s, owner_pid, {"kind": "choice", "index": 1}).new_state
+    assert s["prompts"] == []
+    inst = next(i for i in s["players"][0]["minors"] if i["id"] == cid)
+    assert inst["data"]["resolved"] == [("returning", "wood"), ("round_start", "clay")]
+    assert all(p["people_placed"] == 0 for p in s["players"])
 
 
 def test_renovate_any_broadcasts_to_other_players(engine, temp_card):

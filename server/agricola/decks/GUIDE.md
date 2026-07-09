@@ -81,18 +81,17 @@ event fires after the accommodation's own prompt has already been
 popped, so a hook granting more animals queues a fresh prompt instead of
 being merged into (and discarded with) the one just resolved.
 
-**`returning_home` prompt safety (verified empirically, see
-`tests/test_agricola.py`):** do not call `prompt_choice` (or grant
-animals via `ctx["extra"]`) from a `returning_home` hook. On a harvest
-round, `_end_work_phase` leads into `_start_harvest`/feeding, which
-does not clear `state["prompts"]`, so a queued prompt would survive
-long enough to reach the player. But on a non-harvest round,
-`_end_work_phase` leads straight into the next `_start_round`, which
-clears `state["prompts"]` before anyone can respond — the exact same
-hazard already documented for `round_start` hooks below. Since a card
-has no way to know in advance whether the round it fires on is a
-harvest round, `returning_home` hooks must auto-apply their effect
-(pick a default, like `round_start` hooks do) rather than prompt.
+**`returning_home` prompts are safe (verified in `tests/test_agricola.py`):**
+calling `prompt_choice` (or granting animals via `ctx["extra"]`) from a
+`returning_home` hook works correctly on both harvest and non-harvest
+rounds. `_end_work_phase` checks for a pending prompt after firing every
+player's `returning_home` hooks; if one is queued, it stops there
+instead of cascading into `_start_harvest`/`_end_round`+`_start_round`,
+and `get_waiting_for`/`get_valid_actions` hold the game on the prompt's
+target player in the meantime. Once the prompt (or the last of several,
+if more than one player's cards queued one) is answered, the engine
+resumes exactly where it left off — into the harvest on a harvest
+round, into the next round otherwise.
 
 `resolve_choice` is **not** a hook: pass it as a top-level spec key
 (`compendium_card(..., resolve_choice=fn)`); the engine reads
@@ -144,12 +143,30 @@ round-dependent or variable-cost condition needs that.
 ["1 wood", "1 clay"], data={...})`, then define the top-level
 `resolve_choice=fn` spec key and read `ctx["index"]`.
 
-**Do not prompt (or grant animals via `ctx["extra"]`) from a
-`round_start` hook**: `_start_round` clears `state["prompts"]` before
-firing the event, and a prompt pending at round start blocks every
-player's placements, so the effect is silently discarded or the round
-is forfeited. Auto-apply the effect instead (pick a sane default, or
-place animals best-effort like the breeding phase does).
+**Prompting (or granting animals via `ctx["extra"]`) from a
+`round_start` hook is safe**: `_advance_work` holds the game on the
+prompt's target player instead of treating "everyone's placement query
+is empty while a prompt is pending" as "nobody can place, forfeit the
+round". `state["prompts"]` is never cleared by `_start_round` (a card
+that queued a prompt earlier the same round, or the round before, is
+guaranteed to have been resolved already — see `_end_work_phase`
+below). Once the prompt is answered, real placement resumes from the
+round's normal starting player.
+
+Existing cards that auto-apply a default instead of prompting from
+`round_start`/`returning_home` (because this used to be unsafe) don't
+need to change, but a future pass could turn them into real prompts
+now that the mechanism supports it.
+
+**Remaining constraint — traveling minor improvements can't prompt from
+`play`:** a `traveling=True` card's instance is handed to the left
+neighbor (or discarded in solo) immediately after its `play` hook runs,
+before it is ever added to `p["minors"]`. If the hook calls
+`prompt_choice`, the queued prompt's `resolve_choice` lookup
+(`cards.in_play(p)`) will fail once the card has left play, so
+traveling cards must still auto-apply their play effect rather than
+prompt for it. `round_start`/`returning_home` hooks aren't affected by
+this — those only ever fire for cards already sitting in play.
 
 **Scheduled goods on round spaces**:
 `state["round_goods"][str(round)][str(pidx)][good] += n` (see
