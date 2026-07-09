@@ -55,7 +55,10 @@ through the accommodation prompt automatically):
 | `occupation_played` / `minor_played` | any player plays a card | `card_id` |
 | `round_start` | preparation phase (own cards only) | `round` |
 | `improvement_built` | any player builds/upgrades a major improvement | `improvement` id |
-| `harvest_field` | field phase of each harvest (own) | `harvest_index` (1..6) |
+| `harvest_start` | top of each harvest, before the field phase (own) | `harvest_index` (1..6) |
+| `harvest_field` | field phase of each harvest (own) | `harvest_index` (1..6), `got` (`{"grain": n, "vegetable": n}` total credited this harvest), `tiles` (same shape, farmyard field tiles only), `card_fields` (same shape, card fields only) |
+| `gained` | any time goods are credited to a player from any source (own cards only) -- see the dedicated section below | `goods` (credited amounts; **may include animal types**), `source` |
+| `breeding` | once per player, after that player's breeding phase resolves (own cards only) | `newborns` (animals successfully placed, `{type: count}`), `unplaced` (animals that bred but had no room), `harvest_index` |
 | `fences_built` | after fences built | `new_pastures` (lists of cells) |
 | `stable_built` | after own stables built | `cells` |
 | `rooms_built` | after own rooms built | `cells` |
@@ -67,6 +70,47 @@ through the accommodation prompt automatically):
 | `converted` | any goods→goods conversion outside a normal action-space grant (feeding-phase conversions in the "feed" action; cooking animals during accommodation instead of placing them) | `give` (goods consumed), `get` (goods produced), `via` ("raw", "cook", an improvement id like "joinery", or the converting card's own id) |
 | `returning_home` | once per player at the end of the work phase, before `occupied_by`/`extra_occupants` is reset (own cards only) | `spaces`: action-space ids that player's people occupy this round (includes spaces occupied only via `extra_occupants` -- see occupied-space placement below) |
 | `renovate_any` / `plow_any` / `sow_any` / `rooms_built_any` / `stable_built_any` / `bake_any` | broadcast twin of the correspondingly-named owner-only event above, fired to **every** player's cards (not just the actor's) | same fields as the parent event, plus `actor` |
+
+**`gained`** (`cards.fire_gained(state, player, goods, source, log,
+space_id=None)`, called by the engine -- there is no `hooks={"gained":
+...}` call site in card code except to *react* to it) fires every time
+goods are credited to a player, from any source: `source` is one of
+`"space"` (an action space's fixed or accumulated goods -- `space_id` is
+also set), `"card"` (any hook-granted extra, routed through
+`sub_actions.apply_extras`, `cards.grant_goods`, `on_play_gain`,
+`round_income`, `harvest_food`, or a card's own direct `player["resources"]`
+write), `"harvest"` (field-phase crops), `"bake"`, `"convert"` (feeding
+conversions and accommodate-time cooking), `"round_goods"` (a scheduled
+round-space payout), or `"breeding"` (newborns actually placed). `goods`
+**may contain animal types** ("sheep"/"boar"/"cattle") -- a `gained` hook
+must not assume resource-dict keys; for `source="space"` this fires at
+receipt time, before the resulting accommodate prompt (if any) is even
+queued, so an animal gain is visible to `gained` before it's placed. A
+`gained` hook may add to `ctx["extra"]`; that's credited the normal way
+(resources directly, animals via the accommodation queue) and re-fires
+`gained` with `source="card"` so a chained grant ("each time you gain
+wood, get 1 food") notifies further hooks too -- guarded by a depth
+counter (`state["_gained_depth"]`) so a pathological "each time you gain
+food, get 1 food" card can't loop forever: past depth 3, the goods are
+still credited (by the caller, one level up) but the event stops firing
+and chaining. `gained` never fires for spending, refunds, or moving
+goods between a player's own stores, and is skipped entirely when
+`goods` is empty or all amounts are <= 0.
+
+**`breeding`** fires once per player, right after that player's own
+breeding attempts (in `_finish_harvest`) are resolved -- for every
+player, even one with no animals (`newborns`/`unplaced` are then both
+empty). A `gained(source="breeding")` fires first, for `newborns` only.
+`_finish_harvest` sets `state["phase"] = "breeding"` (a transient value,
+distinct from "feeding") for the whole of this step: a `breeding` (or
+chained `gained`) hook may queue a prompt (a choice, or an animal grant
+via `ctx["extra"]`), and the phase must not look like "feeding" while
+that's pending -- otherwise resolving it would hit the feeding
+dispatch's "phase == feeding and everyone's fed" branch and call
+`_finish_harvest` a second time, breeding the same animals twice.
+`_apply_choice`/`_apply_accommodate` route `phase == "breeding" and no
+prompt pending` to `_end_round` instead (mirroring the `feeding`
+dispatch); `_start_round` sets phase back to `"work"` as usual.
 
 `converted` is broadcast like `space_used` (all players' cards, actor
 first) so "each time another player converts..." cards work; filter on
@@ -100,11 +144,14 @@ round, into the next round otherwise.
 
 `ctx["extra"]` only reaches the *acting* player. For an "each time ANY
 player does X, the card owner gets Y" effect (owner != actor), use
-`cards.grant_goods(state, player, gain)` instead of writing straight into
-`player["resources"]` — it credits non-animal goods directly and queues
-an accommodation prompt for animal goods, so a card that grants sheep to
-some other player can't silently corrupt state. `on_play_gain` and
-`space_bonus(..., others=True)` already use it internally.
+`cards.grant_goods(state, player, gain, log)` instead of writing straight
+into `player["resources"]` — it credits non-animal goods directly, queues
+an accommodation prompt for animal goods, and fires `gained(source=
+"card")` for the credit, so a card that grants sheep to some other player
+can't silently corrupt state. `log` defaults to `[]` if omitted, but pass
+`ctx["log"]` when you have one so the `gained` hook's own log lines land
+in the same broadcast. `on_play_gain` and `space_bonus(..., others=True)`
+already use it internally.
 
 Occupation `prereq=` is enforced the same way minor `prereq=` is:
 `_play_occupation` calls `check_prereq` before paying/removing the card,
@@ -182,6 +229,12 @@ mechanism.
 - `bake_bonus_per_grain=n`, `bake_bonus_flat=n` — extra food on bake.
 - `bake_on_spaces=("farmland", ...)` — grants Bake Bread on spaces.
 - `field={"crops": ("vegetable",)}` — this card is a sowable field.
+- `keep_crops_on_harvest=("vegetable",) or fn(state, player, inst) ->
+  iterable` — crop types (queried via `cards.keep_crops_on_harvest(state,
+  player)`, unioned across every in-play card) that the field phase
+  should count and credit as usual but NOT decrement from the field
+  (I226: "take vegetables from the general supply... you keep the
+  vegetables on the fields").
 - `conversions=[{"give": {...}, "get": {...}, "per_harvest": n?}]` —
   exchange rates usable during feeding (give may include animals).
 - `lasso=True` — double placement on animal markets. Interacts cleanly
@@ -218,6 +271,18 @@ Existing cards that auto-apply a default instead of prompting from
 `round_start`/`returning_home` (because this used to be unsafe) don't
 need to change, but a future pass could turn them into real prompts
 now that the mechanism supports it.
+
+**Prompting from `harvest_start` is safe the same way** (D070: "before
+the field phase of each harvest, you can pay 1 grain to add 1 vegetable
+to each of up to 2 vegetable fields" needs a real choice here).
+`_start_harvest` fires `harvest_start` for every player, then checks for
+a pending prompt; if one is queued, the field phase is deferred
+(`state["_field_phase_pending"] = True`) instead of running with crops
+still in flux. `_apply_choice`/`_apply_accommodate` check
+`_field_phase_pending` (mirroring `_end_work_phase_pending`) and call
+`_run_field_phase` once the prompt queue drains, so the field phase
+always runs -- exactly once -- whether or not a `harvest_start` hook
+prompted.
 
 **Remaining constraint — traveling minor improvements can't prompt from
 `play`:** a `traveling=True` card's instance is handed to the left

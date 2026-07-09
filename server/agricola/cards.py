@@ -281,6 +281,21 @@ def card_fields(player):
     return [i for i in player["minors"] if spec(i).get("field")]
 
 
+def keep_crops_on_harvest(state, player):
+    """Crop types (a subset of "grain"/"vegetable") that the field phase
+    should count and credit as usual but NOT decrement from the field --
+    "you keep the vegetables on the fields" (I226-style). Union of every
+    in-play card's `keep_crops_on_harvest` spec key: a static tuple/set of
+    crop types, or fn(state, player, inst) -> iterable of crop types."""
+    keep = set()
+    for inst in in_play(player):
+        val = spec(inst).get("keep_crops_on_harvest")
+        if val is None:
+            continue
+        keep.update(val(state, player, inst) if callable(val) else val)
+    return keep
+
+
 def score_bonuses(state, player):
     total = 0
     for inst in in_play(player):
@@ -341,19 +356,67 @@ def _queue_accommodation(state, player, animals):
                              "gained": dict(animals)})
 
 
-def grant_goods(state, player, gain):
+def fire_gained(state, player, goods, source, log, space_id=None):
+    """Fire the `gained` event: `goods` -- which may include animal types,
+    already credited to `player` by the caller (resources incremented, or
+    animals queued for accommodation) -- were obtained from `source`
+    ("space", "card", "harvest", "bake", "convert", "round_goods",
+    "breeding"). Owner-only (fire_player): every target card says "each
+    time YOU obtain...". Skips firing entirely if `goods` is empty or all
+    amounts are <= 0.
+
+    A hook may add to ctx["extra"]; that's credited the same way (resources
+    directly, animals via the accommodation queue) and then re-fired as a
+    chained gained(source="card") so "each time you gain wood, get 1 food"
+    itself notifies further hooks -- guarded by a depth counter on `state`
+    so a pathological "each time you gain food, get 1 food" card can't
+    loop forever: at depth >= 3 the goods are still credited (by the
+    caller, one level up) but this call returns without firing or
+    chaining further."""
+    positive = {g: v for g, v in goods.items() if v and v > 0}
+    if not positive:
+        return
+    depth = state.get("_gained_depth", 0)
+    if depth >= 3:
+        return
+    ctx = {"goods": dict(positive), "source": source, "log": log,
+           "actor": player["index"], "extra": {}}
+    if space_id is not None:
+        ctx["space_id"] = space_id
+    state["_gained_depth"] = depth + 1
+    try:
+        fire_player(state, player, "gained", ctx)
+        animals = {g: v for g, v in ctx["extra"].items()
+                  if v > 0 and g in ANIMAL_TYPES}
+        non_animals = {g: v for g, v in ctx["extra"].items()
+                      if v > 0 and g not in ANIMAL_TYPES}
+        if non_animals:
+            add_goods(player["resources"], non_animals)
+        if animals:
+            _queue_accommodation(state, player, animals)
+        chained = {**non_animals, **animals}
+        if chained:
+            fire_gained(state, player, chained, "card", log)
+    finally:
+        state["_gained_depth"] = depth
+
+
+def grant_goods(state, player, gain, log=None):
     """Credit `gain` directly to `player`. Non-animal goods go straight
     into player["resources"]; animal goods ("sheep", "boar", "cattle")
     never live there, so they are routed through the normal accommodation
     prompt instead. Use this (instead of add_goods(player["resources"], ...))
     whenever the recipient is not the current actor -- e.g. an "each time
     ANY player does X, the card owner gets Y" effect -- so an animal gain
-    can't silently corrupt state."""
+    can't silently corrupt state. Fires `gained` (source "card") for the
+    credited goods."""
+    log = log if log is not None else []
     animals = {g: v for g, v in gain.items() if g in ANIMAL_TYPES}
     goods = {g: v for g, v in gain.items() if g not in ANIMAL_TYPES}
     add_goods(player["resources"], goods)
     if any(animals.values()):
         _queue_accommodation(state, player, animals)
+    fire_gained(state, player, gain, "card", log)
 
 
 def take_bonus(goods_watched, gain):
@@ -377,7 +440,7 @@ def space_bonus(space_ids, gain, others=False):
         if others and not mine:
             # Goods for the card owner, not the actor (animals route
             # through accommodation -- see grant_goods).
-            grant_goods(state, player, gain)
+            grant_goods(state, player, gain, ctx["log"])
             ctx["log"].append(f"{player['name']}'s {spec(inst)['name']} grants "
                               + goods_str(gain))
         else:
@@ -395,6 +458,7 @@ def round_income(gain, condition=None):
         add_goods(player["resources"], gain)
         ctx["log"].append(f"{player['name']}'s {spec(inst)['name']} grants "
                           + goods_str(gain))
+        fire_gained(state, player, gain, "card", ctx["log"])
     return {"round_start": hook}
 
 
@@ -426,19 +490,23 @@ def harvest_food(fn, label=None):
             player["resources"]["food"] += amount
             ctx["log"].append(
                 f"{player['name']}'s {spec(inst)['name']} provides {amount} food")
+            fire_gained(state, player, {"food": amount}, "card", ctx["log"])
     return {"harvest_field": hook}
 
 
 def on_play_gain(gain):
     """On play: grant `gain` to the player playing the card. Animal goods
     go through ctx["extra"] (the engine routes them to accommodation);
-    other goods are credited directly."""
+    other goods are credited directly, firing `gained` (source "card") for
+    that part immediately (the animal part's `gained` fires once the
+    caller's apply_extras credits it)."""
     def hook(state, player, inst, ctx):
         animals = {g: v for g, v in gain.items() if g in ANIMAL_TYPES}
         goods = {g: v for g, v in gain.items() if g not in ANIMAL_TYPES}
         add_goods(player["resources"], goods)
         add_goods(ctx["extra"], animals)
         ctx["log"].append(f"{player['name']} gets " + goods_str(gain))
+        fire_gained(state, player, goods, "card", ctx["log"])
     return hook
 
 
@@ -605,12 +673,17 @@ card("occ_baker", "Baker", "occupation",
      "Each time you bake bread, you get 1 additional food per grain baked.",
      bake_bonus_per_grain=1)
 
+
+def _stable_hand_hook(state, player, inst, ctx):
+    gain = {"food": len(ctx["cells"])}
+    add_goods(player["resources"], gain)
+    ctx["log"].append(f"{player['name']}'s Stable Hand grants "
+                      f"{len(ctx['cells'])} food")
+    fire_gained(state, player, gain, "card", ctx["log"])
+
 card("occ_stable_hand", "Stable Hand", "occupation", min_players=4,
      text="Each time you build one or more stables, you also get 1 food per stable.",
-     hooks={"stable_built": lambda s, p, i, ctx: (
-         add_goods(p["resources"], {"food": len(ctx["cells"])}),
-         ctx["log"].append(f"{p['name']}'s Stable Hand grants "
-                           f"{len(ctx['cells'])} food"))[0]})
+     hooks={"stable_built": _stable_hand_hook})
 
 # ── Scoring occupations ──────────────────────────────────────────────
 def _braggart_score(state, player, inst):
@@ -640,6 +713,7 @@ def _house_steward_play(state, player, inst, ctx):
     if wood:
         add_goods(player["resources"], {"wood": wood})
         ctx["log"].append(f"House Steward grants {wood} wood")
+        fire_gained(state, player, {"wood": wood}, "card", ctx["log"])
 
 card("occ_house_steward", "House Steward", "occupation",
      "If there are still 1/3/6/9 complete rounds left to play, you "
@@ -652,9 +726,11 @@ card("occ_house_steward", "House Steward", "occupation",
 def _deaconess_hook(state, player, inst, ctx):
     if player["people_total"] == 2:
         h = state["harvest_index"]
-        add_goods(player["resources"], {"wood": 1, "food": h})
+        gain = {"wood": 1, "food": h}
+        add_goods(player["resources"], gain)
         ctx["log"].append(f"{player['name']}'s Deaconess grants 1 wood "
                           f"and {h} food")
+        fire_gained(state, player, gain, "card", ctx["log"])
 
 card("occ_deaconess", "Deaconess", "occupation", deck="custom",
      text="As long as you have exactly 2 family members, in the field phase "

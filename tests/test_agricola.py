@@ -2320,3 +2320,521 @@ def test_sub_action_card_action_wraps_build_rooms(engine, temp_card):
 
     inst = next(i for i in p["minors"] if i["id"] == cid)
     assert not cards.CARDS[cid]["card_action"]["available"](s, p, inst)
+
+
+# ── Generic `gained` event ────────────────────────────────────────────
+
+def test_gained_fires_on_accumulation_space_with_animals(engine, temp_card):
+    """gained fires for accumulation-space goods (which may include
+    animal types) at receipt time -- before the resulting accommodate
+    prompt is even queued, let alone resolved."""
+    def hook(state, player, inst, ctx):
+        inst["data"].setdefault("seen", []).append(
+            (dict(ctx["goods"]), ctx["source"], ctx.get("space_id"),
+             animal_counts(player)["sheep"], len(state["prompts"])))
+
+    cid = "test_gained_space_acc"
+    temp_card(cid, "Test Gained Space Acc", "minor", "test",
+              hooks={"gained": hook})
+    s, first = sheep_pasture_state(engine)
+    put_in_play(s, first, cid)
+    set_sheep_market(s, 2)
+    s = place(engine, s, {"kind": "place", "space": "sheep_market"})
+    inst = next(i for i in s["players"][first]["minors"] if i["id"] == cid)
+    goods, source, space_id, sheep_at_fire, prompts_at_fire = \
+        inst["data"]["seen"][0]
+    assert goods == {"sheep": 2}
+    assert source == "space"
+    assert space_id == "sheep_market"
+    assert sheep_at_fire == 0  # not yet accommodated
+    assert prompts_at_fire == 0  # not yet queued
+
+
+def test_gained_fires_on_fixed_space_gain(engine, temp_card):
+    def hook(state, player, inst, ctx):
+        inst["data"].setdefault("seen", []).append(
+            (dict(ctx["goods"]), ctx["source"], ctx.get("space_id")))
+
+    cid = "test_gained_fixed_space"
+    temp_card(cid, "Test Gained Fixed Space", "minor", "test",
+              hooks={"gained": hook})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, cid)
+    s = place(engine, s, {"kind": "place", "space": "grain_seeds"})
+    inst = next(i for i in s["players"][first]["minors"] if i["id"] == cid)
+    assert inst["data"]["seen"] == [({"grain": 1}, "space", "grain_seeds")]
+
+
+def test_gained_fires_on_card_extra_via_apply_extras(engine, temp_card):
+    """apply_extras is the hub every hook-granted extra passes through
+    (space_used bonuses among them); it fires gained(source="card")."""
+    def hook(state, player, inst, ctx):
+        inst["data"].setdefault("seen", []).append(
+            (dict(ctx["goods"]), ctx["source"]))
+
+    cid = "test_gained_card_extra"
+    temp_card(cid, "Test Gained Card Extra", "minor", "test",
+              hooks={"gained": hook})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, cid)
+    put_in_play(s, first, "occ_woodcutter")
+    add_space(s, "wood_test_space", "Wood Test", acc=True, supply={"wood": 1})
+    s = place(engine, s, {"kind": "place", "space": "wood_test_space"})
+    inst = next(i for i in s["players"][first]["minors"] if i["id"] == cid)
+    # "space" gained fires for the space's own 1 wood, then "card" for
+    # Woodcutter's +1 wood bonus (routed through ctx["extra"]).
+    sources = [src for _, src in inst["data"]["seen"]]
+    assert sources == ["space", "card"]
+    assert inst["data"]["seen"][1][0] == {"wood": 1}
+
+
+def test_gained_fires_via_grant_goods(engine, temp_card):
+    """grant_goods (used by space_bonus(others=True), e.g. Milk Jug) fires
+    gained(source="card") for the card owner, who isn't the actor."""
+    def hook(state, player, inst, ctx):
+        inst["data"].setdefault("seen", []).append(
+            (dict(ctx["goods"]), ctx["source"]))
+
+    cid = "test_gained_grant_goods"
+    temp_card(cid, "Test Gained Grant Goods", "minor", "test",
+              hooks={"gained": hook})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    put_in_play(s, other, "minor_milk_jug")
+    put_in_play(s, other, cid)
+    add_space(s, "cattle_market", "Cattle Market", acc=True,
+              supply={"cattle": 1})
+    pid = s["players"][first]["player_id"]
+    s = engine.apply_action(
+        s, pid, {"kind": "place", "space": "cattle_market"}).new_state
+    inst = next(i for i in s["players"][other]["minors"] if i["id"] == cid)
+    assert ({"food": 2}, "card") in inst["data"]["seen"]
+
+
+def test_gained_fires_on_bake(engine, temp_card):
+    def hook(state, player, inst, ctx):
+        inst["data"].setdefault("seen", []).append(
+            (dict(ctx["goods"]), ctx["source"]))
+
+    cid = "test_gained_bake"
+    temp_card(cid, "Test Gained Bake", "minor", "test",
+              hooks={"gained": hook})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, cid)
+    p["improvements"].append("fireplace_2")
+    s["available_improvements"].remove("fireplace_2")
+    give(s, first, grain=2)
+    add_space(s, "grain_utilization", "Grain Utilization")
+    s = place(engine, s, {"kind": "place", "space": "grain_utilization",
+                          "bake": {"fireplace_2": 2}})
+    inst = next(i for i in s["players"][first]["minors"] if i["id"] == cid)
+    assert inst["data"]["seen"] == [({"food": 4}, "bake")]
+
+
+def test_gained_fires_on_feeding_conversion(engine, temp_card):
+    def hook(state, player, inst, ctx):
+        inst["data"].setdefault("seen", []).append(
+            (dict(ctx["goods"]), ctx["source"]))
+
+    cid = "test_gained_convert"
+    temp_card(cid, "Test Gained Convert", "minor", "test",
+              hooks={"gained": hook})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, cid)
+    p["resources"].update({"food": 0, "grain": 2})
+    s["phase"] = "feeding"
+    for pl in s["players"]:
+        pl["fed"] = False
+    s = engine.apply_action(s, p["player_id"], {
+        "kind": "feed",
+        "conversions": [{"good": "grain", "via": "raw", "count": 2}],
+    }).new_state
+    inst = next(i for i in s["players"][first]["minors"] if i["id"] == cid)
+    assert ({"food": 2}, "convert") in inst["data"]["seen"]
+
+
+def test_gained_fires_on_harvest_crops(engine, temp_card):
+    def hook(state, player, inst, ctx):
+        inst["data"].setdefault("seen", []).append(
+            (dict(ctx["goods"]), ctx["source"]))
+
+    cid = "test_gained_harvest"
+    temp_card(cid, "Test Gained Harvest", "minor", "test",
+              hooks={"gained": hook})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, cid)
+    p["cells"][0]["type"] = "field"
+    p["cells"][0]["crops"] = {"type": "grain", "count": 3}
+    log = []
+    engine._start_harvest(s, log)
+    inst = next(i for i in p["minors"] if i["id"] == cid)
+    assert ({"grain": 1}, "harvest") in inst["data"]["seen"]
+
+
+def test_gained_fires_on_round_goods_payout(engine, temp_card):
+    def hook(state, player, inst, ctx):
+        inst["data"].setdefault("seen", []).append(
+            (dict(ctx["goods"]), ctx["source"]))
+
+    cid = "test_gained_round_goods"
+    temp_card(cid, "Test Gained Round Goods", "minor", "test",
+              hooks={"gained": hook})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, cid)
+    s["round_goods"][str(s["round"] + 1)] = {str(first): {"food": 1}}
+    for p in s["players"]:
+        p["people_placed"] = p["people_total"]
+    log = []
+    engine._end_work_phase(s, log)
+    inst = next(i for i in s["players"][first]["minors"] if i["id"] == cid)
+    assert ({"food": 1}, "round_goods") in inst["data"]["seen"]
+
+
+def test_gained_prompt_from_round_goods_stalls_placement(engine, temp_card):
+    """A gained hook fired from the round_goods payout (very early in
+    _start_round) may queue a prompt; _advance_work must stall on it
+    (via _pending_work_start), the same as a round_start hook's prompt,
+    instead of the next round ever starting with the prompt unresolved."""
+    def hook(state, player, inst, ctx):
+        if ctx["source"] == "round_goods":
+            cards.prompt_choice(state, player, inst["id"], "Wood or clay?",
+                                 ["wood", "clay"])
+
+    def resolve(state, player, inst, ctx):
+        player["resources"][ctx["option"]] += 1
+
+    cid = "test_gained_round_goods_prompt"
+    temp_card(cid, "Test Gained Round Goods Prompt", "minor", "test",
+              hooks={"gained": hook}, resolve_choice=resolve)
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, cid)
+    s["round_goods"][str(s["round"] + 1)] = {str(first): {"food": 1}}
+    for p in s["players"]:
+        p["people_placed"] = p["people_total"]
+    log = []
+    engine._end_work_phase(s, log)
+    assert s["round"] == 2
+    assert len(s["prompts"]) == 1
+    owner_pid = s["players"][first]["player_id"]
+    assert engine.get_waiting_for(s) == [owner_pid]
+    other_pid = s["players"][1 - first]["player_id"]
+    assert engine.get_valid_actions(s, other_pid) == []
+
+    s = engine.apply_action(
+        s, owner_pid, {"kind": "choice", "index": 0}).new_state
+    assert s["prompts"] == []
+    assert all(p["people_placed"] == 0 for p in s["players"])
+    cur_pid = s["players"][s["current_player"]]["player_id"]
+    assert any(a["kind"] == "place"
+              for a in engine.get_valid_actions(s, cur_pid))
+
+
+def test_gained_chained_grant_fires_again(engine, temp_card):
+    """A card granting "each time you gain wood, get 1 food" (via
+    ctx["extra"]) causes the food credit to itself fire gained(source=
+    "card") -- observable by a second card watching for food gains."""
+    def wood_to_food(state, player, inst, ctx):
+        if ctx["goods"].get("wood"):
+            ctx["extra"]["food"] = ctx["extra"].get("food", 0) + 1
+
+    def observer(state, player, inst, ctx):
+        if "food" in ctx["goods"]:
+            inst["data"]["food_gained"] = \
+                inst["data"].get("food_gained", 0) + ctx["goods"]["food"]
+
+    temp_card("test_wood_to_food", "Test Wood To Food", "minor", "test",
+              hooks={"gained": wood_to_food})
+    temp_card("test_food_observer", "Test Food Observer", "minor", "test",
+              hooks={"gained": observer})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "test_wood_to_food")
+    put_in_play(s, first, "test_food_observer")
+    p = s["players"][first]
+    food_before = p["resources"]["food"]
+    add_space(s, "wood_only_space", "Wood Only", acc=True, supply={"wood": 1})
+    s = place(engine, s, {"kind": "place", "space": "wood_only_space"})
+    p = s["players"][first]
+    assert p["resources"]["food"] == food_before + 1
+    inst = next(i for i in p["minors"] if i["id"] == "test_food_observer")
+    assert inst["data"]["food_gained"] == 1
+
+
+def test_gained_depth_guard_terminates_pathological_loop(engine, temp_card):
+    """"Each time you gain food, get 1 food" would loop forever without
+    the depth guard. Verify it terminates with a small, bounded amount
+    of extra food credited (not an unbounded/looping amount)."""
+    def food_loop(state, player, inst, ctx):
+        if ctx["goods"].get("food"):
+            ctx["extra"]["food"] = ctx["extra"].get("food", 0) + 1
+
+    temp_card("test_food_loop", "Test Food Loop", "minor", "test",
+              hooks={"gained": food_loop})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "test_food_loop")
+    p = s["players"][first]
+    food_before = p["resources"]["food"]
+    add_space(s, "food_only_space", "Food Only", acc=True, supply={"food": 1})
+    s = place(engine, s, {"kind": "place", "space": "food_only_space"})
+    p = s["players"][first]
+    # 1 (the space's own food) + 3 chained credits (depth guard caps the
+    # chain at depth 3), not an infinite/huge amount.
+    assert p["resources"]["food"] - food_before == 4
+
+
+# ── Breeding event ────────────────────────────────────────────────────
+
+def test_breeding_event_ctx_and_gained(engine, temp_card):
+    def breeding_hook(state, player, inst, ctx):
+        inst["data"]["newborns"] = dict(ctx["newborns"])
+        inst["data"]["unplaced"] = dict(ctx["unplaced"])
+        inst["data"]["harvest_index"] = ctx["harvest_index"]
+
+    def gained_hook(state, player, inst, ctx):
+        if ctx["source"] == "breeding":
+            inst["data"].setdefault("seen", []).append(dict(ctx["goods"]))
+
+    cid_ctx = "test_breeding_ctx"
+    cid_gained = "test_breeding_gained"
+    temp_card(cid_ctx, "Test Breeding Ctx", "minor", "test",
+              hooks={"breeding": breeding_hook})
+    temp_card(cid_gained, "Test Breeding Gained", "minor", "test",
+              hooks={"gained": gained_hook})
+
+    s = make_state(engine, 2)
+    p = s["players"][0]
+    put_in_play(s, 0, cid_ctx)
+    put_in_play(s, 0, cid_gained)
+    # Boar: one 2-cell pasture (capacity 4) holding 2 -> headroom to breed.
+    p["fences"] = sorted((set(cell_edges(3)) | set(cell_edges(4))) - {"v-0-4"})
+    p["cells"][3]["animal"] = {"type": "boar", "count": 2}
+    # Sheep: an unfenced stable already occupied, plus a full house pet
+    # slot -> nowhere to place a newborn.
+    p["cells"][0]["stable"] = True
+    p["cells"][0]["animal"] = {"type": "sheep", "count": 1}
+    p["pets"] = {"sheep": 1}
+    s["phase"] = "feeding"
+    s["harvest_index"] = 2
+    for pl in s["players"]:
+        pl["fed"] = False
+        pl["resources"]["food"] = 10
+    for pl in list(s["players"]):
+        s = engine.apply_action(s, pl["player_id"], {"kind": "feed"}).new_state
+
+    p = s["players"][0]
+    inst = next(i for i in p["minors"] if i["id"] == cid_ctx)
+    assert inst["data"]["newborns"] == {"boar": 1}
+    assert inst["data"]["unplaced"] == {"sheep": 1}
+    assert inst["data"]["harvest_index"] == 2
+    inst2 = next(i for i in p["minors"] if i["id"] == cid_gained)
+    assert inst2["data"]["seen"] == [{"boar": 1}]
+
+
+def test_breeding_hook_choice_prompt_stalls_and_resumes_once(engine, temp_card):
+    """A breeding hook that queues a choice prompt (C071-style: gain a
+    bonus action after breeding) must stall _end_round; resolving the
+    prompt continues the round transition exactly once. If phase stayed
+    "feeding" instead of the transient "breeding", resolving this prompt
+    would fall into the "phase == feeding and all fed" dispatch and
+    re-enter _finish_harvest, breeding a second time."""
+    calls = {"n": 0}
+
+    def breeding_hook(state, player, inst, ctx):
+        calls["n"] += 1
+        cards.prompt_choice(state, player, inst["id"], "Bonus Sow?",
+                             ["yes", "no"])
+
+    def resolve(state, player, inst, ctx):
+        inst["data"]["resolved"] = ctx["option"]
+
+    cid = "test_breeding_prompt"
+    temp_card(cid, "Test Breeding Prompt", "minor", "test",
+              hooks={"breeding": breeding_hook}, resolve_choice=resolve)
+    s = make_state(engine, 2)
+    put_in_play(s, 0, cid)
+    s["phase"] = "feeding"
+    s["round"] = 3
+    for pl in s["players"]:
+        pl["fed"] = False
+        pl["resources"]["food"] = 10
+    for pl in list(s["players"]):
+        s = engine.apply_action(s, pl["player_id"], {"kind": "feed"}).new_state
+    # Breeding ran (the hook fired once) and its prompt is pending; the
+    # round has NOT advanced yet.
+    assert s["phase"] == "breeding"
+    assert len(s["prompts"]) == 1
+    assert calls["n"] == 1
+    round_before = s["round"]
+    owner_pid = s["players"][0]["player_id"]
+    s = engine.apply_action(
+        s, owner_pid, {"kind": "choice", "index": 0}).new_state
+    inst = next(i for i in s["players"][0]["minors"] if i["id"] == cid)
+    assert inst["data"]["resolved"] == "yes"
+    assert s["round"] == round_before + 1
+    assert s["prompts"] == []
+    assert s["phase"] == "work"
+    # The breeding hook did not fire a second time.
+    assert calls["n"] == 1
+
+
+def test_breeding_hook_animal_grant_does_not_rerun_breeding(engine, temp_card):
+    """A breeding hook granting an animal via ctx["extra"] queues the
+    normal accommodate prompt; resolving it must not re-enter
+    _finish_harvest (phase stays "breeding", not "feeding", while the
+    prompt is pending) -- proven by the animal counts only reflecting
+    ONE breeding pass."""
+    def breeding_hook(state, player, inst, ctx):
+        ctx["extra"]["boar"] = ctx["extra"].get("boar", 0) + 1
+
+    cid = "test_breeding_animal_grant"
+    temp_card(cid, "Test Breeding Animal Grant", "minor", "test",
+              hooks={"breeding": breeding_hook})
+    s = make_state(engine, 2)
+    p = s["players"][0]
+    put_in_play(s, 0, cid)
+    p["fences"] = sorted((set(cell_edges(3)) | set(cell_edges(4))) - {"v-0-4"})
+    p["cells"][3]["animal"] = {"type": "boar", "count": 2}
+    s["phase"] = "feeding"
+    s["round"] = 3
+    for pl in s["players"]:
+        pl["fed"] = False
+        pl["resources"]["food"] = 10
+    for pl in list(s["players"]):
+        s = engine.apply_action(s, pl["player_id"], {"kind": "feed"}).new_state
+    assert s["phase"] == "breeding"
+    prompt = s["prompts"][0]
+    assert prompt["type"] == "accommodate"
+    assert prompt["gained"] == {"boar": 1}
+    owner_pid = s["players"][0]["player_id"]
+    # Accommodation replaces the whole animal layout, so the 3 boar
+    # already on the farm (2 initial + 1 bred) must be re-placed too,
+    # alongside the 1 the card just granted.
+    s = engine.apply_action(s, owner_pid, {
+        "kind": "accommodate",
+        "placements": [{"cell": 3, "type": "boar", "count": 3}],
+        "pets": {"boar": 1},
+    }).new_state
+    assert s["prompts"] == []
+    assert s["phase"] == "work"
+    # 2 initial + 1 bred (placed automatically in the pasture) + 1 from
+    # the card's own grant (placed as a pet) = 4. If breeding had re-run,
+    # this would be higher.
+    assert animal_counts(s["players"][0])["boar"] == 4
+
+
+# ── harvest_start / field-phase yield data ───────────────────────────
+
+def test_harvest_start_fires_before_crops_move(engine, temp_card):
+    def hook(state, player, inst, ctx):
+        inst["data"]["crop_count_at_fire"] = player["cells"][0]["crops"]["count"]
+
+    cid = "test_harvest_start_early"
+    temp_card(cid, "Test Harvest Start Early", "minor", "test",
+              hooks={"harvest_start": hook})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, cid)
+    p["cells"][0]["type"] = "field"
+    p["cells"][0]["crops"] = {"type": "grain", "count": 3}
+    log = []
+    engine._start_harvest(s, log)
+    inst = next(i for i in p["minors"] if i["id"] == cid)
+    assert inst["data"]["crop_count_at_fire"] == 3
+    assert p["cells"][0]["crops"]["count"] == 2  # field phase already ran
+    assert s["phase"] == "feeding"
+
+
+def test_harvest_start_prompt_stalls_field_phase_and_runs_once(engine, temp_card):
+    def hook(state, player, inst, ctx):
+        cards.prompt_choice(state, player, inst["id"], "Add a vegetable?",
+                             ["yes", "no"])
+
+    def resolve(state, player, inst, ctx):
+        inst["data"]["resolved"] = ctx["option"]
+
+    cid = "test_harvest_start_prompt"
+    temp_card(cid, "Test Harvest Start Prompt", "minor", "test",
+              hooks={"harvest_start": hook}, resolve_choice=resolve)
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, cid)
+    p["cells"][0]["type"] = "field"
+    p["cells"][0]["crops"] = {"type": "grain", "count": 3}
+    log = []
+    engine._start_harvest(s, log)
+    # Field phase must not have run yet -- still "work" phase, crops
+    # untouched, waiting on the prompt.
+    assert s["phase"] == "work"
+    assert p["cells"][0]["crops"]["count"] == 3
+    assert len(s["prompts"]) == 1
+    owner_pid = p["player_id"]
+    s = engine.apply_action(
+        s, owner_pid, {"kind": "choice", "index": 0}).new_state
+    p = s["players"][first]
+    inst = next(i for i in p["minors"] if i["id"] == cid)
+    assert inst["data"]["resolved"] == "yes"
+    # Field phase now ran -- exactly once (count went 3 -> 2, not lower).
+    assert s["phase"] == "feeding"
+    assert p["cells"][0]["crops"]["count"] == 2
+
+
+def test_harvest_field_ctx_tiles_and_card_fields_breakdown(engine, temp_card):
+    def hook(state, player, inst, ctx):
+        inst["data"]["ctx"] = {
+            "got": dict(ctx["got"]), "tiles": dict(ctx["tiles"]),
+            "card_fields": dict(ctx["card_fields"]),
+        }
+
+    cid = "test_harvest_field_ctx"
+    temp_card(cid, "Test Harvest Field Ctx", "minor", "test",
+              field={"crops": ("vegetable",)},
+              hooks={"harvest_field": hook})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, cid)
+    inst["crops"] = {"type": "vegetable", "count": 2}
+    p["cells"][0]["type"] = "field"
+    p["cells"][0]["crops"] = {"type": "grain", "count": 3}
+    p["cells"][1]["type"] = "field"
+    p["cells"][1]["crops"] = {"type": "grain", "count": 3}
+    log = []
+    engine._start_harvest(s, log)
+    inst = next(i for i in p["minors"] if i["id"] == cid)
+    ctx = inst["data"]["ctx"]
+    assert ctx["got"] == {"grain": 2, "vegetable": 1}
+    assert ctx["tiles"] == {"grain": 2, "vegetable": 0}
+    assert ctx["card_fields"] == {"grain": 0, "vegetable": 1}
+
+
+def test_keep_crops_on_harvest_credits_without_decrementing_field(
+        engine, temp_card):
+    cid = "test_keep_crops"
+    temp_card(cid, "Test Keep Crops", "minor", "test",
+              keep_crops_on_harvest=("vegetable",))
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, cid)
+    p["cells"][0]["type"] = "field"
+    p["cells"][0]["crops"] = {"type": "vegetable", "count": 2}
+    veg_before = p["resources"]["vegetable"]
+    log = []
+    engine._start_harvest(s, log)
+    assert p["resources"]["vegetable"] == veg_before + 1
+    # The field keeps its crop count -- not decremented.
+    assert p["cells"][0]["crops"]["count"] == 2

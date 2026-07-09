@@ -399,6 +399,11 @@ class AgricolaEngine(GameEngine):
                     p["resources"][good] += amount
                 log.append(f"{p['name']} gets {cards.goods_str(goods)} "
                            "from the round space")
+                # A gained hook may queue a prompt this early in the round
+                # (choice, or an animal grant); _advance_work below stalls
+                # on it via _pending_work_start the same way a round_start
+                # hook's prompt does, instead of cascading past it.
+                cards.fire_gained(state, p, goods, "round_goods", log)
 
         # Replenish accumulation spaces.
         for space in state["action_spaces"]:
@@ -513,23 +518,51 @@ class AgricolaEngine(GameEngine):
     def _start_harvest(self, state, log):
         state["harvest_index"] += 1
         log.append(f"— Harvest after round {state['round']} —")
-        # Field phase: exactly 1 crop from every planted field (tiles + cards).
+        # Fire harvest_start (D070: "before the field phase, you can pay
+        # 1 grain to add 1 vegetable to up to 2 fields") before any crop
+        # moves. harvest_index must already be bumped above so ctx is
+        # correct.
+        for p in state["players"]:
+            ctx = {"harvest_index": state["harvest_index"], "log": log,
+                   "actor": p["index"], "extra": {}}
+            cards.fire_player(state, p, "harvest_start", ctx)
+            self._apply_extras(state, p, ctx["extra"], log)
+        # A harvest_start hook may have queued a prompt (a choice, or an
+        # animal grant via extra). The field phase must not run until
+        # it's resolved -- mirrors _end_work_phase_pending.
+        if self._prompt(state):
+            state["_field_phase_pending"] = True
+            return
+        self._run_field_phase(state, log)
+
+    def _run_field_phase(self, state, log):
+        # Field phase: exactly 1 crop from every planted field (tiles +
+        # cards), unless cards.keep_crops_on_harvest says to leave a crop
+        # type on the field (I226-style: counted/credited but not removed).
+        breakdowns = {}
         for p in state["players"]:
             got = {"grain": 0, "vegetable": 0}
+            tiles = {"grain": 0, "vegetable": 0}
+            card_fields_got = {"grain": 0, "vegetable": 0}
+            keep = cards.keep_crops_on_harvest(state, p)
             for cell in p["cells"]:
                 crops = cell.get("crops")
                 if crops:
                     got[crops["type"]] += 1
-                    crops["count"] -= 1
-                    if crops["count"] <= 0:
-                        cell["crops"] = None
+                    tiles[crops["type"]] += 1
+                    if crops["type"] not in keep:
+                        crops["count"] -= 1
+                        if crops["count"] <= 0:
+                            cell["crops"] = None
             for inst in cards.card_fields(p):
                 crops = inst.get("crops")
                 if crops:
                     got[crops["type"]] += 1
-                    crops["count"] -= 1
-                    if crops["count"] <= 0:
-                        inst["crops"] = None
+                    card_fields_got[crops["type"]] += 1
+                    if crops["type"] not in keep:
+                        crops["count"] -= 1
+                        if crops["count"] <= 0:
+                            inst["crops"] = None
             p["resources"]["grain"] += got["grain"]
             p["resources"]["vegetable"] += got["vegetable"]
             if got["grain"] or got["vegetable"]:
@@ -537,26 +570,60 @@ class AgricolaEngine(GameEngine):
                 log.append(f"{p['name']} harvests {', '.join(parts)}")
             p["fed"] = False
             p["harvest_conversions_used"] = []
-        # Harvest card effects (Loom, Scythe, Deaconess, ...).
+            # Crops are never animals, so firing here (rather than
+            # batched into the hook loop below) can't interleave an
+            # accommodation prompt with another player's crop math.
+            harvested = {k: v for k, v in got.items() if v}
+            if harvested:
+                cards.fire_gained(state, p, harvested, "harvest", log)
+            breakdowns[p["index"]] = (got, tiles, card_fields_got)
+        # Harvest card effects (Loom, Scythe, Deaconess, ...). Fires for
+        # every player even with zero yield (existing behavior).
         for p in state["players"]:
-            ctx = {"harvest_index": state["harvest_index"], "log": log,
-                   "actor": p["index"], "extra": {}}
+            got, tiles, card_fields_got = breakdowns[p["index"]]
+            ctx = {"harvest_index": state["harvest_index"], "got": got,
+                   "tiles": tiles, "card_fields": card_fields_got,
+                   "log": log, "actor": p["index"], "extra": {}}
             cards.fire_player(state, p, "harvest_field", ctx)
             self._apply_extras(state, p, ctx["extra"], log)
         state["phase"] = "feeding"
         log.append("Feeding phase — each player must feed their family")
 
     def _finish_harvest(self, state, log):
-        # Breeding phase.
+        # Transient phase, distinct from "feeding": a breeding/gained hook
+        # here may grant more animals, which queues the normal
+        # accommodate prompt. If phase stayed "feeding", resolving that
+        # prompt would hit _apply_accommodate's "phase == feeding and all
+        # fed" dispatch and call _finish_harvest a second time --
+        # re-breeding the same animals. "breeding" routes that dispatch
+        # to _end_round instead (see _apply_choice/_apply_accommodate).
+        state["phase"] = "breeding"
         for p in state["players"]:
             totals = animal_counts(p)
+            placed = {}
+            unplaced = {}
             for animal in ANIMAL_TYPES:
                 if totals[animal] >= 2:
                     if self._place_newborn_animal(p, animal):
+                        placed[animal] = placed.get(animal, 0) + 1
                         log.append(f"{p['name']}'s {animal} breed (+1 {animal})")
                     else:
+                        unplaced[animal] = unplaced.get(animal, 0) + 1
                         log.append(
                             f"{p['name']}'s {animal} cannot breed (no room)")
+            if placed:
+                cards.fire_gained(state, p, placed, "breeding", log)
+            ctx = {"newborns": placed, "unplaced": unplaced,
+                   "harvest_index": state["harvest_index"], "log": log,
+                   "actor": p["index"], "extra": {}}
+            cards.fire_player(state, p, "breeding", ctx)
+            self._apply_extras(state, p, ctx["extra"], log)
+        if self._prompt(state):
+            # A breeding/gained hook queued a prompt (a choice, or an
+            # animal grant); stop here. _apply_choice/_apply_accommodate
+            # call _end_round once phase is still "breeding" and no
+            # prompt remains.
+            return
         self._end_round(state, log)
 
     def _end_round(self, state, log):
@@ -739,6 +806,11 @@ class AgricolaEngine(GameEngine):
                     p["resources"][good] += amount
             if goods:
                 log.append(f"{p['name']} takes {cards.goods_str(goods)}")
+            # Fire gained (goods may include animals) at receipt time,
+            # before the accommodate prompt for those animals is even
+            # queued -- matches "when you receive that type of animal"
+            # cards, which react to the receipt, not the placement.
+            cards.fire_gained(state, p, goods, "space", log, space_id=sid)
             self._fire_space_used(state, p, sid, provided, log,
                                   animals=animals_gained)
             return
@@ -840,6 +912,13 @@ class AgricolaEngine(GameEngine):
         else:
             raise ValueError(f"Unhandled action space: {sid}")
 
+        # `provided` is only non-empty for the fixed-gain branches above
+        # (grain_seeds, vegetable_seeds, day_laborer, resource_market_*);
+        # none of them grant animals, so this is the whole "space"-sourced
+        # gain (the accumulation branch above fires its own, and returns
+        # before reaching here).
+        if provided:
+            cards.fire_gained(state, p, provided, "space", log, space_id=sid)
         self._fire_space_used(state, p, sid, provided, log)
 
     def _fire_space_used(self, state, p, sid, provided, log, animals=None):
@@ -850,16 +929,11 @@ class AgricolaEngine(GameEngine):
         ctx = {"space_id": sid, "goods": provided, "extra": {},
                "log": log, "actor": p["index"], "occupants": occupants}
         cards.fire(state, "space_used", ctx)
-        gained = dict(animals or {})
-        for good, amount in ctx["extra"].items():
-            if amount <= 0:
-                continue
-            if good in ANIMAL_TYPES:
-                gained[good] = gained.get(good, 0) + amount
-            else:
-                p["resources"][good] += amount
-        if gained:
-            self._gain_animals(state, p, gained, log)
+        if animals:
+            self._gain_animals(state, p, animals, log)
+        # Hook-granted extras (source "card") go through the shared
+        # apply_extras hub, same as every other event's extras.
+        self._apply_extras(state, p, ctx["extra"], log)
 
     # ── Cards: playing occupations and minor improvements ───────────
 
@@ -969,6 +1043,8 @@ class AgricolaEngine(GameEngine):
         p["resources"]["grain"] -= total_grain
         p["resources"]["food"] += food
         log.append(f"{p['name']} bakes {total_grain} grain into {food} food")
+        if food:
+            cards.fire_gained(state, p, {"food": food}, "bake", log)
         ctx = {"grain": total_grain, "log": log, "actor": p["index"],
                "extra": {}}
         cards.fire_player(state, p, "bake", ctx)
@@ -1052,12 +1128,17 @@ class AgricolaEngine(GameEngine):
         # merging into (and then losing) the one we just resolved.
         for give, get in converted_events:
             self._fire_converted(state, p, give, get, "cook", log)
+            cards.fire_gained(state, p, get, "convert", log)
 
         if not self._prompt(state) and state.pop("_end_work_phase_pending", False):
             # This prompt was the last thing blocking the round/harvest
             # transition (a returning_home hook queued it) -- resume
             # exactly where _end_work_phase left off.
             self._finish_end_work_phase(state, log)
+        elif not self._prompt(state) and state.pop("_field_phase_pending", False):
+            # Same pattern: a harvest_start hook's prompt was the last
+            # thing blocking the field phase.
+            self._run_field_phase(state, log)
         elif state["phase"] == "work" and not self._prompt(state):
             if lasso and p["people_placed"] < self._capacity(p):
                 log.append(f"{p['name']} uses the Lasso to place again")
@@ -1067,6 +1148,10 @@ class AgricolaEngine(GameEngine):
         elif state["phase"] == "feeding" and not self._prompt(state) and \
                 all(pl["fed"] for pl in state["players"]):
             self._finish_harvest(state, log)
+        elif state["phase"] == "breeding" and not self._prompt(state):
+            # A breeding/gained hook's prompt was the last thing blocking
+            # the round transition -- resume where _finish_harvest left off.
+            self._end_round(state, log)
         return self._result(state, log)
 
     def _apply_animal_placement(self, p, placements, pets, totals):
@@ -1183,6 +1268,10 @@ class AgricolaEngine(GameEngine):
             # transition (a returning_home hook queued it) -- resume
             # exactly where _end_work_phase left off.
             self._finish_end_work_phase(state, log)
+        elif not self._prompt(state) and state.pop("_field_phase_pending", False):
+            # Same pattern: a harvest_start hook's prompt was the last
+            # thing blocking the field phase.
+            self._run_field_phase(state, log)
         elif state["phase"] == "work" and not self._prompt(state):
             if prompt.get("after_lasso") and \
                     p["people_placed"] < self._capacity(p):
@@ -1192,6 +1281,10 @@ class AgricolaEngine(GameEngine):
         elif state["phase"] == "feeding" and not self._prompt(state) and \
                 all(pl["fed"] for pl in state["players"]):
             self._finish_harvest(state, log)
+        elif state["phase"] == "breeding" and not self._prompt(state):
+            # A breeding/gained hook's prompt was the last thing blocking
+            # the round transition -- resume where _finish_harvest left off.
+            self._end_round(state, log)
         return self._result(state, log)
 
     def _apply_card_action(self, state, pidx, action):
@@ -1321,6 +1414,7 @@ class AgricolaEngine(GameEngine):
 
         for give, get, conv_via in converted_events:
             self._fire_converted(state, p, give, get, conv_via, log)
+            cards.fire_gained(state, p, get, "convert", log)
 
         needed = self._food_needed(state, p)
         paid = min(needed, p["resources"]["food"])

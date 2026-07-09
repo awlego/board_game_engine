@@ -134,17 +134,26 @@ def gain_animals(state, player, gained, log):
 
 def apply_extras(state, player, extra, log):
     """Route a ctx["extra"] goods dict to the player: non-animal goods
-    directly, animals through gain_animals/accommodation."""
+    directly, animals through gain_animals/accommodation. Fires `gained`
+    (source "card") for the credited goods -- this is the single hub
+    every hook-granted extra passes through, so it covers space_used
+    bonuses, plow/sow/renovate/rooms_built/stable_built/bake extras,
+    occupation_played/minor_played/improvement_built/fences_built extras,
+    family_growth, and converted extras alike."""
     animals = {}
+    credited = {}
     for good, amount in list(extra.items()):
         if amount <= 0:
             continue
+        credited[good] = credited.get(good, 0) + amount
         if good in ANIMAL_TYPES:
             animals[good] = animals.get(good, 0) + amount
         else:
             player["resources"][good] += amount
     if animals:
         gain_animals(state, player, animals, log)
+    if credited:
+        cards.fire_gained(state, player, credited, "card", log)
 
 
 def fire_any(state, event, actor_player, fields, log):

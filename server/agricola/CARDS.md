@@ -71,14 +71,24 @@ accommodation flow — so a card that grants sheep automatically triggers the
 "place, cook, or discard" prompt). `ctx["extra"]` only reaches the *acting*
 player, though — for goods granted to some other player (an "each time ANY
 player does X, the card owner gets Y" effect), use `cards.grant_goods(state,
-player, gain)`, which credits non-animal goods directly and queues an
+player, gain, log)`, which credits non-animal goods directly and queues an
 accommodation prompt for animal goods. `on_play_gain` and
 `space_bonus(..., others=True)` already do this internally, so declaring a
 card with either factory is animal-safe regardless of the gain's contents.
 
+Every credit above -- `ctx["extra"]`, `grant_goods`, an action space's own
+goods, harvest crops, baking, feeding conversions, a scheduled round-space
+payout, or a newborn animal from breeding -- also fires the generic
+`gained` event (`cards.fire_gained`, owner-only), so a card can react to
+"each time you obtain X, from any source" without caring which of those
+paths produced it. See `decks/GUIDE.md`'s hook table for the full ctx
+shape (including the animals-in-goods caveat and the chained-grant depth
+guard).
+
 Current hook points: `play`, `occupation_played`, `round_start`,
 `space_used`, `fences_built`, `stable_built`, `rooms_built`, `sow`, `bake`,
-`renovate`, `plow`, `harvest_field`, `converted`, `returning_home`.
+`renovate`, `plow`, `harvest_start`, `harvest_field`, `gained`, `breeding`,
+`converted`, `returning_home`.
 
 Firing order is deterministic: players in index order starting with the
 actor, then each player's cards in play order. `space_used` fires for *all*
@@ -294,3 +304,21 @@ Known remaining gaps, and how they'd fit if a future card needs them:
   others) — implementing them is still a separate pass (fidelity to each
   card's own text, and in a few cases a still-missing mechanic like a
   "which action space" redirect, remain to work out per card).
+- **A generic "resource gained" event, a breeding-phase event, and
+  richer harvest-yield data** are now supported — `gained` (any goods
+  credited to a player, from any source, including animal types),
+  `breeding` (per player, after that player's own breeding resolves:
+  which animals bred and which had no room), `harvest_start` (fires
+  before the field phase, for a "before you harvest, you may..." effect),
+  and `harvest_field`'s enriched ctx (`got`/`tiles`/`card_fields`
+  breakdown) plus the `keep_crops_on_harvest` query (credit a crop
+  without removing it from the field). See section 2 above and
+  `decks/GUIDE.md`'s hook table for the full contracts (prompt safety,
+  the chained-grant depth guard, the transient `"breeding"` phase).
+  This unblocks compendium cards previously marked `UNIMPLEMENTED` for
+  exactly these missing mechanics -- A048 Shaving Horse, A064 Barley
+  Mill, C120 Agricultural Labourer, B021, K310, FR068, FR098 (`gained`);
+  C071, B011, D036 (`breeding`); D065, B132, D126, I226, D070
+  (`harvest_start`/enriched `harvest_field`) — implementing each card's
+  own text (and, for D070, the "pay 1 grain, up to 2 fields" choice
+  itself) is still a separate pass.
