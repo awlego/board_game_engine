@@ -27,7 +27,7 @@ from server.agricola.cards import (
 from server.agricola import sub_actions
 from server.agricola.state import (
     MAX_PEOPLE, TOTAL_ROUNDS, MAJOR_IMPROVEMENTS,
-    compute_pastures, pasture_capacity, plowable_cells, cell_edges,
+    compute_pastures, plowable_cells, cell_edges,
     validate_fence_layout, table_score,
 )
 
@@ -116,14 +116,13 @@ def _remove_animal(player, animal_type, count=1):
     return remaining == 0
 
 
-def _place_animal_best_effort(player, animal_type, count=1):
+def _place_animal_best_effort(state, player, animal_type, count=1):
     """Accommodate scheduled/bred animals without a prompt, mirroring
     the engine's own breeding-phase placement algorithm
     (AgricolaEngine._place_newborn_animal). Used from round_start hooks,
     which per GUIDE.md must not prompt or route gains through
     ctx["extra"] (that would create a pending prompt at round start).
     Returns True if every animal found room."""
-    bonus = cards.pasture_bonus(player)
     for _ in range(count):
         pastures = compute_pastures(player)
         pasture_of = {}
@@ -143,7 +142,7 @@ def _place_animal_best_effort(player, animal_type, count=1):
         for pi, pasture in enumerate(pastures):
             occ = occupants[pi]
             if occ["type"] == animal_type and \
-                    occ["count"] < pasture_capacity(player, pasture, bonus):
+                    occ["count"] < cards.pasture_capacity(state, player, pasture, animal_type):
                 for i in pasture:
                     a = player["cells"][i]["animal"]
                     if a and a["type"] == animal_type:
@@ -167,7 +166,7 @@ def _place_animal_best_effort(player, animal_type, count=1):
                     placed = True
                     break
         if not placed:
-            if sum(player["pets"].values()) < cards.house_capacity(player):
+            if sum(player["pets"].values()) < cards.house_capacity(state, player):
                 player["pets"][animal_type] = \
                     player["pets"].get(animal_type, 0) + 1
                 placed = True
@@ -267,7 +266,7 @@ def _wet_nurse_rooms(state, player, inst, ctx):
     if n <= 0:
         return
     rooms = sum(1 for c in player["cells"] if c["type"] == "room")
-    headroom = rooms + cards.extra_rooms(player) - player["people_total"]
+    headroom = rooms + cards.extra_rooms(state, player) - player["people_total"]
     max_growth = min(n, max(headroom, 0), MAX_PEOPLE - player["people_total"],
                      player["resources"]["food"])
     if max_growth <= 0:
@@ -359,7 +358,6 @@ compendium_card("K272", cost_mod=_frame_builder_mod)
 
 # ── K274 Organic Farmer ───────────────────────────────────────────────
 def _organic_farmer_score(state, player, inst):
-    bonus = cards.pasture_bonus(player)
     count = 0
     for pasture in compute_pastures(player):
         occ = 0
@@ -369,7 +367,7 @@ def _organic_farmer_score(state, player, inst):
             if a:
                 atype = a["type"]
                 occ += a["count"]
-        cap = pasture_capacity(player, pasture, bonus)
+        cap = cards.pasture_capacity(state, player, pasture, atype)
         if atype is not None and occ >= 1 and cap - occ >= 3:
             count += 1
     return count
@@ -739,7 +737,7 @@ def _cattle_breeder_round_start(state, player, inst, ctx):
     if state["round"] != 13:
         return
     if cards.animal_totals_of(player)["cattle"] >= 2:
-        if _place_animal_best_effort(player, "cattle", 1):
+        if _place_animal_best_effort(state, player, "cattle", 1):
             ctx["log"].append(f"{player['name']}'s Cattle Breeder breeds "
                               "1 cattle (end of round 12)")
 
@@ -797,7 +795,7 @@ def _shepherd_boy_renovate(state, player, inst, ctx):
 
 def _shepherd_boy_round_start(state, player, inst, ctx):
     if state["round"] in inst["data"].get("rounds", ()):
-        if _place_animal_best_effort(player, "sheep", 1):
+        if _place_animal_best_effort(state, player, "sheep", 1):
             ctx["log"].append(f"{player['name']}'s Shepherd Boy grants 1 "
                               "sheep")
 
@@ -824,7 +822,7 @@ def _pig_whisperer_play(state, player, inst, ctx):
 def _pig_whisperer_round_start(state, player, inst, ctx):
     if state["round"] not in inst["data"].get("rounds", ()):
         return
-    if _place_animal_best_effort(player, "boar", 1):
+    if _place_animal_best_effort(state, player, "boar", 1):
         ctx["log"].append(f"{player['name']}'s Pig Whisperer grants 1 "
                           "wild boar")
 
@@ -870,7 +868,7 @@ _VET_POOL = ["sheep"] * 4 + ["boar"] * 3 + ["cattle"] * 2
 
 def _veterinarian_round_start(state, player, inst, ctx):
     a, b = random.sample(_VET_POOL, 2)
-    if a == b and _place_animal_best_effort(player, a, 1):
+    if a == b and _place_animal_best_effort(state, player, a, 1):
         ctx["log"].append(f"{player['name']}'s Veterinarian draws a "
                           f"matching pair and keeps 1 {a}")
 
@@ -886,7 +884,7 @@ def _animal_handler_round_start(state, player, inst, ctx):
     if not animal or player["resources"]["food"] < 1:
         return
     player["resources"]["food"] -= 1
-    if _place_animal_best_effort(player, animal, 1):
+    if _place_animal_best_effort(state, player, animal, 1):
         ctx["log"].append(f"{player['name']}'s Animal Handler buys 1 "
                           f"{animal} (1 food)")
     else:

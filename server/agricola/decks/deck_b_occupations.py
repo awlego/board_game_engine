@@ -270,7 +270,7 @@ def _little_stick_knitter_a_space(state, player, inst, ctx):
     if state["round"] < 5:
         return
     rooms = sum(1 for c in player["cells"] if c["type"] == "room") \
-        + cards.extra_rooms(player)
+        + cards.extra_rooms(state, player)
     if player["people_total"] >= MAX_PEOPLE or rooms <= player["people_total"]:
         return
     prompt_choice(state, player, inst["id"],

@@ -323,7 +323,7 @@ def test_house_goat_food_and_reduced_capacity(engine):
     p = s["players"][first]
     p["resources"]["food"] = 0
     inst = put_in_play(s, first, "K120")
-    assert cards.house_capacity(p) == 0
+    assert cards.house_capacity(s, p) == 0
     ctx = {"log": [], "actor": first, "extra": {}, "harvest_index": 1}
     cards.CARDS["K120"]["hooks"]["harvest_field"](s, p, inst, ctx)
     assert p["resources"]["food"] == 1

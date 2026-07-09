@@ -18,7 +18,7 @@ from server.agricola.cards import (
 import server.agricola.cards as cards
 from server.agricola.state import (
     TOTAL_ROUNDS, NUM_CELLS, MAX_STABLES,
-    compute_pastures, pasture_capacity, plowable_cells,
+    compute_pastures, plowable_cells,
 )
 
 UNIMPLEMENTED = {
@@ -140,13 +140,12 @@ def _schedule_remaining(state, player, good, amount, log, label):
                    "on each remaining round space")
 
 
-def _best_effort_place_animal(player, animal):
+def _best_effort_place_animal(state, player, animal):
     """Auto-place one animal into a pasture, unfenced stable, or the
     house (pet), best-effort, mirroring the shape of the engine's own
     newborn-animal placement (unreachable from card code, since cards.py
     cannot import engine.py). Used instead of ctx["extra"]/prompts from
     round_start hooks, which GUIDE.md disallows. Returns True if placed."""
-    bonus = cards.pasture_bonus(player)
     for pasture in compute_pastures(player):
         occupant, count = None, 0
         for i in pasture:
@@ -155,7 +154,7 @@ def _best_effort_place_animal(player, animal):
                 occupant, count = a["type"], a["count"]
         if occupant not in (None, animal):
             continue
-        if count < pasture_capacity(player, pasture, bonus):
+        if count < cards.pasture_capacity(state, player, pasture, animal):
             cell = pasture[0]
             if player["cells"][cell]["animal"] is None:
                 player["cells"][cell]["animal"] = {"type": animal, "count": 1}
@@ -168,7 +167,7 @@ def _best_effort_place_animal(player, animal):
                 and i not in pasture_cells:
             c["animal"] = {"type": animal, "count": 1}
             return True
-    cap = cards.house_capacity(player)
+    cap = cards.house_capacity(state, player)
     if sum(player["pets"].values()) < cap:
         player["pets"][animal] = player["pets"].get(animal, 0) + 1
         return True
@@ -469,7 +468,7 @@ def _sheep_whisperer_play(state, player, inst, ctx):
 def _sheep_whisperer_round_start(state, player, inst, ctx):
     if state["round"] not in inst["data"].get("sheep_rounds", ()):
         return
-    if _best_effort_place_animal(player, "sheep"):
+    if _best_effort_place_animal(state, player, "sheep"):
         ctx["log"].append(f"{player['name']}'s Sheep Whisperer places 1 sheep")
     else:
         ctx["log"].append(f"{player['name']}'s Sheep Whisperer has no room "
@@ -496,7 +495,7 @@ def _pig_breeder_round_start(state, player, inst, ctx):
         return
     if cards.animal_totals_of(player)["boar"] < 2:
         return
-    if _best_effort_place_animal(player, "boar"):
+    if _best_effort_place_animal(state, player, "boar"):
         ctx["log"].append(f"{player['name']}'s wild boar breed (Pig Breeder)")
 
 compendium_card("I252", hooks={"play": _pig_breeder_play,

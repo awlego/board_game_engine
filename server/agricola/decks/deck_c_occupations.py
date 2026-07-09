@@ -30,7 +30,7 @@ from server.agricola.cards import (
 )
 from server.agricola.state import (
     ANIMAL_TYPES, HARVEST_ROUNDS, TOTAL_ROUNDS, BUILDING_RESOURCES,
-    compute_pastures, pasture_capacity, plowable_cells,
+    compute_pastures, plowable_cells,
 )
 
 UNIMPLEMENTED = {}
@@ -881,20 +881,23 @@ def _ranch_provost_play(state, player, inst, ctx):
         ctx["log"].append(f"{player['name']}'s Ranch Provost grants {wood} wood")
 
 
-def _pasture_best_capacity(player):
+def _pasture_best_capacity(state, player):
     from server.agricola import cards as _cards
-    bonus = _cards.pasture_bonus(player)
     pastures = compute_pastures(player)
     if not pastures:
         return 0
-    return max(pasture_capacity(player, pa, bonus) for pa in pastures)
+    # No single animal type occupies every pasture, so this asks each
+    # pasture's capacity type-agnostically (animal_type=None); a
+    # type-conditioned pasture_capacity_mod simply doesn't apply here,
+    # same as it wouldn't for an actually-empty pasture.
+    return max(_cards.pasture_capacity(state, player, pa, None) for pa in pastures)
 
 
 def _ranch_provost_score(state, player, inst):
-    mine = _pasture_best_capacity(player)
+    mine = _pasture_best_capacity(state, player)
     if mine <= 0:
         return 0
-    best = max(_pasture_best_capacity(p) for p in state["players"])
+    best = max(_pasture_best_capacity(state, p) for p in state["players"])
     return 3 if mine == best else 0
 
 

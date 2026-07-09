@@ -896,7 +896,7 @@ def _cattle_whisperer_round_start(state, player, inst, ctx):
     if state["round"] not in inst["data"].get("targets", ()):
         return
     from server.agricola.engine import AgricolaEngine
-    if AgricolaEngine()._place_newborn_animal(player, "cattle"):
+    if AgricolaEngine()._place_newborn_animal(state, player, "cattle"):
         ctx["log"].append(f"{player['name']}'s Cattle Whisperer delivers "
                           "1 cattle")
 
@@ -931,7 +931,7 @@ def _e203_shepherd_harvest(state, player, inst, ctx):
     if cards.animal_totals_of(player)["sheep"] < 4:
         return
     from server.agricola.engine import AgricolaEngine
-    if AgricolaEngine()._place_newborn_animal(player, "sheep"):
+    if AgricolaEngine()._place_newborn_animal(state, player, "sheep"):
         ctx["log"].append(f"{player['name']}'s Shepherd breeds an extra "
                           "lamb")
 
@@ -953,7 +953,7 @@ def _master_shepherd_round_start(state, player, inst, ctx):
     if state["round"] not in inst["data"].get("targets", ()):
         return
     from server.agricola.engine import AgricolaEngine
-    if AgricolaEngine()._place_newborn_animal(player, "sheep"):
+    if AgricolaEngine()._place_newborn_animal(state, player, "sheep"):
         ctx["log"].append(f"{player['name']}'s Master Shepherd delivers "
                           "1 sheep")
 

@@ -20,7 +20,8 @@ Agricola cards do six fundamentally different kinds of things:
 4. **New conversions** — extra cook/bake/raw exchange rates, used inside the
    existing feeding/baking machinery.
 5. **Card-held components** — cards that are themselves fields ("Beanfield"),
-   hold scheduled goods, or count usage.
+   hold scheduled goods, hold animals directly on the card itself, or count
+   usage.
 6. **Scoring effects** — printed points plus conditional bonus points, some of
    which compare across players ("the player with the most rooms...").
 
@@ -366,3 +367,54 @@ Known remaining gaps, and how they'd fit if a future card needs them:
   still-unregistered cards (A014, FR094, D082, E15, I220, E36, C088,
   FR024) themselves -- i.e. registering them with `compendium_card`, not
   just closing the plumbing gap -- is still a separate pass.
+- **A per-pasture/type-aware capacity model, and card-held animal
+  storage** (item 14) are now supported (engine phase 8). Previously:
+  `pasture_capacity`/`validate_animal_placement` only knew a flat
+  "2 per cell, doubled per stable, +flat card bonus, one type per
+  pasture, 1 animal in an unfenced stable" model, with no way for a
+  card to condition capacity on pasture size or animal type, let two
+  types share a pasture, or store animals anywhere but a farmyard cell.
+  Now: `pasture_capacity_mod=fn(state, player, inst, info) -> int`
+  (per-pasture-size/type capacity deltas), `unfenced_stable_capacity_mod
+  =fn(state, player, inst, animal_type) -> int`, and
+  `pasture_secondary_types=fn(state, player, inst, info) -> {type:
+  max_count}` (a second type sharing a pasture, still counting against
+  its normal total capacity) are folded together by
+  `cards.pasture_capacity`/`cards.unfenced_stable_capacity`/
+  `cards.pasture_secondary_types`; `state.validate_animal_placement`
+  takes these as callbacks (defaults reproduce the original flat
+  behavior) so it stays card-free. Separately, `holds_animals=fn(state,
+  player, inst) -> {"types": {type: max_or_None}, "total": max_or_None}`
+  lets a card keep animals on itself (`inst["held"]`), validated by
+  `cards.validate_held`; `state.animal_counts` reads `inst["held"]`
+  directly (pure data, no `cards` import) so breeding, feeding-
+  conversion availability, and scoring see card-held animals for free;
+  accommodation placements accept a `{"card": ..., "type": ..., "count":
+  ...}` entry alongside the usual cell entry, and newborn auto-placement
+  falls back to a holder card once the farm is full. `extra_rooms`/
+  `house_capacity` can now also be `fn(state, player, inst) -> int`
+  instead of only a flat int/`"per_room"`. See `decks/GUIDE.md`'s "Card-
+  aware animal capacity" section for the full contracts (the mixed-type
+  "try each primary" validation algorithm, the holder-card contract, and
+  the newborn-placement order). This unblocks (or partially unblocks --
+  fidelity to each card's own text is still a separate pass, per rule 2)
+  the motivating compendium cards: D011 Lawn Fertilizer, E29 Shepherd's
+  Pipe, B115 Tinsmith Master, FR013 Chameleon (capacity model); C012
+  Cattle Farm, E58 Animal Yard, I102 Wildlife Reserve, K145 Forest
+  Pasture, A148 Woolgrower, B148 Pet Broker, FR105 Reformer, C148 Mud
+  Wallower (card-held storage; C148's own clay-to-boar exchange "held by
+  this card" is a separate, still-unimplemented conversion mechanic);
+  D085 Reader, A127 Lodger (computed `extra_rooms`). A085 Homekeeper
+  ("exactly one room, if adjacent to a field and a pasture")
+  and C085 Den Builder (pay to activate a room) still need a *dynamic,
+  farm-geometry-or-payment-conditioned* `extra_rooms`, which the
+  callable form supports in principle but neither card is registered
+  yet. D148 Domestician Expert ("keep 2 sheep on the border between two
+  adjacent rooms") and A011 ("on unplanted fields") don't fit
+  `holds_animals`/farmyard cells at all -- both keep animals on farmyard
+  geometry this engine doesn't model (a room-border slot; an unplanted
+  field cell) rather than on a card instance, so they remain a separate,
+  still-open gap. None of the motivating cards above are registered by
+  this pass (`temp_card`-only tests in `tests/test_agricola.py` exercise
+  the mechanism); registering them with `compendium_card` is still a
+  separate pass.

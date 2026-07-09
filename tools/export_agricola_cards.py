@@ -30,6 +30,12 @@ def build_catalog():
         for key in CLIENT_KEYS:
             if key in spec and spec[key] not in (None, {}, (), [], 0, False):
                 value = spec[key]
+                if callable(value):
+                    # A computed extra_rooms/house_capacity (fn(state,
+                    # player, inst) -> int) has no static value to show
+                    # the client; skip it (the card's own text still
+                    # describes the effect).
+                    continue
                 if isinstance(value, tuple):
                     value = list(value)
                 if key == "field":

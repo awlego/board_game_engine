@@ -25,7 +25,7 @@ from server.agricola.state import (
     NUM_CELLS, TOTAL_ROUNDS, HARVEST_ROUNDS,
     PERMANENT_SPACES, STAGE_CARDS, MAJOR_IMPROVEMENTS,
     stage_of_round, build_stage_deck, create_player, create_action_spaces,
-    compute_pastures, pasture_capacity,
+    compute_pastures,
     validate_animal_placement, animal_counts,
     plowable_cells,
 )
@@ -300,11 +300,16 @@ class AgricolaEngine(GameEngine):
         adults = player["people_total"] - player["newborns"]
         return adult_cost * adults + player["newborns"]
 
-    def _validate_animals(self, player):
+    def _validate_animals(self, state, player):
         return validate_animal_placement(
             player,
-            house_cap=cards.house_capacity(player),
-            pasture_bonus=cards.pasture_bonus(player))
+            house_cap=cards.house_capacity(state, player),
+            pasture_cap=lambda cells, atype: cards.pasture_capacity(
+                state, player, cells, atype),
+            unfenced_stable_cap=lambda atype: cards.unfenced_stable_capacity(
+                state, player, atype),
+            secondary_types=lambda info: cards.pasture_secondary_types(
+                state, player, info))
 
     def _cook_values(self, player):
         """Best cook table across major improvements and cards (or None)."""
@@ -604,7 +609,7 @@ class AgricolaEngine(GameEngine):
             unplaced = {}
             for animal in ANIMAL_TYPES:
                 if totals[animal] >= 2:
-                    if self._place_newborn_animal(p, animal):
+                    if self._place_newborn_animal(state, p, animal):
                         placed[animal] = placed.get(animal, 0) + 1
                         log.append(f"{p['name']}'s {animal} breed (+1 {animal})")
                     else:
@@ -729,7 +734,7 @@ class AgricolaEngine(GameEngine):
                 self._any_minor_playable(state, p)
         if sid == "basic_wish":
             return (p["people_total"] < MAX_PEOPLE
-                    and self._rooms(p) + cards.extra_rooms(p) > p["people_total"])
+                    and self._rooms(p) + cards.extra_rooms(state, p) > p["people_total"])
         if sid == "urgent_wish":
             return p["people_total"] < MAX_PEOPLE
         if sid == "house_redevelopment" or sid == "farm_redevelopment":
@@ -1132,7 +1137,7 @@ class AgricolaEngine(GameEngine):
                 log.append(f"{p['name']} returns {count} {animal} to the supply")
 
         # Remaining animals must be fully placed.
-        self._apply_animal_placement(p, placements, pets, available)
+        self._apply_animal_placement(state, p, placements, pets, available)
         lasso = pending.get("after_lasso")
         state["prompts"].pop(0)
 
@@ -1168,11 +1173,16 @@ class AgricolaEngine(GameEngine):
             self._end_round(state, log)
         return self._result(state, log)
 
-    def _apply_animal_placement(self, p, placements, pets, totals):
-        """Replace all animal placements; must place exactly `totals`."""
+    def _apply_animal_placement(self, state, p, placements, pets, totals):
+        """Replace all animal placements (cells, pets, and holder-card
+        storage -- `{"card": <card id>, "type": t, "count": n}` entries
+        alongside the usual `{"cell": ..., "type": t, "count": n}`);
+        must place exactly `totals`."""
         for cell in p["cells"]:
             cell["animal"] = None
         p["pets"] = {}
+        for inst in cards.holder_cards(state, p):
+            inst["held"] = {}
 
         placed = {a: 0 for a in ANIMAL_TYPES}
         for animal, count in (pets or {}).items():
@@ -1184,18 +1194,28 @@ class AgricolaEngine(GameEngine):
                 p["pets"][animal] = count
                 placed[animal] += count
 
-        seen = set()
+        seen_cells = set()
         for item in placements:
-            cell = item.get("cell")
             animal = item.get("type")
             count = item.get("count")
             if animal not in ANIMAL_TYPES:
                 raise ValueError("Invalid animal type")
             if not isinstance(count, int) or count < 1:
                 raise ValueError("Invalid animal count")
-            if not isinstance(cell, int) or not (0 <= cell < NUM_CELLS) or cell in seen:
+            if "card" in item:
+                inst = next((i for i in cards.in_play(p)
+                            if i["id"] == item["card"]), None)
+                if inst is None or not cards.spec(inst).get("holds_animals"):
+                    raise ValueError("Invalid card animal storage")
+                held = inst.setdefault("held", {})
+                held[animal] = held.get(animal, 0) + count
+                placed[animal] += count
+                continue
+            cell = item.get("cell")
+            if not isinstance(cell, int) or not (0 <= cell < NUM_CELLS) \
+                    or cell in seen_cells:
                 raise ValueError("Invalid animal placement")
-            seen.add(cell)
+            seen_cells.add(cell)
             p["cells"][cell]["animal"] = {"type": animal, "count": count}
             placed[animal] += count
 
@@ -1204,13 +1224,20 @@ class AgricolaEngine(GameEngine):
                 "All animals must be placed, cooked, or discarded "
                 f"(placed {placed}, expected {totals})")
 
-        ok, err = self._validate_animals(p)
+        ok, err = self._validate_animals(state, p)
+        if not ok:
+            raise ValueError(err)
+        ok, err = cards.validate_held(state, p)
         if not ok:
             raise ValueError(err)
 
-    def _place_newborn_animal(self, p, animal):
-        """Try to accommodate one newborn animal; returns True if placed."""
-        bonus = cards.pasture_bonus(p)
+    def _place_newborn_animal(self, state, p, animal):
+        """Try to accommodate one newborn animal; returns True if placed.
+        Order: same-type pasture headroom, an empty pasture, unfenced-
+        stable headroom (same type or empty), the house, then a holder
+        card with headroom. Newborns are never auto-placed as a
+        pasture's secondary type (FR013-style allowances) -- that's a
+        placement-time-only choice."""
         pastures = compute_pastures(p)
         pasture_of = {}
         occupants = {}
@@ -1229,7 +1256,7 @@ class AgricolaEngine(GameEngine):
         for pi, pasture in enumerate(pastures):
             occ = occupants[pi]
             if occ["type"] == animal and \
-                    occ["count"] < pasture_capacity(p, pasture, bonus):
+                    occ["count"] < cards.pasture_capacity(state, p, pasture, animal):
                 for i in pasture:
                     a = p["cells"][i]["animal"]
                     if a and a["type"] == animal:
@@ -1240,15 +1267,36 @@ class AgricolaEngine(GameEngine):
             if occupants[pi]["count"] == 0:
                 p["cells"][pasture[0]]["animal"] = {"type": animal, "count": 1}
                 return True
-        # Empty unfenced stable.
+        # Unfenced stable headroom (empty, or already holding this type).
         for i, cell in enumerate(p["cells"]):
-            if (cell["stable"] and cell["type"] == "empty"
-                    and not cell["animal"] and i not in pasture_of):
-                cell["animal"] = {"type": animal, "count": 1}
-                return True
+            if cell["stable"] and cell["type"] == "empty" and i not in pasture_of:
+                a = cell["animal"]
+                if a is None:
+                    cell["animal"] = {"type": animal, "count": 1}
+                    return True
+                if a["type"] == animal and \
+                        a["count"] < cards.unfenced_stable_capacity(state, p, animal):
+                    a["count"] += 1
+                    return True
         # House capacity.
-        if sum(p["pets"].values()) < cards.house_capacity(p):
+        if sum(p["pets"].values()) < cards.house_capacity(state, p):
             p["pets"][animal] = p["pets"].get(animal, 0) + 1
+            return True
+        # Card storage (e.g. C012 Cattle Farm: 1 cattle per pasture, on
+        # the card itself).
+        for inst in cards.holder_cards(state, p):
+            rule = cards.spec(inst)["holds_animals"](state, p, inst) or {}
+            types = rule.get("types")
+            if types is not None and animal not in types:
+                continue
+            held = inst.setdefault("held", {})
+            cap = types.get(animal) if types is not None else None
+            if cap is not None and held.get(animal, 0) >= cap:
+                continue
+            total_cap = rule.get("total")
+            if total_cap is not None and sum(held.values()) >= total_cap:
+                continue
+            held[animal] = held.get(animal, 0) + 1
             return True
         return False
 
@@ -1339,7 +1387,7 @@ class AgricolaEngine(GameEngine):
         if action.get("placements") is not None or action.get("pets") is not None:
             totals = animal_counts(p)
             self._apply_animal_placement(
-                p, action.get("placements") or [], action.get("pets") or {},
+                state, p, action.get("placements") or [], action.get("pets") or {},
                 totals)
             log.append(f"{p['name']} rearranges their animals")
 

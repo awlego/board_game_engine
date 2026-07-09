@@ -387,7 +387,7 @@ def test_hammock_consumes_sheep_and_grants_extra_room(engine):
                           "minor": {"card": "FR028"}})
     p = s["players"][first]
     assert p["pets"].get("sheep", 0) == 0
-    assert cards.extra_rooms(p) == 1
+    assert cards.extra_rooms(s, p) == 1
 
 
 def test_haystack_schedules_food_for_remaining_rounds(engine):
@@ -443,7 +443,7 @@ def test_kids_corner_house_capacity(engine):
     first = s["current_player"]
     p = s["players"][first]
     put_in_play(s, first, "FR033")
-    assert cards.house_capacity(p) == 2
+    assert cards.house_capacity(s, p) == 2
 
 
 def test_lighthouse_extra_room_requires_two_stone_rooms(engine):

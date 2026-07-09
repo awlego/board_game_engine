@@ -293,9 +293,20 @@ mechanism.
   for the UNMODIFIED cost too. This is a known limitation, not a bug to
   route around per-card.
 - `occ_cost_delta=-1` — future occupations cost less.
-- `pasture_capacity_bonus=n` — each pasture holds +n.
-- `house_capacity=n or "per_room"` — house pet slots.
-- `extra_rooms=n` — counts as room for family growth.
+- `pasture_capacity_bonus=n` — each pasture holds +n (flat, type-
+  agnostic; folded into `cards.pasture_capacity` below, which is what
+  every caller queries -- see "Card-aware animal capacity" for the
+  richer, per-pasture/type-conditioned form).
+- `house_capacity=n, "per_room", or fn(state, player, inst) -> n` —
+  house pet slots. The callable form computes a delta (e.g. scaled by
+  occupation count) instead of a fixed int; queried via
+  `cards.house_capacity(state, player)` (note the `state` argument).
+- `extra_rooms=n or fn(state, player, inst) -> n` — counts as room for
+  family growth. The callable form (D085 Reader: "room for one person
+  once you have 6 occupations in play") computes the value instead of a
+  fixed int; queried via `cards.extra_rooms(state, player)` (note the
+  `state` argument -- every caller of the old `extra_rooms(player)`/
+  `house_capacity(player)` signatures needs updating).
 - `raw_values={"grain": 2, ...}` — better at-any-time crop→food rate.
 - `cook={"sheep": 2, ...}` — cook table (like Fireplace).
 - `bake=(limit_or_None, food_per_grain)` — baking improvement;
@@ -325,6 +336,103 @@ mechanism.
    "description": "..."}` — an activated ability offered on your turn
   (work phase) and during feeding; `ctx["params"]` carries client input.
 - Card-local storage: `inst["data"]` (dict), e.g. once-per-game flags.
+
+**Card-aware animal capacity (engine phase 8):** the flat "2 per pasture
+cell, doubled per stable, 1 in an unfenced stable, one type per
+pasture" model is too rigid for cards like D011 Lawn Fertilizer
+(per-pasture-size capacity), E29 Shepherd's Pipe (type-conditioned
+pasture/stable capacity), or FR013 Chameleon (a second type sharing a
+pasture). Three new spec keys, each queried across every in-play card
+and folded together:
+
+- `pasture_capacity_mod=fn(state, player, inst, info) -> int` — a
+  capacity delta for one specific pasture. `info` is `{"cells": sorted
+  cell list, "size": len(cells), "stables": stable count inside,
+  "animal_type": the type being housed, or None when checking
+  type-agnostically}`. Query: `cards.pasture_capacity(state, player,
+  pasture_cells, animal_type)` = base geometry
+  (`state.pasture_capacity`) + the flat `pasture_capacity_bonus` (still
+  supported, unchanged) + the sum of every `pasture_capacity_mod`.
+  ```python
+  # D011 Lawn Fertilizer: size-1 pastures hold 3 (6 with a stable).
+  def _lawn_fertilizer_mod(state, player, inst, info):
+      if info["size"] != 1:
+          return 0
+      return 2 if info["stables"] >= 1 else 1  # +1 -> 3; +2 -> 2*2+2=6
+  ```
+- `unfenced_stable_capacity_mod=fn(state, player, inst, animal_type) ->
+  int` — a capacity delta for an unfenced stable holding `animal_type`.
+  Query: `cards.unfenced_stable_capacity(state, player, animal_type)` =
+  1 + the sum of every mod (e.g. E29 Shepherd's Pipe: "up to 2 sheep in
+  each unfenced stable" -> `+1 if animal_type == "sheep" else 0`).
+- `pasture_secondary_types=fn(state, player, inst, info) -> {type:
+  max_count}` — animal types permitted *alongside* `info["animal_type"]`
+  in the same pasture (still counting against that pasture's own total
+  `pasture_capacity` -- this grants permission to mix, not extra room).
+  Query: `cards.pasture_secondary_types(state, player, info)` merges
+  every card's dict, taking the max per type.
+  ```python
+  # FR013 Chameleon: 1 wild boar in each pasture that holds sheep.
+  def _chameleon_secondary(state, player, inst, info):
+      return {"boar": 1} if info["animal_type"] == "sheep" else {}
+  ```
+
+`state.validate_animal_placement(player, house_cap=1, pasture_cap=None,
+unfenced_stable_cap=None, secondary_types=None)` takes these as
+callbacks (`pasture_cap(cells, animal_type) -> int`,
+`unfenced_stable_cap(animal_type) -> int`, `secondary_types(info) ->
+dict`) so `state.py` stays card-free; every real caller
+(`engine._validate_animals`, `sub_actions.build_fences`'s
+re-accommodation check, `engine._place_newborn_animal`) passes
+lambdas that call the `cards.*` queries above. The defaults (`None`)
+reproduce the original flat behavior exactly, which is what direct unit
+tests of `validate_animal_placement` still rely on.
+
+**Mixed-type validation, exactly:** for a pasture holding more than one
+animal type, validity means *some* present type can serve as "primary" —
+try each: for that choice, every *other* type present must fit within
+`secondary_types({"cells":..., "size":..., "stables":...,
+"animal_type": primary}).get(other_type, 0)`, AND the combined total of
+every type in the pasture must fit `pasture_cap(cells, primary)`. A
+pasture holding only one type skips this entirely and just checks
+`total <= pasture_cap(cells, that_type)` (the original rule, extended
+per-type/pasture instead of flat).
+
+**Card-held animal storage:** some cards keep animals on themselves
+instead of a farmyard cell (C012 Cattle Farm: "1 cattle per pasture, on
+this card"; E58 Animal Yard: "2 animals, need not be the same type";
+I102 Wildlife Reserve: "1 sheep, 1 wild boar, 1 cattle"; K145 Forest
+Pasture: "unlimited wild boar"). Spec key `holds_animals=fn(state,
+player, inst) -> {"types": {type: max_or_None}, "total": max_or_None}`
+(missing `"types"` = any type allowed; a `None` cap = unlimited; both
+constraints, when present, are enforced together). The instance stores
+`inst["held"] = {type: count}` — plain data, so `state.animal_counts`
+reads it directly off `player["minors"]`/`player["occupations"]` with
+no `cards` import (this is also why breeding, feeding-conversion
+availability, and scoring automatically see card-held animals: they all
+go through `animal_counts`).
+
+- `cards.validate_held(state, player) -> (ok, err)` checks every holder
+  card's `inst["held"]` against its own `holds_animals` caps.
+- Accommodation (`{"kind": "accommodate", "placements": [...]}`) accepts
+  `{"card": <card id>, "type": t, "count": n}` entries alongside the
+  usual `{"cell": ..., "type": t, "count": n}` — `_apply_animal_placement`
+  resets every holder card's `inst["held"]` to `{}` (like it resets
+  `cell["animal"]`/`pets`) before replaying the placements, then runs
+  `validate_held` alongside the usual `validate_animal_placement`.
+- Newborn auto-placement order (`engine._place_newborn_animal`):
+  same-type pasture headroom, an empty pasture, unfenced-stable headroom
+  (empty, or already holding that type, using
+  `unfenced_stable_capacity`), the house, then the first holder card
+  with headroom for that type. A newborn is **never** auto-placed as a
+  pasture's secondary type (FR013-style) — that's a placement-time-only
+  choice for the player, not an automatic one.
+- **Client note:** card instances (and therefore `inst["held"]`) are
+  serialized to the client as-is (`get_player_view` just deep-copies
+  `state`, which includes `player["minors"]`/`["occupations"]`), so
+  held animals ride along automatically. The accommodate UI itself has
+  no affordance yet for building a `{"card": ...}` placement entry —
+  still a client-side follow-up.
 
 **Mid-effect choices**: from any hook,
 `prompt_choice(state, player, inst["id"], "Take wood or clay?",
@@ -410,7 +518,7 @@ from server.agricola import sub_actions
 | play a minor improvement | `play_minor(state, player, cid, log, params=None, cost_override=None, ctx=None)` | `can_play_minor(state, player, cid, cost_override=None, ctx=None)` |
 | play an occupation | `play_occupation(state, player, cid, log, params=None, cost_override=None, ctx=None)` | `can_play_occupation(state, player, cid, cost_override=None, ctx=None)` |
 | sow | `sow(state, player, sow_items, log)` (no cost concept -- consumes the sower's own crop, same as the normal action) | `can_sow(player)` |
-| family growth (no room/urgent-wish flavor) | `family_growth(state, player, log, require_room=True)` | `can_family_growth(player, require_room=True)` |
+| family growth (no room/urgent-wish flavor) | `family_growth(state, player, log, require_room=True)` | `can_family_growth(state, player, require_room=True)` |
 
 `ctx` (optional, default `None`) is folded into whatever ctx that
 transaction's own `modified_cost` call builds (see the `cost_mod` entry

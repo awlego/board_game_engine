@@ -22,6 +22,7 @@ import re
 
 from server.agricola.state import (
     ANIMAL_TYPES, TOTAL_ROUNDS, NUM_CELLS,
+    pasture_capacity as _base_pasture_capacity,
 )
 
 CARDS = {}
@@ -77,8 +78,9 @@ def card(cid, name, ctype, text, deck="base", min_players=1, cost=None,
     """Register a card spec. `prereq` is (predicate, text). Extra keyword
     abilities are static keys read by the modifier queries below (cook,
     bake, raw_values, bake_bonus, cost_mod, occ_cost_delta,
-    pasture_capacity_bonus, house_capacity, extra_rooms, field,
-    bake_on_spaces, lasso, score_bonus)."""
+    pasture_capacity_bonus, pasture_capacity_mod, unfenced_stable_capacity_mod,
+    pasture_secondary_types, holds_animals, house_capacity, extra_rooms,
+    field, bake_on_spaces, lasso, score_bonus)."""
     assert cid not in CARDS, cid
     CARDS[cid] = {
         "id": cid, "name": name, "type": ctype, "text": text,
@@ -225,18 +227,119 @@ def occ_cost_delta(player):
 
 
 def pasture_bonus(player):
-    """Extra capacity for each pasture (additive across cards)."""
+    """Extra capacity for each pasture (additive across cards). This is
+    the flat, type-agnostic `pasture_capacity_bonus` key only (e.g.
+    Drinking Trough) -- folded into `pasture_capacity` below, which is
+    what callers should use; kept as a standalone query since a few
+    cards' own logic (scoring heuristics, best-effort placement) still
+    reads the flat bonus directly."""
     return sum(spec(i).get("pasture_capacity_bonus", 0) for i in in_play(player))
 
 
-def house_capacity(player):
-    """How many animals the house holds (pets). Base 1."""
+def _pasture_info(state, player, pasture_cells, animal_type):
+    stables = sum(1 for i in pasture_cells if player["cells"][i]["stable"])
+    return {"cells": list(pasture_cells), "size": len(pasture_cells),
+            "stables": stables, "animal_type": animal_type}
+
+
+def pasture_capacity(state, player, pasture_cells, animal_type=None):
+    """Capacity of one specific pasture (`pasture_cells`, a sorted list
+    of cell indices) for `animal_type` (None when checking type-
+    agnostically, e.g. an empty pasture). Folds together: the base
+    geometry (`state.pasture_capacity` -- 2 per cell, doubled per stable
+    inside), the flat `pasture_capacity_bonus` (existing cards, e.g.
+    Drinking Trough), and every in-play card's `pasture_capacity_mod=
+    fn(state, player, inst, info) -> int` (a per-pasture-size and/or
+    type-conditioned delta -- e.g. D011 Lawn Fertilizer: "+1 in size-1
+    pastures", E29 Shepherd's Pipe: "+2 where you keep sheep"). `info`
+    is `{"cells", "size", "stables", "animal_type"}`."""
+    info = _pasture_info(state, player, pasture_cells, animal_type)
+    bonus = pasture_bonus(player)
+    for inst in in_play(player):
+        fn = spec(inst).get("pasture_capacity_mod")
+        if fn:
+            bonus += fn(state, player, inst, info)
+    return _base_pasture_capacity(player, pasture_cells, bonus)
+
+
+def unfenced_stable_capacity(state, player, animal_type):
+    """Capacity of an unfenced stable for `animal_type`. Base 1, plus
+    every in-play card's `unfenced_stable_capacity_mod=fn(state, player,
+    inst, animal_type) -> int` (e.g. E29 Shepherd's Pipe: "up to 2 sheep
+    in each unfenced stable")."""
+    cap = 1
+    for inst in in_play(player):
+        fn = spec(inst).get("unfenced_stable_capacity_mod")
+        if fn:
+            cap += fn(state, player, inst, animal_type)
+    return cap
+
+
+def pasture_secondary_types(state, player, info):
+    """Animal types (other than `info["animal_type"]`) permitted
+    alongside it in the same pasture, and the max of each -- e.g. FR013
+    Chameleon: "1 wild boar in each pasture that holds sheep". Merges
+    every in-play card's `pasture_secondary_types=fn(state, player,
+    inst, info) -> {type: max_count}` (max per type across cards). The
+    secondary animals still count against the pasture's own total
+    `pasture_capacity` -- this only grants permission to mix types, not
+    extra room."""
+    allowed = {}
+    for inst in in_play(player):
+        fn = spec(inst).get("pasture_secondary_types")
+        if fn:
+            for t, n in fn(state, player, inst, info).items():
+                allowed[t] = max(allowed.get(t, 0), n)
+    return allowed
+
+
+def holder_cards(state, player):
+    """In-play card instances that can hold animals on themselves (spec
+    key `holds_animals`) -- e.g. C012 Cattle Farm, E58 Animal Yard."""
+    return [i for i in in_play(player) if spec(i).get("holds_animals")]
+
+
+def validate_held(state, player):
+    """Check every holder card's `inst["held"]` against its own caps
+    (`holds_animals=fn(state, player, inst) -> {"types": {type:
+    max_or_None}?, "total": max_or_None?}`; missing "types" = any type
+    allowed, None = unlimited). Returns (ok, error_message)."""
+    for inst in in_play(player):
+        fn = spec(inst).get("holds_animals")
+        if not fn:
+            continue
+        held = inst.get("held") or {}
+        if any(n < 0 for n in held.values()):
+            return False, "Invalid held animals"
+        rule = fn(state, player, inst) or {}
+        types = rule.get("types")
+        if types is not None:
+            for t, n in held.items():
+                if t not in types:
+                    return False, f"{spec(inst)['name']} cannot hold {t}"
+                cap = types[t]
+                if cap is not None and n > cap:
+                    return False, (f"{spec(inst)['name']} holds at most "
+                                   f"{cap} {t}")
+        total_cap = rule.get("total")
+        if total_cap is not None and sum(held.values()) > total_cap:
+            return False, f"{spec(inst)['name']} is over capacity"
+    return True, ""
+
+
+def house_capacity(state, player):
+    """How many animals the house holds (pets). Base 1, plus each
+    in-play card's `house_capacity` (a flat int, `"per_room"`, or
+    `fn(state, player, inst) -> int` for a computed delta -- e.g. a
+    "occupations you have" scaled bonus)."""
     cap = 1
     per_room = False
     for inst in in_play(player):
         hc = spec(inst).get("house_capacity")
         if hc == "per_room":
             per_room = True
+        elif callable(hc):
+            cap += hc(state, player, inst)
         elif isinstance(hc, int):
             cap += hc
     if per_room:
@@ -245,9 +348,16 @@ def house_capacity(player):
     return cap
 
 
-def extra_rooms(player):
-    """Card-provided room for people (family-growth room check)."""
-    return sum(spec(i).get("extra_rooms", 0) for i in in_play(player))
+def extra_rooms(state, player):
+    """Card-provided room for people (family-growth room check). Each
+    in-play card's `extra_rooms` is a flat int (unchanged) or `fn(state,
+    player, inst) -> int` for a computed value -- e.g. D085 Reader:
+    "room for one person once you have 6 occupations in play"."""
+    total = 0
+    for i in in_play(player):
+        val = spec(i).get("extra_rooms", 0)
+        total += val(state, player, i) if callable(val) else val
+    return total
 
 
 def raw_values(player):

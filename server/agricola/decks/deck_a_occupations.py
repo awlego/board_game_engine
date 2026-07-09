@@ -10,12 +10,12 @@ implemented; the trailing bleed is not this card's effect.
 
 from server.agricola.cards import (
     compendium_card, add_goods, prompt_choice, space_bonus, on_play_gain,
-    animal_totals_of, fire, extra_rooms, pasture_bonus, card_fields,
-    new_instance, spec,
+    animal_totals_of, fire, extra_rooms, card_fields,
+    new_instance, spec, pasture_capacity as card_pasture_capacity,
 )
 from server.agricola.state import (
     ANIMAL_TYPES, TOTAL_ROUNDS, NUM_CELLS, MAX_PEOPLE, MAJOR_IMPROVEMENTS,
-    FIREPLACES, compute_pastures, pasture_capacity, plowable_cells,
+    FIREPLACES, compute_pastures, plowable_cells,
 )
 from server.agricola import sub_actions
 
@@ -191,7 +191,7 @@ def _bed_maker_rooms_built(state, player, inst, ctx):
     if player["people_total"] >= MAX_PEOPLE:
         return
     rooms = sum(1 for c in player["cells"] if c["type"] == "room")
-    if rooms + extra_rooms(player) <= player["people_total"]:
+    if rooms + extra_rooms(state, player) <= player["people_total"]:
         return
     prompt_choice(state, player, inst["id"],
                   "Bed Maker: pay 1 wood + 1 grain for Family Growth?",
@@ -488,9 +488,10 @@ compendium_card("A131",
 # ── A134 Full Farmer ─────────────────────────────────────────────────
 def _full_farmer_score(state, player, inst):
     bonus = 0
-    extra = pasture_bonus(player)
     for pasture in compute_pastures(player):
-        cap = pasture_capacity(player, pasture, extra)
+        atype = next((player["cells"][i]["animal"]["type"] for i in pasture
+                     if player["cells"][i]["animal"]), None)
+        cap = card_pasture_capacity(state, player, pasture, atype)
         count = sum(player["cells"][i]["animal"]["count"]
                     for i in pasture if player["cells"][i]["animal"])
         if count > 0 and count >= cap:

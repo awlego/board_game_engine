@@ -338,11 +338,11 @@ def test_animal_tamer_house_capacity(engine):
     p["occupations"].append(cards.new_instance("occ_animal_tamer"))
     p["pets"] = {"sheep": 1, "boar": 1}
     ok, err = validate_animal_placement(
-        p, house_cap=cards.house_capacity(p))
+        p, house_cap=cards.house_capacity(None, p))
     assert ok, err  # 2 rooms → 2 pets allowed
     p["pets"] = {"sheep": 2, "boar": 1}
     ok, err = validate_animal_placement(
-        p, house_cap=cards.house_capacity(p))
+        p, house_cap=cards.house_capacity(None, p))
     assert not ok
 
 
@@ -1810,7 +1810,7 @@ def random_bot_action(engine, state, pid, rng):
 
     if kind == "accommodate":
         gained = dict(act["gained"])
-        ok, _ = engine._validate_animals(p)
+        ok, _ = engine._validate_animals(state, p)
         if ok:
             placements = []
             for i, c in enumerate(p["cells"]):
@@ -3199,3 +3199,298 @@ def test_payment_channel_reed_to_clay(engine, temp_card):
     with pytest.raises(ValueError):
         place(engine, s2, {"kind": "place", "space": "house_redevelopment",
                           "payment": {"reed_to_clay": 5}})
+
+
+# ── Engine phase 8: card-aware animal capacity ───────────────────────
+# D011 Lawn Fertilizer, E29 Shepherd's Pipe, FR013 Chameleon, C012/E58/
+# I102/K145 (card-held storage), D085 Reader (computed extra_rooms).
+
+def test_pasture_capacity_mod_size_conditioned(engine, temp_card):
+    """D011-style: pastures of size 1 hold up to 3 animals (6 with a
+    stable) -- pasture_capacity_mod=fn(state, player, inst, info)."""
+    def _mod(state, player, inst, info):
+        if info["size"] != 1:
+            return 0
+        return 2 if info["stables"] >= 1 else 1
+
+    temp_card("test_lawn_fert", "Test Lawn Fertilizer", "minor", "test",
+              cost={}, pasture_capacity_mod=_mod)
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "test_lawn_fert")
+    p["fences"] = sorted(cell_edges(4))  # size-1 pasture at cell 4
+
+    assert cards.pasture_capacity(s, p, [4], "sheep") == 3  # 2 base + 1
+    p["cells"][4]["animal"] = {"type": "sheep", "count": 3}
+    ok, err = engine._validate_animals(s, p)
+    assert ok, err
+    p["cells"][4]["animal"]["count"] = 4
+    ok, err = engine._validate_animals(s, p)
+    assert not ok
+
+    p["cells"][4]["stable"] = True  # doubled by a stable: 6
+    assert cards.pasture_capacity(s, p, [4], "sheep") == 6
+    p["cells"][4]["animal"]["count"] = 6
+    ok, err = engine._validate_animals(s, p)
+    assert ok, err
+    p["cells"][4]["animal"]["count"] = 7
+    ok, err = engine._validate_animals(s, p)
+    assert not ok
+
+
+def test_pasture_capacity_mod_stacks_with_flat_bonus(engine, temp_card):
+    """Regression: the existing flat pasture_capacity_bonus (Drinking
+    Trough) still applies alongside a pasture_capacity_mod card."""
+    def _mod(state, player, inst, info):
+        return 1 if info["size"] == 1 else 0
+
+    temp_card("test_lawn_fert2", "Test Lawn Fertilizer", "minor", "test",
+              cost={}, pasture_capacity_mod=_mod)
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "test_lawn_fert2")
+    put_in_play(s, first, "minor_drinking_trough")
+    p["fences"] = sorted(cell_edges(4))
+    # base 2 + Drinking Trough's flat 2 + Lawn Fertilizer's mod 1 = 5.
+    assert cards.pasture_capacity(s, p, [4], "sheep") == 5
+
+
+def test_pasture_capacity_mod_type_conditioned(engine, temp_card):
+    """E29-style: +2 sheep in each pasture where you keep sheep; up to 2
+    sheep (vs the normal 1) in an unfenced stable."""
+    def _pasture_mod(state, player, inst, info):
+        return 2 if info["animal_type"] == "sheep" else 0
+
+    def _stable_mod(state, player, inst, animal_type):
+        return 1 if animal_type == "sheep" else 0
+
+    temp_card("test_shepherds_pipe", "Test Shepherd's Pipe", "minor", "test",
+              cost={}, pasture_capacity_mod=_pasture_mod,
+              unfenced_stable_capacity_mod=_stable_mod)
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "test_shepherds_pipe")
+    p["fences"] = sorted(cell_edges(4))  # size-1 pasture, base capacity 2
+
+    assert cards.pasture_capacity(s, p, [4], "sheep") == 4  # 2 base + 2
+    assert cards.pasture_capacity(s, p, [4], "cattle") == 2  # unaffected
+    assert cards.unfenced_stable_capacity(s, p, "sheep") == 2
+    assert cards.unfenced_stable_capacity(s, p, "cattle") == 1
+
+    p["cells"][0]["stable"] = True
+    p["cells"][0]["animal"] = {"type": "sheep", "count": 2}
+    ok, err = engine._validate_animals(s, p)
+    assert ok, err  # unfenced stable holds 2 sheep
+    p["cells"][0]["animal"] = {"type": "cattle", "count": 2}
+    ok, err = engine._validate_animals(s, p)
+    assert not ok  # ... but only 1 cattle
+
+
+def test_pasture_secondary_types_mixed(engine, temp_card):
+    """FR013-style: 1 wild boar allowed in each pasture that holds sheep,
+    still counting against the pasture's normal total capacity; a
+    pasture mixing two non-sheep types gets no allowance at all ("no
+    sheep -> no allowance")."""
+    def _secondary(state, player, inst, info):
+        return {"boar": 1} if info["animal_type"] == "sheep" else {}
+
+    temp_card("test_chameleon", "Test Chameleon", "minor", "test",
+              cost={}, pasture_secondary_types=_secondary)
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "test_chameleon")
+    fences = set(cell_edges(3)) | set(cell_edges(4))
+    fences.discard("v-0-4")
+    p["fences"] = sorted(fences)  # size-2 pasture [3, 4], capacity 4
+
+    p["cells"][3]["animal"] = {"type": "sheep", "count": 3}
+    p["cells"][4]["animal"] = {"type": "boar", "count": 1}
+    ok, err = engine._validate_animals(s, p)
+    assert ok, err  # 3 sheep + 1 boar = 4 <= capacity; boar <= allowance
+
+    p["cells"][4]["animal"]["count"] = 2
+    ok, err = engine._validate_animals(s, p)
+    assert not ok  # 2 boar > the 1-boar allowance
+
+    p["cells"][3]["animal"]["count"] = 4
+    p["cells"][4]["animal"]["count"] = 1
+    ok, err = engine._validate_animals(s, p)
+    assert not ok  # 4 sheep + 1 boar = 5 > capacity 4 (total still enforced)
+
+    # No sheep anywhere in the pasture -> the mixing allowance never
+    # applies, so two non-sheep types still can't share it.
+    p["cells"][3]["animal"] = {"type": "cattle", "count": 1}
+    p["cells"][4]["animal"] = {"type": "boar", "count": 1}
+    ok, err = engine._validate_animals(s, p)
+    assert not ok
+
+
+def test_holds_animals_typed_caps(engine, temp_card):
+    """I102-style: 1 sheep, 1 wild boar, and 1 cattle on the card."""
+    def _rule(state, player, inst):
+        return {"types": {"sheep": 1, "boar": 1, "cattle": 1}}
+
+    temp_card("test_wildlife_reserve", "Test Wildlife Reserve", "minor",
+              "test", cost={}, holds_animals=_rule)
+    s = make_state(engine, 2)
+    p = s["players"][s["current_player"]]
+    inst = put_in_play(s, p["index"], "test_wildlife_reserve")
+
+    inst["held"] = {"sheep": 1, "boar": 1, "cattle": 1}
+    ok, err = cards.validate_held(s, p)
+    assert ok, err
+
+    inst["held"] = {"sheep": 2}
+    ok, err = cards.validate_held(s, p)
+    assert not ok
+
+
+def test_holds_animals_total_cap(engine, temp_card):
+    """E58-style: up to 2 animals total, of any mix of types."""
+    def _rule(state, player, inst):
+        return {"total": 2}
+
+    temp_card("test_animal_yard", "Test Animal Yard", "minor", "test",
+              cost={}, holds_animals=_rule)
+    s = make_state(engine, 2)
+    p = s["players"][s["current_player"]]
+    inst = put_in_play(s, p["index"], "test_animal_yard")
+
+    inst["held"] = {"sheep": 1, "boar": 1}
+    ok, err = cards.validate_held(s, p)
+    assert ok, err
+
+    inst["held"] = {"sheep": 2, "boar": 1}
+    ok, err = cards.validate_held(s, p)
+    assert not ok
+
+
+def test_holds_animals_unlimited(engine, temp_card):
+    """K145-style: unlimited wild boar (and nothing else)."""
+    def _rule(state, player, inst):
+        return {"types": {"boar": None}}
+
+    temp_card("test_forest_pasture", "Test Forest Pasture", "minor",
+              "test", cost={}, holds_animals=_rule)
+    s = make_state(engine, 2)
+    p = s["players"][s["current_player"]]
+    inst = put_in_play(s, p["index"], "test_forest_pasture")
+
+    inst["held"] = {"boar": 50}
+    ok, err = cards.validate_held(s, p)
+    assert ok, err
+
+    inst["held"] = {"sheep": 1}
+    ok, err = cards.validate_held(s, p)
+    assert not ok  # sheep isn't in "types" at all
+
+
+def test_animal_counts_includes_held_and_breeds(engine, temp_card):
+    """animal_counts folds in card-held animals -- so two cattle (1 on
+    the farm, 1 held on a card) breed a newborn like any other pair."""
+    def _rule(state, player, inst):
+        return {"types": {"cattle": None}}
+
+    temp_card("test_cattle_farm", "Test Cattle Farm", "minor", "test",
+              cost={}, holds_animals=_rule)
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, "test_cattle_farm")
+    p["fences"] = sorted(cell_edges(4))
+    p["cells"][4]["animal"] = {"type": "cattle", "count": 1}
+    inst["held"] = {"cattle": 1}
+    assert animal_counts(p)["cattle"] == 2
+
+    s["phase"] = "feeding"
+    s["round"] = 3
+    for pl in s["players"]:
+        pl["fed"] = False
+        pl["resources"]["food"] = 10
+    for pl in list(s["players"]):
+        s = engine.apply_action(s, pl["player_id"], {"kind": "feed"}).new_state
+    assert animal_counts(s["players"][first])["cattle"] == 3
+
+
+def test_place_newborn_animal_into_holder_card(engine, temp_card):
+    """When no pasture/stable/house room is left, a newborn falls back
+    to a holder card with headroom instead of being lost."""
+    def _rule(state, player, inst):
+        return {"types": {"boar": None}}
+
+    temp_card("test_forest_pasture2", "Test Forest Pasture", "minor",
+              "test", cost={}, holds_animals=_rule)
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, "test_forest_pasture2")
+    p["pets"] = {"sheep": cards.house_capacity(s, p)}  # house already full
+
+    placed = engine._place_newborn_animal(s, p, "boar")
+    assert placed
+    assert inst["held"] == {"boar": 1}
+
+
+def test_accommodate_places_into_holder_card(engine, temp_card):
+    """Accommodate prompt round-trip with a {"card": ...} placement."""
+    def _rule(state, player, inst):
+        return {"types": {"sheep": None}}
+
+    temp_card("test_animal_yard2", "Test Animal Yard", "minor", "test",
+              cost={}, holds_animals=_rule)
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "test_animal_yard2")
+    set_sheep_market(s, 2)
+    s = place(engine, s, {"kind": "place", "space": "sheep_market"})
+    pid = s["players"][first]["player_id"]
+    s = engine.apply_action(s, pid, {
+        "kind": "accommodate",
+        "placements": [{"card": "test_animal_yard2", "type": "sheep",
+                        "count": 2}],
+    }).new_state
+    p = s["players"][first]
+    inst = next(i for i in p["minors"] if i["id"] == "test_animal_yard2")
+    assert inst["held"] == {"sheep": 2}
+    assert animal_counts(p)["sheep"] == 2
+
+
+def test_callable_extra_rooms_gates_family_growth(engine, temp_card):
+    """D085-style: extra_rooms may be a computed fn(state, player, inst)
+    -> int (room for one person once you have 6 occupations in play),
+    not just a static per-card value."""
+    def _extra(state, player, inst):
+        return 1 if len(player["occupations"]) >= 6 else 0
+
+    temp_card("test_reader", "Test Reader", "occupation", "test",
+              cost={}, extra_rooms=_extra)
+    for i in range(5):
+        temp_card(f"test_filler_occ_{i}", f"Test Filler {i}",
+                  "occupation", "test", cost={})
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "test_reader")
+    for i in range(4):
+        put_in_play(s, first, f"test_filler_occ_{i}")
+    assert len(p["occupations"]) == 5
+
+    add_space(s, "basic_wish", "Basic Wish for Children")
+    acts = engine.get_valid_actions(s, p["player_id"])
+    assert not any(a["kind"] == "place" and a["space"] == "basic_wish"
+                  for a in acts)
+
+    put_in_play(s, first, "test_filler_occ_4")  # 6th occupation
+    assert len(p["occupations"]) == 6
+    acts = engine.get_valid_actions(s, p["player_id"])
+    assert any(a["kind"] == "place" and a["space"] == "basic_wish"
+              for a in acts)
+
+    s = place(engine, s, {"kind": "place", "space": "basic_wish"})
+    assert s["players"][first]["people_total"] == 3

@@ -228,7 +228,12 @@ def pasture_capacity(player, pasture, bonus=0):
 
 
 def animal_counts(player):
-    """Total animals on the farm (cells + house pets), by type."""
+    """Total animals on the farm (cells + house pets + card-held storage
+    -- e.g. Cattle Farm/Animal Yard/Wildlife Reserve -- since animals kept
+    on a card are still animals on the player's farm for every rule that
+    counts them: breeding, feeding conversions, scoring). Card instances
+    are plain data (`inst["held"] = {type: count}`), read directly here
+    with no dependency on cards.py."""
     totals = {t: 0 for t in ANIMAL_TYPES}
     for cell in player["cells"]:
         a = cell.get("animal")
@@ -236,15 +241,43 @@ def animal_counts(player):
             totals[a["type"]] += a["count"]
     for t, n in player.get("pets", {}).items():
         totals[t] += n
+    for inst in player.get("occupations", []) + player.get("minors", []):
+        for t, n in (inst.get("held") or {}).items():
+            totals[t] = totals.get(t, 0) + n
     return totals
 
 
-def validate_animal_placement(player, house_cap=1, pasture_bonus=0):
+def validate_animal_placement(player, house_cap=1, pasture_cap=None,
+                              unfenced_stable_cap=None, secondary_types=None):
     """
     Check the current animal placement against husbandry rules.
-    `house_cap` and `pasture_bonus` come from card modifiers.
+    `house_cap` is a flat int (card modifiers folded in by the caller,
+    e.g. `cards.house_capacity`). The rest are callbacks a card-aware
+    caller supplies to fold in per-pasture/type modifiers -- the
+    defaults reproduce the original flat behavior exactly (2 per cell,
+    doubled per stable inside; 1 animal in an unfenced stable; no second
+    type sharing a pasture), so this module stays card-free:
+
+    - `pasture_cap(cells, animal_type) -> int` -- capacity of a pasture
+      (`cells`, a sorted list of cell indices) for `animal_type`.
+    - `unfenced_stable_cap(animal_type) -> int` -- capacity of an
+      unfenced stable for `animal_type`.
+    - `secondary_types(info) -> {type: max_count}` -- animal types
+      allowed alongside `info["animal_type"]` in that pasture, up to
+      `max_count` each, still counting against the pasture's total
+      `pasture_cap`. `info` is `{"cells": ..., "size": len(cells),
+      "stables": stable count inside, "animal_type": the primary type
+      being tried}`.
+
     Returns (ok, error_message).
     """
+    if pasture_cap is None:
+        pasture_cap = lambda cells, animal_type: pasture_capacity(player, cells)
+    if unfenced_stable_cap is None:
+        unfenced_stable_cap = lambda animal_type: 1
+    if secondary_types is None:
+        secondary_types = lambda info: {}
+
     pets = player.get("pets", {})
     if any(n < 0 for n in pets.values()):
         return False, "Invalid pets"
@@ -257,7 +290,7 @@ def validate_animal_placement(player, house_cap=1, pasture_bonus=0):
         for i in p:
             pasture_of[i] = pi
 
-    per_pasture = {}
+    per_pasture = {}  # pi -> {type: count}
     for idx, cell in enumerate(player["cells"]):
         a = cell.get("animal")
         if not a:
@@ -266,19 +299,37 @@ def validate_animal_placement(player, house_cap=1, pasture_bonus=0):
             return False, "Animal counts must be positive"
         if idx in pasture_of:
             pi = pasture_of[idx]
-            info = per_pasture.setdefault(pi, {"type": a["type"], "count": 0})
-            if info["type"] != a["type"]:
-                return False, "A pasture can only hold one type of animal"
-            info["count"] += a["count"]
+            counts = per_pasture.setdefault(pi, {})
+            counts[a["type"]] = counts.get(a["type"], 0) + a["count"]
         elif cell["stable"] and cell["type"] == "empty":
-            if a["count"] > 1:
-                return False, "An unfenced stable holds only 1 animal"
+            cap = unfenced_stable_cap(a["type"])
+            if a["count"] > cap:
+                return False, f"An unfenced stable holds only {cap} {a['type']}"
         else:
             return False, "Animals must be in pastures, unfenced stables, or the house"
 
-    for pi, info in per_pasture.items():
-        if info["count"] > pasture_capacity(player, pastures[pi], pasture_bonus):
-            return False, "Pasture over capacity"
+    for pi, counts in per_pasture.items():
+        cells = pastures[pi]
+        total = sum(counts.values())
+        if len(counts) == 1:
+            (only_type,) = counts
+            if total > pasture_cap(cells, only_type):
+                return False, "Pasture over capacity"
+            continue
+        # More than one type in this pasture: valid iff some present type
+        # can serve as "primary" -- every other type present fits within
+        # that primary's secondary allowance, and the combined total
+        # still fits the pasture's (primary-conditioned) capacity.
+        stables = sum(1 for i in cells if player["cells"][i]["stable"])
+        if not any(
+            total <= pasture_cap(cells, primary) and all(
+                counts[t] <= secondary_types(
+                    {"cells": cells, "size": len(cells), "stables": stables,
+                     "animal_type": primary}).get(t, 0)
+                for t in counts if t != primary)
+            for primary in counts
+        ):
+            return False, "A pasture can only hold one type of animal"
     return True, ""
 
 

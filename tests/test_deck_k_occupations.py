@@ -699,7 +699,7 @@ def test_animal_tamer_house_capacity(engine):
     put_in_play(s, 0, "K306")
     p["cells"][0]["type"] = "room"
     p["cells"][1]["type"] = "room"
-    assert cards.house_capacity(p) == max(1, sum(
+    assert cards.house_capacity(s, p) == max(1, sum(
         1 for c in p["cells"] if c["type"] == "room"))
 
 

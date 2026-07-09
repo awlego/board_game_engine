@@ -1243,7 +1243,7 @@ def _silage_round_start(state, player, inst, ctx):
     if animal is None:
         return
     from server.agricola.engine import AgricolaEngine
-    if not AgricolaEngine()._place_newborn_animal(player, animal):
+    if not AgricolaEngine()._place_newborn_animal(state, player, animal):
         return  # no room to breed; nothing spent
     if player["resources"]["grain"] >= 1:
         player["resources"]["grain"] -= 1

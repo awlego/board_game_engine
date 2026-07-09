@@ -228,7 +228,7 @@ def _animal_welfarist_round_start(state, player, inst, ctx):
             inst["data"].get("fence_round") == ended:
         from server.agricola.engine import AgricolaEngine
         engine = AgricolaEngine()
-        gained = [a for a in ANIMAL_TYPES if engine._place_newborn_animal(player, a)]
+        gained = [a for a in ANIMAL_TYPES if engine._place_newborn_animal(state, player, a)]
         if gained:
             ctx["log"].append(f"{player['name']}'s Animal Welfarist grants "
                               + ", ".join(f"1 {a}" for a in gained))

@@ -369,8 +369,13 @@ def build_fences(state, player, new_fences, log, cost_override=None, ctx=None):
 
     # Subdividing can strand animals; force re-accommodation if so.
     ok, _err = validate_animal_placement(
-        player, house_cap=cards.house_capacity(player),
-        pasture_bonus=cards.pasture_bonus(player))
+        player, house_cap=cards.house_capacity(state, player),
+        pasture_cap=lambda cells, atype: cards.pasture_capacity(
+            state, player, cells, atype),
+        unfenced_stable_cap=lambda atype: cards.unfenced_stable_capacity(
+            state, player, atype),
+        secondary_types=lambda info: cards.pasture_secondary_types(
+            state, player, info))
     if not ok and not any(pr["type"] == "accommodate"
                           and pr["player"] == player["index"]
                           for pr in state["prompts"]):
@@ -718,11 +723,11 @@ def sow(state, player, sow_items, log):
 
 # ── Family growth ──────────────────────────────────────────────────────
 
-def can_family_growth(player, require_room=True):
+def can_family_growth(state, player, require_room=True):
     if player["people_total"] >= MAX_PEOPLE:
         return False
     if require_room:
-        return rooms(player) + cards.extra_rooms(player) > player["people_total"]
+        return rooms(player) + cards.extra_rooms(state, player) > player["people_total"]
     return True
 
 
@@ -732,7 +737,8 @@ def family_growth(state, player, log, require_room=True):
     without a room" or a scheduled/free growth at a later harvest)."""
     if player["people_total"] >= MAX_PEOPLE:
         raise ValueError("You already have 5 people")
-    if require_room and rooms(player) + cards.extra_rooms(player) <= player["people_total"]:
+    if require_room and rooms(player) + cards.extra_rooms(state, player) \
+            <= player["people_total"]:
         raise ValueError("You need more room than people")
     player["people_total"] += 1
     player["people_placed"] += 1  # the newborn does not act this round

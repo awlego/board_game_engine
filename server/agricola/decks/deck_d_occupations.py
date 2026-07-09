@@ -226,7 +226,7 @@ def _child_ombudsman_available(state, player, inst):
     if player["people_total"] >= MAX_PEOPLE:
         return False
     rooms = (sum(1 for c in player["cells"] if c["type"] == "room")
-             + cards.extra_rooms(player))
+             + cards.extra_rooms(state, player))
     return rooms > player["people_total"]
 
 
