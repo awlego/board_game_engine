@@ -703,9 +703,9 @@ compendium_card("K290", hooks=cards.take_bonus(["wood", "clay"], {"clay": 1}))
 
 
 # ── K291 Lover ────────────────────────────────────────────────────────
+# The declared prereq= below (at least 4 food) is enforced by
+# _play_occupation before this hook ever runs.
 def _lover_play(state, player, inst, ctx):
-    if player["resources"]["food"] < 4:
-        raise ValueError("Lover: requires 4 additional food")
     if player["people_total"] >= MAX_PEOPLE:
         return
     player["resources"]["food"] -= 4

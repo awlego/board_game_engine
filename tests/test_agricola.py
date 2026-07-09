@@ -244,6 +244,40 @@ def test_fisherman_space_bonus(engine):
     assert s["players"][first]["resources"]["food"] == food + 1 + 2
 
 
+def test_on_play_gain_routes_animals_to_accommodation(engine):
+    # on_play_gain must not write animal goods into player["resources"]
+    # (they never live there); they should be queued as extras and left
+    # for the engine to route through the normal accommodation prompt.
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = cards.new_instance("occ_woodcutter")  # any instance works
+    hook = cards.on_play_gain({"sheep": 2, "wood": 1})
+    ctx = {"log": [], "actor": first, "extra": {}}
+    hook(s, p, inst, ctx)
+    assert ctx["extra"] == {"sheep": 2}
+    assert p["resources"]["wood"] == 1
+    assert "sheep" not in p["resources"]
+
+
+def test_space_bonus_others_routes_animals_to_accommodation(engine):
+    # space_bonus(..., others=True) grants goods to the card OWNER when
+    # another player uses a watched space. Animal goods must not be
+    # written into the owner's resources -- they should be queued via an
+    # accommodation prompt for the owner instead.
+    s = make_state(engine, 2)
+    owner_idx, actor_idx = 0, 1
+    owner = s["players"][owner_idx]
+    inst = cards.new_instance("occ_woodcutter")
+    hooks = cards.space_bonus(["sheep_market"], {"cattle": 1}, others=True)
+    ctx = {"space_id": "sheep_market", "goods": {"sheep": 1}, "extra": {},
+           "log": [], "actor": actor_idx}
+    hooks["space_used"](s, owner, inst, ctx)
+    assert "cattle" not in owner["resources"]
+    assert s["prompts"] == [{"type": "accommodate", "player": owner_idx,
+                             "gained": {"cattle": 1}}]
+
+
 def test_small_scale_farmer_round_income(engine):
     s = make_state(engine, 2)
     first = s["current_player"]
@@ -358,6 +392,26 @@ def test_minor_prereq_enforced(engine):
     s = place(engine, s, {"kind": "place", "space": "major_improvement",
                           "minor": {"card": "minor_loom"}})
     assert any(i["id"] == "minor_loom" for i in s["players"][first]["minors"])
+
+
+# ── Occupations ──────────────────────────────────────────────────────
+
+def test_occupation_prereq_enforced(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give(s, first, food=10)
+    p = s["players"][first]
+    p["hand_occupations"] = ["B154"]  # Sheep Keeper: needs fewer than 7 sheep
+    p["pets"] = {"sheep": 7}
+    # No occupation in hand meets its prereq, so Lessons isn't even offered.
+    actions = engine.get_valid_actions(s, p["player_id"])
+    assert not any(a["kind"] == "place" and a["space"] == "lessons"
+                  for a in actions)
+    with pytest.raises(ValueError):
+        place(engine, s, {"kind": "place", "space": "lessons", "card": "B154"})
+    p["pets"] = {"sheep": 3}
+    s = place(engine, s, {"kind": "place", "space": "lessons", "card": "B154"})
+    assert any(i["id"] == "B154" for i in s["players"][first]["occupations"])
 
 
 def test_traveling_card_passes_left(engine):

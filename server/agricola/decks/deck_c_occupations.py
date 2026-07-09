@@ -736,11 +736,14 @@ UNIMPLEMENTED["C125"] = (
 # "When you play this card, immediately pay an amount of food equal to
 # the number of complete rounds left to play to take a 'Family Growth
 # Even without Room' action."
-# (Occupation prereqs aren't enforced anywhere in the engine — only
-# _play_minor checks check_prereq, _play_occupation never does — so the
-# "can't afford it" guard has to live in the play hook itself, which
-# raises like any other invalid-action check in this codebase; apply_
-# action's deepcopy-at-entry makes that a clean rollback.)
+# (The food cost here is the number of *remaining* rounds -- a value that
+# varies with state["round"] and can't be expressed as this engine's
+# static cost dict or a static prereq predicate, so the "can't afford it"
+# guard still has to live in the play hook itself, raising like any other
+# invalid-action check in this codebase; apply_action's deepcopy-at-entry
+# makes that a clean rollback. This is unrelated to occupation prereqs,
+# which _play_occupation does now enforce via check_prereq, same as
+# _play_minor.)
 # ═════════════════════════════════════════════════════════════════════
 def _lover_play(state, player, inst, ctx):
     from server.agricola.state import MAX_PEOPLE
@@ -1291,10 +1294,9 @@ compendium_card("C163", hooks={"space_used": _material_deliveryman_space_used})
 # C164 German Heath Keeper — min 4 players
 # "Each time any player (including you) uses the 'Take 1 Wild Boar'
 # accumulation space, you get 1 sheep from the general supply."
-# (Uses a custom hook rather than space_bonus(others=True): that factory
-# adds "other player" gains directly to player["resources"], which is
-# correct for plain goods but would silently drop an *animal* gain
-# instead of routing it through accommodation.)
+# (Predates space_bonus(others=True) being animal-safe -- the factory
+# now routes "other player" animal gains through accommodation via
+# cards.grant_goods(), same as this hand-rolled version below.)
 # ═════════════════════════════════════════════════════════════════════
 def _german_heath_keeper_space_used(state, player, inst, ctx):
     if ctx["space_id"] != "pig_market":
@@ -1321,8 +1323,9 @@ def _game_catcher_remaining(state):
 
 
 def _game_catcher_play(state, player, inst, ctx):
-    # (See the C127 Lover note: occupation prereqs aren't engine-enforced,
-    # so the affordability check has to raise from inside the play hook.)
+    # (See the C127 Lover note: this is a round-dependent cost, not a
+    # static prereq, so the affordability check still has to raise from
+    # inside the play hook.)
     cost = _game_catcher_remaining(state)
     if player["resources"]["food"] < cost:
         raise ValueError(f"Game Catcher: not enough food ({cost} needed)")

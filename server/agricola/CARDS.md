@@ -68,7 +68,13 @@ A hook is `fn(state, player, card, ctx)`. It can mutate the player, stash
 counters in `card["data"]`, append log lines, and add goods to `ctx["extra"]`
 (the engine merges extras afterward, routing animals through the normal
 accommodation flow — so a card that grants sheep automatically triggers the
-"place, cook, or discard" prompt).
+"place, cook, or discard" prompt). `ctx["extra"]` only reaches the *acting*
+player, though — for goods granted to some other player (an "each time ANY
+player does X, the card owner gets Y" effect), use `cards.grant_goods(state,
+player, gain)`, which credits non-animal goods directly and queues an
+accommodation prompt for animal goods. `on_play_gain` and
+`space_bonus(..., others=True)` already do this internally, so declaring a
+card with either factory is animal-safe regardless of the gain's contents.
 
 Current hook points: `play`, `occupation_played`, `round_start`,
 `space_used`, `fences_built`, `stable_built`, `sow`, `bake`, `renovate`,
@@ -143,6 +149,13 @@ are one comparison, not an engine feature.
 - **Prereq** is a `(predicate, text)` pair; helpers exist for the common
   shapes (`needs_occupations(n)`, `needs_rooms(n)`, `exact_occupations(n)`,
   house-type checks). Prereqs gate playability only — never the effect.
+  The engine enforces a card's declared `prereq` for occupations and
+  minor improvements alike (`_play_occupation` and `_play_minor` both
+  call `check_prereq`, and both are excluded from `get_valid_actions`
+  when unmet). A round-dependent or resource-cost condition that can't
+  be expressed as a static `(state, player) -> bool` predicate (e.g. "pay
+  1 food per remaining harvest") still has to raise from inside the
+  card's own `play` hook — that's a variable cost, not a prereq.
 - **Cost** is a plain goods dict; anything payable (`{"grain": 1}` included).
 - **Deck & player count**: every card carries `deck` ("base" or "custom") and
   `min_players` (1, 3, or 4 — the `occ-1/occ-3/occ-4` classes from the

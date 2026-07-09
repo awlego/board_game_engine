@@ -505,9 +505,22 @@ def test_sheep_keeper_prereq_and_trigger(engine):
     cards.CARDS["B154"]["hooks"]["round_start"](s, p, inst, ctx)
     assert p["resources"]["food"] == food_before + 2
     assert cards.CARDS["B154"]["score_bonus"](s, p, inst) == 3
-    # The play hook itself blocks playing with 7+ sheep already.
+
+
+def test_sheep_keeper_prereq_blocks_play(engine):
+    # The engine enforces the declared prereq before the card is played
+    # -- playing with 7+ sheep already must be rejected up front.
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "B154")
+    give(s, first, food=10)
+    p = s["players"][first]
+    p["pets"] = {"sheep": 7}
     with pytest.raises(ValueError):
-        cards.CARDS["B154"]["hooks"]["play"](s, p, inst, ctx)
+        place(engine, s, {"kind": "place", "space": "lessons", "card": "B154"})
+    p["pets"] = {"sheep": 3}
+    s = place(engine, s, {"kind": "place", "space": "lessons", "card": "B154"})
+    assert any(i["id"] == "B154" for i in s["players"][first]["occupations"])
 
 
 def test_tree_farm_joiner_offers_minor(engine):

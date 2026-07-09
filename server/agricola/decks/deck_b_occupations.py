@@ -946,16 +946,9 @@ compendium_card("B153", score_bonus=_housemaster_score)
 
 
 # ── B154 Sheep Keeper ─────────────────────────────────────────────────
-# The engine's _play_occupation never calls check_prereq (only minors go
-# through that gate), so the declarative `prereq=` below is enforced for
-# display/query purposes only; the play hook itself raises to actually
-# block playing this card with 7+ sheep already.
-def _sheep_keeper_play(state, player, inst, ctx):
-    if cards.animal_totals_of(player)["sheep"] >= 7:
-        raise ValueError("Sheep Keeper: you can only play this card with "
-                         "fewer than 7 sheep")
-
-
+# The engine's _play_occupation enforces check_prereq (like minors do),
+# so the declarative `prereq=` below (fewer than 7 sheep) already blocks
+# playing this card with 7+ sheep -- no play hook needed for that guard.
 def _sheep_keeper_check(state, player, inst, ctx):
     if inst["data"].get("triggered"):
         return
@@ -970,8 +963,7 @@ compendium_card(
     "B154",
     prereq=(lambda s, p: cards.animal_totals_of(p)["sheep"] < 7,
            "fewer than 7 sheep"),
-    hooks={"play": _sheep_keeper_play,
-          "round_start": _sheep_keeper_check,
+    hooks={"round_start": _sheep_keeper_check,
           "harvest_field": _sheep_keeper_check,
           "space_used": _sheep_keeper_check},
     score_bonus=lambda s, p, i: i["data"].get("bonus", 0))

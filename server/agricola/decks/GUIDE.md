@@ -70,6 +70,21 @@ through the accommodation prompt automatically):
 `spec.get("resolve_choice")` directly. Same signature, ctx carries
 `index`, `option`, `data`.
 
+`ctx["extra"]` only reaches the *acting* player. For an "each time ANY
+player does X, the card owner gets Y" effect (owner != actor), use
+`cards.grant_goods(state, player, gain)` instead of writing straight into
+`player["resources"]` — it credits non-animal goods directly and queues
+an accommodation prompt for animal goods, so a card that grants sheep to
+some other player can't silently corrupt state. `on_play_gain` and
+`space_bonus(..., others=True)` already use it internally.
+
+Occupation `prereq=` is enforced the same way minor `prereq=` is:
+`_play_occupation` calls `check_prereq` before paying/removing the card,
+and `get_valid_actions` excludes an occupation-only space (Lessons) when
+no card in hand has its prereq satisfied. Don't add a `raise` in a `play`
+hook to re-check something already expressible as `prereq=` — only a
+round-dependent or variable-cost condition needs that.
+
 **Static ability keys** (data on the spec, queried by the engine):
 
 - `cost_mod=fn(state, player, kind, cost, ctx) -> cost` — kinds:

@@ -120,6 +120,9 @@ class AgricolaEngine(GameEngine):
             view["playable_minors"] = [
                 cid for cid in me["hand_minors"]
                 if self._minor_playable(state, me, cid)]
+            view["playable_occupations"] = [
+                cid for cid in me["hand_occupations"]
+                if self._occupation_playable(state, me, cid)]
             view["occ_costs"] = {
                 sid: self._occupation_cost(state, me, sid)
                 for sid in ("lessons", "lessons_b")}
@@ -541,6 +544,16 @@ class AgricolaEngine(GameEngine):
         return any(self._minor_playable(state, player, cid)
                    for cid in player["hand_minors"])
 
+    def _occupation_playable(self, state, player, cid):
+        spec = cards.CARDS.get(cid)
+        if not spec or spec["type"] != "occupation":
+            return False
+        return cards.check_prereq(state, player, cid)
+
+    def _any_occupation_playable(self, state, player):
+        return any(self._occupation_playable(state, player, cid)
+                   for cid in player["hand_occupations"])
+
     def _space_usable(self, state, p, space):
         sid = space["id"]
         if space["accumulates"]:
@@ -551,7 +564,8 @@ class AgricolaEngine(GameEngine):
             return True
         if sid in ("lessons", "lessons_b"):
             cost = self._occupation_cost(state, p, sid)
-            return bool(p["hand_occupations"]) and p["resources"]["food"] >= cost
+            return (p["resources"]["food"] >= cost
+                    and self._any_occupation_playable(state, p))
         if sid == "farmland":
             return bool(plowable_cells(p))
         if sid == "farm_expansion":
@@ -779,6 +793,9 @@ class AgricolaEngine(GameEngine):
         if cid not in p["hand_occupations"]:
             raise ValueError("That occupation is not in your hand")
         spec = cards.CARDS[cid]
+        if not cards.check_prereq(state, p, cid):
+            raise ValueError(
+                f"Prerequisite not met: {spec['prereq'][1]}")
         cost = self._occupation_cost(state, p, space_id)
         self._pay(p, {"food": cost})
         p["hand_occupations"].remove(cid)

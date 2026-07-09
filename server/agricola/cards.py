@@ -298,6 +298,35 @@ def check_prereq(state, player, cid):
 
 # ── Hook factories ───────────────────────────────────────────────────
 
+def _queue_accommodation(state, player, animals):
+    """Queue an accommodation prompt for `player` for newly gained animal
+    goods. Used when a card grants animals to a player who is not the
+    current actor, so there is no ctx["extra"] to stash them in (mirrors
+    the engine's own _gain_animals, which per-card hooks can't call
+    directly)."""
+    for pr in state["prompts"]:
+        if pr["type"] == "accommodate" and pr["player"] == player["index"]:
+            add_goods(pr["gained"], animals)
+            return
+    state["prompts"].append({"type": "accommodate", "player": player["index"],
+                             "gained": dict(animals)})
+
+
+def grant_goods(state, player, gain):
+    """Credit `gain` directly to `player`. Non-animal goods go straight
+    into player["resources"]; animal goods ("sheep", "boar", "cattle")
+    never live there, so they are routed through the normal accommodation
+    prompt instead. Use this (instead of add_goods(player["resources"], ...))
+    whenever the recipient is not the current actor -- e.g. an "each time
+    ANY player does X, the card owner gets Y" effect -- so an animal gain
+    can't silently corrupt state."""
+    animals = {g: v for g, v in gain.items() if g in ANIMAL_TYPES}
+    goods = {g: v for g, v in gain.items() if g not in ANIMAL_TYPES}
+    add_goods(player["resources"], goods)
+    if any(animals.values()):
+        _queue_accommodation(state, player, animals)
+
+
 def take_bonus(goods_watched, gain):
     """Each time YOU take any of `goods_watched` from an action space."""
     def hook(state, player, inst, ctx):
@@ -317,8 +346,9 @@ def space_bonus(space_ids, gain, others=False):
         if ctx["space_id"] not in space_ids or (not others and not mine):
             return
         if others and not mine:
-            # Goods for the card owner, not the actor.
-            add_goods(player["resources"], gain)
+            # Goods for the card owner, not the actor (animals route
+            # through accommodation -- see grant_goods).
+            grant_goods(state, player, gain)
             ctx["log"].append(f"{player['name']}'s {spec(inst)['name']} grants "
                               + goods_str(gain))
         else:
@@ -371,8 +401,14 @@ def harvest_food(fn, label=None):
 
 
 def on_play_gain(gain):
+    """On play: grant `gain` to the player playing the card. Animal goods
+    go through ctx["extra"] (the engine routes them to accommodation);
+    other goods are credited directly."""
     def hook(state, player, inst, ctx):
-        add_goods(player["resources"], gain)
+        animals = {g: v for g, v in gain.items() if g in ANIMAL_TYPES}
+        goods = {g: v for g, v in gain.items() if g not in ANIMAL_TYPES}
+        add_goods(player["resources"], goods)
+        add_goods(ctx["extra"], animals)
         ctx["log"].append(f"{player['name']} gets " + goods_str(gain))
     return hook
 
