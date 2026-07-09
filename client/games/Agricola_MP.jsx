@@ -284,7 +284,8 @@ function useGameConnection() {
     };
   }, []);
 
-  const createRoom = (name) => connect(() => send({ type: "create", game: "agricola", name }));
+  const createRoom = (name, options) => connect(() =>
+    send({ type: "create", game: "agricola", name, ...(options ? { options } : {}) }));
   const joinRoom = (code, name) => connect(() => send({ type: "join", room_code: code.toUpperCase(), name }));
 
   useEffect(() => {
@@ -1114,6 +1115,28 @@ function FeedDialog({ me, state, foodNeeded, submit, error }) {
       options.push({ key: craft, label: `${IMPROVEMENTS[craft].name}: 1 ${GOODS[res].label} → ${val} food`, good: res, via: craft, value: val, max: Math.min(1, me.resources[res]) });
     }
   }
+  // Card-provided conversions ({give: {...}, get: {...}, per_harvest?}).
+  for (const inst of inPlay(me)) {
+    const convs = cardSpec(inst.id).conversions || [];
+    convs.forEach((conv, i) => {
+      const via = `${inst.id}:${i}`;
+      const giveStr = Object.entries(conv.give).map(([g, n]) => `${n}${GOODS[g].icon}`).join(" ");
+      const getStr = Object.entries(conv.get).map(([g, n]) => `${n}${GOODS[g].icon}`).join(" ");
+      let max = 99;
+      for (const [g, n] of Object.entries(conv.give)) {
+        const have = ANIMALS.includes(g) ? totals[g] : me.resources[g];
+        max = Math.min(max, Math.floor(have / n));
+      }
+      const used = me.harvest_conversions_used.filter((u) => u === via).length;
+      if (conv.per_harvest != null) max = Math.min(max, conv.per_harvest - used);
+      if (max > 0) {
+        options.push({
+          key: via, label: `${cardSpec(inst.id).name}: ${giveStr} → ${getStr}`,
+          good: Object.keys(conv.give)[0], via, value: conv.get.food || 0, max,
+        });
+      }
+    });
+  }
 
   // Shared budgets (grain used by grain_raw only; veg by veg_raw + veg_cook).
   const vegUsed = (conv.veg_raw || 0) + (conv.veg_cook || 0);
@@ -1411,7 +1434,11 @@ function GameBoard({ game }) {
   const me = myIdx !== null && myIdx !== undefined ? state.players[myIdx] : null;
   const validActions = state.valid_actions || [];
   const validSpaces = new Set(validActions.filter((a) => a.kind === "place").map((a) => a.space));
-  const pendingMine = state.pending && me && state.pending.player === myIdx;
+  const prompt = (state.prompts || [])[0];
+  const promptMine = prompt && me && prompt.player === myIdx;
+  const pendingMine = promptMine && prompt.type === "accommodate";
+  const choiceMine = promptMine && prompt.type === "choice";
+  const cardActions = validActions.filter((a) => a.kind === "card_action");
   const feedAction = validActions.find((a) => a.kind === "feed");
   const phase = game.phaseInfo || {};
 
@@ -1492,6 +1519,16 @@ function GameBoard({ game }) {
                 submit={(a) => { submitAction(a); setPlanner(null); }}
                 cancel={() => setPlanner(null)} />
             )}
+            {cardActions.length > 0 && !planner && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                {cardActions.map((a) => (
+                  <Btn key={a.card} small variant="secondary"
+                    onClick={() => submitAction({ kind: "card_action", card: a.card })}>
+                    ⚡ {cardSpec(a.card).name}: {a.description}
+                  </Btn>
+                ))}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               {state.players.map((p) => (
                 <PlayerPanel key={p.index} player={p} color={PLAYER_COLORS[p.index]}
@@ -1528,10 +1565,29 @@ function GameBoard({ game }) {
 
       {/* Blocking dialogs */}
       {pendingMine && me && (
-        <AccommodateDialog me={me} gained={state.pending.gained} error={error}
+        <AccommodateDialog me={me} gained={prompt.gained} error={error}
           submit={submitAction} />
       )}
-      {feedAction && me && !pendingMine && (
+      {choiceMine && me && (
+        <div style={{
+          position: "fixed", inset: 0, background: "#00000066", zIndex: 50,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <div style={{ background: "#fffbeb", borderRadius: 12, padding: 18, width: 400, fontFamily: FONT }}>
+            <h3 style={{ margin: "0 0 8px" }}>{cardSpec(prompt.card).name}</h3>
+            {error && <div style={{ color: "#dc2626", fontSize: 12, marginBottom: 6 }}>{error}</div>}
+            <div style={{ fontSize: 13, marginBottom: 10 }}>{prompt.prompt}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {prompt.options.map((opt, i) => (
+                <Btn key={i} onClick={() => submitAction({ kind: "choice", index: i })}>
+                  {opt}
+                </Btn>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {feedAction && me && !pendingMine && !choiceMine && (
         <FeedDialog me={me} state={state} foodNeeded={feedAction.food_needed}
           error={error} submit={submitAction} />
       )}
@@ -1543,9 +1599,19 @@ function GameBoard({ game }) {
 // LOBBY
 // ============================================================
 
+const DECK_CHOICES = [
+  { id: "A", label: "Deck A (revised base)" },
+  { id: "B", label: "Deck B (Bubulcus)" },
+  { id: "C", label: "Deck C (Corbarius)" },
+  { id: "D", label: "Deck D (Dulcinaria)" },
+  { id: "base", label: "Engine deck (classics)" },
+  { id: "custom", label: "Custom cards" },
+];
+
 function Lobby({ game }) {
   const [name, setName] = useState(sessionStorage.getItem("player_name") || "");
   const [code, setCode] = useState("");
+  const [decks, setDecks] = useState(["A"]);
   const inRoom = !!game.roomCode;
 
   const S = {
@@ -1592,8 +1658,22 @@ function Lobby({ game }) {
         </p>
         <input style={S.input} placeholder="Your name" value={name}
           onChange={(e) => { setName(e.target.value); sessionStorage.setItem("player_name", e.target.value); }} />
+        <div style={{ fontSize: 12, marginBottom: 8 }}>
+          <b>Card decks:</b>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 4 }}>
+            {DECK_CHOICES.map((d) => (
+              <label key={d.id}>
+                <input type="checkbox" checked={decks.includes(d.id)}
+                  onChange={(e) => setDecks(e.target.checked
+                    ? [...decks, d.id] : decks.filter((x) => x !== d.id))} />
+                {" "}{d.label}
+              </label>
+            ))}
+          </div>
+        </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <Btn onClick={() => name.trim() && game.createRoom(name.trim())} disabled={!name.trim()}>
+          <Btn onClick={() => name.trim() && game.createRoom(name.trim(),
+            decks.length ? { decks } : undefined)} disabled={!name.trim()}>
             Create room
           </Btn>
         </div>

@@ -108,10 +108,20 @@ Queries are pure functions of the state, so validity checks
 Cards that need decisions take them as **action parameters**, validated by
 the card's own `play` hook (e.g. Shifting Cultivation's plow target:
 `{"kind":"place","space":"lessons","card":"...","params":{"cell":7}}`).
-Mid-effect prompts reuse the engine's existing `pending` mechanism — e.g.
-gaining animals from a card effect produces the same accommodation prompt as
-the Sheep Market. Cards with open-ended mid-effect choices should prefer
-parameters (known up front, one round trip) over pendings (blocking prompt).
+
+Mid-effect decisions use the **prompt queue** (`state["prompts"]`): a hook
+calls `prompt_choice(state, player, card_id, question, options)`; the engine
+blocks until the target player answers `{"kind":"choice","index":i}`, which
+dispatches to the card's `resolve_choice` hook. Gaining animals enqueues the
+same accommodation prompt the Sheep Market uses. Prefer parameters (known up
+front, one round trip) when the decision space is a board choice; prefer
+prompts for "your choice of X or Y" effects.
+
+**Activated abilities** are the third input channel: a card with a
+`card_action` spec ({available, apply, description}) is offered as an extra
+action on the owner's work turn and during feeding, without consuming a
+person placement. **Conversions** (`conversions=[{give, get, per_harvest?}]`)
+plug into the feeding dialog as additional exchange rates.
 
 ### 5. Card-held components
 
@@ -177,16 +187,21 @@ Totem — search `deck="custom"` in `cards.py`).
 
 ## What the current set covers / known limits
 
-The shipped set (~29 occupations, ~29 minors — enough to deal 7+7 to 4
-players after count-filtering) intentionally spans every mechanism above.
-Not yet needed, and how they'd fit if a future card needs them:
+The hand-written "base"/"custom" decks (~62 cards) span every mechanism
+above; the compendium decks under `decks/` (see `decks/GUIDE.md` and the
+card database in `data/compendium_cards.json`, parsed from the General
+Compendium by `tools/parse_compendium.py`) build on the same registry.
+Cards whose mechanics the engine cannot express are tracked per deck module
+in `UNIMPLEMENTED` (aggregated by `cards.load_decks()`), excluded from deal
+pools, and flagged in the client catalog.
 
-- **Mid-effect option prompts** ("your choice of wood or grain" at round
-  start): generalize `state["pending"]` into a queue of typed prompts; the
-  plumbing (blocking waits, `get_valid_actions` routing) already exists.
+Known remaining gaps, and how they'd fit if a future card needs them:
+
 - **Guest tokens / extra people**: a per-round placement counter on the
-  player, consulted by `_advance_work`.
+  player, consulted by `_advance_work` (the Lasso's replacement-turn logic
+  is the template).
 - **Replacement effects** ("use an occupied space"): a `mod_valid` query in
   `_space_usable` / `_apply_place`, same pattern as `cost_mod`.
-- **Once-per-game activated abilities**: a card-instance `data` counter plus
-  a `card_action` action kind dispatched to the card's hook.
+- **Farmers of the Moor** (deck M): fuel/heating, horses, forest/moor
+  tiles — a whole expansion's systems; M-deck cards stay unimplemented
+  until that lands.

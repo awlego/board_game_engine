@@ -12,17 +12,18 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from server.agricola.cards import CARDS  # noqa: E402
+from server.agricola.cards import CARDS, compendium, load_decks  # noqa: E402
 
 CLIENT_KEYS = (
     "name", "type", "text", "deck", "min_players", "cost", "points",
     "traveling", "pasture_capacity_bonus", "house_capacity", "raw_values",
     "bake", "bake_on_spaces", "bake_bonus_per_grain", "bake_bonus_flat",
-    "cook", "lasso", "field", "extra_rooms", "occ_cost_delta",
+    "cook", "lasso", "field", "extra_rooms", "occ_cost_delta", "conversions",
 )
 
 
 def build_catalog():
+    unimplemented = load_decks()
     catalog = {}
     for cid, spec in sorted(CARDS.items()):
         entry = {}
@@ -33,10 +34,26 @@ def build_catalog():
                     value = list(value)
                 if key == "field":
                     value = {"crops": list(value["crops"])}
+                if key == "conversions":
+                    value = [
+                        {k: v for k, v in conv.items()
+                         if k in ("give", "get", "per_harvest")}
+                        for conv in value]
                 entry[key] = value
         if spec.get("prereq"):
             entry["prereq_text"] = spec["prereq"][1]
+        if spec.get("card_action"):
+            entry["has_card_action"] = True
         catalog[cid] = entry
+    # Compendium cards not implemented: minimal browsable entries.
+    for code, db in compendium().items():
+        if code in catalog:
+            continue
+        catalog[code] = {
+            "name": db["name"], "type": db["type"], "deck": db["deck"],
+            "text": db["text"], "implemented": False,
+            "reason": unimplemented.get(code, "not yet implemented"),
+        }
     return catalog
 
 

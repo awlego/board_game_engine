@@ -12,8 +12,8 @@ time) → returning home (auto) → harvest on rounds 4/7/9/11/13/14
 breeding auto). Game ends after round 14's harvest.
 
 Sub-decisions (accommodating newly gained animals) are modeled with a
-single `state["pending"]` blocker that must be resolved by the target
-player before play continues.
+`state["prompts"]` queue (accommodating animals, card choices) that
+must be resolved by the target player before play continues.
 """
 
 import random
@@ -33,6 +33,10 @@ from server.agricola.state import (
 from server.agricola import cards
 from server.agricola.scoring import final_scores
 
+# Register all compendium deck modules at import time so restored
+# rooms (persistence) can resolve card specs without a fresh deal.
+cards.load_decks()
+
 ROOM_COST_MATERIAL = {"wood": "wood", "clay": "clay", "stone": "stone"}
 RENOVATION_TARGET = {"wood": "clay", "clay": "stone"}
 
@@ -46,8 +50,14 @@ class AgricolaEngine(GameEngine):
 
     # ── Core interface ───────────────────────────────────────────────
 
-    def initial_state(self, player_ids, player_names):
+    # Decks used when the room does not specify any. The hand-written
+    # "base"/"custom" decks are always valid; compendium decks join the
+    # default set once implemented.
+    DEFAULT_DECKS = ("base", "custom")
+
+    def initial_state(self, player_ids, player_names, options=None):
         n = len(player_ids)
+        options = options or {}
         players = [create_player(i, pid, pname)
                    for i, (pid, pname) in enumerate(zip(player_ids, player_names))]
 
@@ -58,8 +68,12 @@ class AgricolaEngine(GameEngine):
             else:
                 p["resources"]["food"] = 2 if p["index"] == starting else 3
 
+        decks = options.get("decks") or list(self.DEFAULT_DECKS)
+        known = cards.implemented_decks()
+        decks = [d for d in decks if d in known] or list(self.DEFAULT_DECKS)
+
         rng = random.Random(random.randrange(2 ** 31))
-        occ_hands, minor_hands = cards.deal_hands(n, rng)
+        occ_hands, minor_hands, hand_size = cards.deal_hands(n, rng, decks)
         for p in players:
             p["hand_occupations"] = occ_hands[p["index"]]
             p["hand_minors"] = minor_hands[p["index"]]
@@ -69,6 +83,8 @@ class AgricolaEngine(GameEngine):
             "player_ids": player_ids,
             "player_count": n,
             "players": players,
+            "decks": decks,
+            "hand_size": hand_size,
             "action_spaces": create_action_spaces(n),
             "deck": build_stage_deck(rng),
             "revealed": [],
@@ -79,7 +95,7 @@ class AgricolaEngine(GameEngine):
             "round_first_player": starting,
             "current_player": starting,
             "phase": "work",
-            "pending": None,
+            "prompts": [],
             "round_goods": {},
             "available_improvements": sorted(MAJOR_IMPROVEMENTS.keys()),
             "game_over": False,
@@ -124,28 +140,39 @@ class AgricolaEngine(GameEngine):
         if pidx is None or state["game_over"]:
             return []
 
-        pending = state.get("pending")
-        if pending:
-            if pending["player"] != pidx:
+        prompt = self._prompt(state)
+        if prompt:
+            if prompt["player"] != pidx:
                 return []
-            return [{
-                "kind": "accommodate",
-                "gained": pending["gained"],
-                "description": "Accommodate your animals (place, cook, or discard)",
-            }]
+            if prompt["type"] == "accommodate":
+                return [{
+                    "kind": "accommodate",
+                    "gained": prompt["gained"],
+                    "description": "Accommodate your animals (place, cook, or discard)",
+                }]
+            if prompt["type"] == "choice":
+                return [{
+                    "kind": "choice",
+                    "card": prompt["card"],
+                    "prompt": prompt["prompt"],
+                    "options": prompt["options"],
+                    "description": prompt["prompt"],
+                }]
+            return []
 
+        p = state["players"][pidx]
         if state["phase"] == "feeding":
-            p = state["players"][pidx]
             if p["fed"]:
                 return []
             return [{
                 "kind": "feed",
                 "food_needed": self._food_needed(state, p),
                 "description": "Feed your family",
-            }]
+            }] + cards.card_actions(state, p)
 
         if state["phase"] == "work" and state["current_player"] == pidx:
-            return self._placement_actions(state, pidx)
+            return self._placement_actions(state, pidx) + \
+                cards.card_actions(state, p)
 
         return []
 
@@ -160,6 +187,10 @@ class AgricolaEngine(GameEngine):
         kind = action.get("kind")
         if kind == "accommodate":
             return self._apply_accommodate(state, pidx, action)
+        if kind == "choice":
+            return self._apply_choice(state, pidx, action)
+        if kind == "card_action":
+            return self._apply_card_action(state, pidx, action)
         if kind == "feed":
             return self._apply_feed(state, pidx, action)
         if kind == "place":
@@ -169,9 +200,9 @@ class AgricolaEngine(GameEngine):
     def get_waiting_for(self, state):
         if state["game_over"]:
             return []
-        pending = state.get("pending")
-        if pending:
-            return [state["players"][pending["player"]]["player_id"]]
+        prompt = self._prompt(state)
+        if prompt:
+            return [state["players"][prompt["player"]]["player_id"]]
         if state["phase"] == "feeding":
             return [p["player_id"] for p in state["players"] if not p["fed"]]
         if state["phase"] == "work":
@@ -181,11 +212,14 @@ class AgricolaEngine(GameEngine):
     def get_phase_info(self, state):
         rnd = state["round"]
         desc = ""
+        prompt = self._prompt(state)
         if state["game_over"]:
             desc = "Game over"
-        elif state.get("pending"):
-            p = state["players"][state["pending"]["player"]]
-            desc = f"{p['name']} accommodates animals"
+        elif prompt:
+            p = state["players"][prompt["player"]]
+            desc = (f"{p['name']} accommodates animals"
+                    if prompt["type"] == "accommodate"
+                    else f"{p['name']} decides: {prompt.get('prompt', '')}")
         elif state["phase"] == "feeding":
             desc = "Harvest — feed your family"
         else:
@@ -210,6 +244,10 @@ class AgricolaEngine(GameEngine):
     def _result(self, state, log=None):
         return ActionResult(new_state=state, log=log or [],
                             game_over=state.get("game_over", False))
+
+    def _prompt(self, state):
+        prompts = state.get("prompts") or []
+        return prompts[0] if prompts else None
 
     def _space(self, state, space_id):
         for s in state["action_spaces"]:
@@ -293,7 +331,7 @@ class AgricolaEngine(GameEngine):
         rnd = state["round"]
         state["stage"] = stage_of_round(rnd)
         state["phase"] = "work"
-        state["pending"] = None
+        state["prompts"] = []
         log.append(f"— Round {rnd} (stage {state['stage']}) —")
 
         # Reveal this round's action space card.
@@ -457,7 +495,7 @@ class AgricolaEngine(GameEngine):
 
     def _placement_actions(self, state, pidx):
         p = state["players"][pidx]
-        if state["phase"] != "work" or state.get("pending"):
+        if state["phase"] != "work" or self._prompt(state):
             return []
         if p["people_placed"] >= p["people_total"]:
             return []
@@ -547,7 +585,7 @@ class AgricolaEngine(GameEngine):
     def _apply_place(self, state, pidx, action):
         if state["phase"] != "work":
             raise ValueError("Not the work phase")
-        if state.get("pending"):
+        if self._prompt(state):
             raise ValueError("A pending decision must be resolved first")
         if state["current_player"] != pidx:
             raise ValueError("Not your turn")
@@ -578,15 +616,15 @@ class AgricolaEngine(GameEngine):
 
         self._resolve_space(state, p, space, action, log)
 
-        # Animal accommodation may be pending; otherwise move on.
-        if not state.get("pending"):
+        # Prompts (accommodation, choices) may be queued; otherwise move on.
+        if not self._prompt(state):
             if lasso and p["people_placed"] < p["people_total"]:
                 log.append(f"{p['name']} uses the Lasso to place again")
                 self._advance_work(state, log, start_pidx=pidx)
             else:
                 self._advance_work(state, log)
-        elif lasso:
-            state["pending"]["lasso"] = True
+        else:
+            state["prompts"][0]["after_lasso"] = lasso
         return self._result(state, log)
 
     def _resolve_space(self, state, p, space, action, log):
@@ -644,7 +682,7 @@ class AgricolaEngine(GameEngine):
         elif sid in ("lessons", "lessons_b"):
             self._play_occupation(state, p, sid, action, log)
         elif sid == "farmland":
-            self._do_plow(p, action.get("cell"), log)
+            self._do_plow(state, p, action.get("cell"), log)
             if action.get("bake"):
                 if not cards.bake_on_space(p, sid):
                     raise ValueError("No card grants baking on Farmland")
@@ -675,7 +713,7 @@ class AgricolaEngine(GameEngine):
             if plow is None and not sow:
                 raise ValueError("Plow and/or sow")
             if plow is not None:
-                self._do_plow(p, plow, log)
+                self._do_plow(state, p, plow, log)
             if sow:
                 self._do_sow(state, p, sow, log)
             if action.get("bake"):
@@ -699,6 +737,7 @@ class AgricolaEngine(GameEngine):
             p["people_placed"] += 1  # the newborn does not act this round
             p["newborns"] += 1
             log.append(f"{p['name']}'s family grows by one")
+            self._fire(state, "family_growth", p, {}, log)
             if sid == "basic_wish" and action.get("minor"):
                 self._play_minor(state, p, action["minor"], log)
         elif sid == "house_redevelopment":
@@ -790,16 +829,18 @@ class AgricolaEngine(GameEngine):
                 log.append(f"\"{spec['name']}\" is removed from play (solo)")
         else:
             p["minors"].append(inst)
+        self._fire(state, "minor_played", p, {"card_id": cid}, log)
 
     # ── Farm development ─────────────────────────────────────────────
 
-    def _do_plow(self, p, cell, log):
+    def _do_plow(self, state, p, cell, log):
         if not isinstance(cell, int) or not (0 <= cell < NUM_CELLS):
             raise ValueError("Choose a farmyard space to plow")
         if cell not in plowable_cells(p):
             raise ValueError("You cannot plow that space")
         p["cells"][cell]["type"] = "field"
         log.append(f"{p['name']} plows a field")
+        self._fire(state, "plow", p, {"cell": cell}, log, to_all=False)
 
     def _room_cost(self, state, p):
         material = ROOM_COST_MATERIAL[p["house_type"]]
@@ -830,6 +871,8 @@ class AgricolaEngine(GameEngine):
             p["cells"][cell]["type"] = "room"
             built.append(cell)
         log.append(f"{p['name']} builds {len(built)} {p['house_type']} room(s)")
+        self._fire(state, "rooms_built", p, {"cells": built}, log,
+                   to_all=False)
 
     def _stable_possible(self, p):
         if self._stables(p) >= MAX_STABLES or p["resources"]["wood"] < 2:
@@ -880,8 +923,11 @@ class AgricolaEngine(GameEngine):
 
         # Subdividing can strand animals; force re-accommodation if so.
         ok, _err = self._validate_animals(p)
-        if not ok and not state.get("pending"):
-            state["pending"] = {"player": p["index"], "gained": {}}
+        if not ok and not any(pr["type"] == "accommodate"
+                              and pr["player"] == p["index"]
+                              for pr in state["prompts"]):
+            state["prompts"].append(
+                {"type": "accommodate", "player": p["index"], "gained": {}})
             log.append(f"{p['name']} must rearrange their animals")
 
     def _renovation_possible(self, state, p):
@@ -954,6 +1000,8 @@ class AgricolaEngine(GameEngine):
                     .setdefault(str(p["index"]), {})
                 slot["food"] = slot.get("food", 0) + 1
             log.append("The Well places food on the next round spaces")
+
+        self._fire(state, "improvement_built", p, {"improvement": imp}, log)
 
         if spec.get("bake_on_build") and action.get("bake"):
             self._do_bake(state, p, action["bake"], log)
@@ -1071,16 +1119,19 @@ class AgricolaEngine(GameEngine):
     def _gain_animals(self, state, p, gained, log):
         """Gained animals must be accommodated before play continues.
         Merges into an existing pending prompt for the same player."""
-        pending = state.get("pending")
-        if pending and pending["player"] == p["index"]:
-            for a, n in gained.items():
-                pending["gained"][a] = pending["gained"].get(a, 0) + n
-        else:
-            state["pending"] = {"player": p["index"], "gained": dict(gained)}
+        for pr in state["prompts"]:
+            if pr["type"] == "accommodate" and pr["player"] == p["index"]:
+                for a, n in gained.items():
+                    pr["gained"][a] = pr["gained"].get(a, 0) + n
+                return
+        state["prompts"].append(
+            {"type": "accommodate", "player": p["index"],
+             "gained": dict(gained)})
 
     def _apply_accommodate(self, state, pidx, action):
-        pending = state.get("pending")
-        if not pending or pending["player"] != pidx:
+        pending = self._prompt(state)
+        if not pending or pending["type"] != "accommodate" \
+                or pending["player"] != pidx:
             raise ValueError("Nothing to accommodate")
         p = state["players"][pidx]
         log = []
@@ -1125,10 +1176,10 @@ class AgricolaEngine(GameEngine):
 
         # Remaining animals must be fully placed.
         self._apply_animal_placement(p, placements, pets, available)
-        lasso = pending.get("lasso")
-        state["pending"] = None
+        lasso = pending.get("after_lasso")
+        state["prompts"].pop(0)
 
-        if state["phase"] == "work":
+        if state["phase"] == "work" and not self._prompt(state):
             if lasso and p["people_placed"] < p["people_total"]:
                 log.append(f"{p['name']} uses the Lasso to place again")
                 self._advance_work(state, log, start_pidx=pidx)
@@ -1220,12 +1271,67 @@ class AgricolaEngine(GameEngine):
             return True
         return False
 
+    # ── Card prompts and activated abilities ─────────────────────────
+
+    def _apply_choice(self, state, pidx, action):
+        prompt = self._prompt(state)
+        if not prompt or prompt["type"] != "choice" \
+                or prompt["player"] != pidx:
+            raise ValueError("Nothing to choose")
+        index = action.get("index")
+        if not isinstance(index, int) or not (0 <= index < len(prompt["options"])):
+            raise ValueError("Invalid choice")
+        p = state["players"][pidx]
+        inst = next((i for i in cards.in_play(p)
+                     if i["id"] == prompt["card"]), None)
+        if inst is None:
+            raise ValueError("Card no longer in play")
+        fn = cards.spec(inst).get("resolve_choice")
+        if fn is None:
+            raise ValueError("Card cannot resolve choices")
+        log = []
+        ctx = {"index": index, "option": prompt["options"][index],
+               "data": prompt.get("data") or {}, "log": log,
+               "actor": pidx, "extra": {}}
+        state["prompts"].pop(0)
+        fn(state, p, inst, ctx)
+        self._apply_extras(state, p, ctx["extra"], log)
+        if state["phase"] == "work" and not self._prompt(state):
+            if prompt.get("after_lasso") and \
+                    p["people_placed"] < p["people_total"]:
+                self._advance_work(state, log, start_pidx=pidx)
+            else:
+                self._advance_work(state, log)
+        return self._result(state, log)
+
+    def _apply_card_action(self, state, pidx, action):
+        if self._prompt(state):
+            raise ValueError("A pending decision must be resolved first")
+        p = state["players"][pidx]
+        if state["phase"] == "work" and state["current_player"] != pidx:
+            raise ValueError("Not your turn")
+        if state["phase"] == "feeding" and p["fed"]:
+            raise ValueError("You already fed your family")
+        inst = next((i for i in cards.in_play(p)
+                     if i["id"] == action.get("card")), None)
+        if inst is None:
+            raise ValueError("You do not have that card in play")
+        ca = cards.spec(inst).get("card_action")
+        if not ca or not ca["available"](state, p, inst):
+            raise ValueError("That card action is not available")
+        log = []
+        ctx = {"params": action.get("params") or {}, "log": log,
+               "actor": pidx, "extra": {}}
+        ca["apply"](state, p, inst, ctx)
+        self._apply_extras(state, p, ctx["extra"], log)
+        return self._result(state, log)
+
     # ── Feeding ──────────────────────────────────────────────────────
 
     def _apply_feed(self, state, pidx, action):
         if state["phase"] != "feeding":
             raise ValueError("Not the feeding phase")
-        if state.get("pending"):
+        if self._prompt(state):
             raise ValueError("A pending decision must be resolved first")
         p = state["players"][pidx]
         if p["fed"]:
@@ -1278,6 +1384,28 @@ class AgricolaEngine(GameEngine):
                 p["resources"][resource] -= 1
                 p["resources"]["food"] += value
                 p["harvest_conversions_used"].append(via)
+            elif isinstance(via, str) and ":" in via:
+                # Card-provided conversion "<card_id>:<index>".
+                match = next((c for key, c, _inst
+                              in cards.conversion_options(p)
+                              if key == via), None)
+                if match is None:
+                    raise ValueError("Unknown card conversion")
+                limit = match.get("per_harvest")
+                used = p["harvest_conversions_used"].count(via)
+                if limit is not None and used + count > limit:
+                    raise ValueError("Conversion limit reached this harvest")
+                for _ in range(count):
+                    for res, amount in match["give"].items():
+                        if res in ANIMAL_TYPES:
+                            self._remove_animals(p, res, amount)
+                        elif p["resources"][res] < amount:
+                            raise ValueError(f"Not enough {res}")
+                        else:
+                            p["resources"][res] -= amount
+                    for res, amount in match["get"].items():
+                        p["resources"][res] += amount
+                    p["harvest_conversions_used"].append(via)
             else:
                 raise ValueError("Unknown conversion")
 

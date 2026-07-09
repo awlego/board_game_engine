@@ -56,6 +56,7 @@ class Room:
     locked: bool = False
     created_at: float = field(default_factory=time.time)
     game_name: str = "unknown"
+    options: dict = None
 
     @property
     def player_list(self):
@@ -103,7 +104,7 @@ class GameServer:
 
     # ── Room Management ──────────────────────────────────────────────
 
-    def create_room(self, game_name, host_name):
+    def create_room(self, game_name, host_name, options=None):
         if game_name not in self.engines:
             raise ValueError(f"Unknown game: {game_name}. Available: {list(self.engines.keys())}")
 
@@ -116,7 +117,8 @@ class GameServer:
         token = generate_token()
         host = Player(player_id=player_id, name=host_name, token=token)
 
-        room = Room(code=code, host_id=player_id, engine=engine, game_name=game_name)
+        room = Room(code=code, host_id=player_id, engine=engine,
+                    game_name=game_name, options=options or None)
         room.players[player_id] = host
 
         self.rooms[code] = room
@@ -174,7 +176,12 @@ class GameServer:
         player_ids = list(room.players.keys())
         player_names = [room.players[pid].name for pid in player_ids]
 
-        room.game_state = room.engine.initial_state(player_ids, player_names)
+        # Engines may accept per-room options as an optional third argument.
+        try:
+            room.game_state = room.engine.initial_state(
+                player_ids, player_names, room.options)
+        except TypeError:
+            room.game_state = room.engine.initial_state(player_ids, player_names)
         room.started = True
         self._save(room)
 
@@ -315,8 +322,9 @@ class GameServer:
     async def _handle_create(self, websocket, msg):
         game_name = msg.get("game", "dragon")
         host_name = msg.get("name", "Host")
+        options = msg.get("options") if isinstance(msg.get("options"), dict) else None
         try:
-            code, player_id, token = self.create_room(game_name, host_name)
+            code, player_id, token = self.create_room(game_name, host_name, options)
             await self._send(websocket, {
                 "type": "created",
                 "room_code": code,

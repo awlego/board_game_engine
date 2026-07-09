@@ -16,11 +16,60 @@ re-templated here into consistent phrasing; cards adopted from the dump are
 tagged deck="custom".
 """
 
+import json
+import os
+import re
+
 from server.agricola.state import (
     ANIMAL_TYPES, TOTAL_ROUNDS, NUM_CELLS,
 )
 
 CARDS = {}
+
+# ── Compendium database ──────────────────────────────────────────────
+# Every card in the Agricola General Compendium v11.2, parsed by
+# tools/parse_compendium.py. Cards present here but not registered in
+# CARDS are "known but unimplemented": they appear in the catalog but
+# are excluded from deal pools.
+
+_DB_PATH = os.path.join(os.path.dirname(__file__), "data",
+                        "compendium_cards.json")
+_compendium = None
+
+
+def compendium():
+    """code → compendium entry for all 1,649 compendium cards."""
+    global _compendium
+    if _compendium is None:
+        with open(_DB_PATH) as f:
+            _compendium = {c["code"]: c for c in json.load(f)}
+    return _compendium
+
+
+COST_LETTERS = {"W": "wood", "C": "clay", "R": "reed", "S": "stone",
+                "F": "food", "G": "grain", "V": "vegetable"}
+
+
+def parse_cost(cost_str):
+    """Parse compendium cost strings like "1W 1S" or "2F" into a goods
+    dict. Unknown tokens raise so deck authors notice special costs."""
+    cost = {}
+    for token in re.split(r"[,\s]+", (cost_str or "").strip()):
+        if not token:
+            continue
+        m = re.match(r"^(\d+)(W|C|R|S|F|G|V)$", token)
+        if not m:
+            raise ValueError(f"Unparsed cost token: {token!r}")
+        cost[COST_LETTERS[m.group(2)]] = \
+            cost.get(COST_LETTERS[m.group(2)], 0) + int(m.group(1))
+    return cost
+
+
+def parse_players(players_str):
+    """Compendium players strings ("3-5 players", "1+", "4+") →
+    min_players for this engine (capped at 4)."""
+    m = re.match(r"^(\d)", (players_str or "").strip())
+    return min(int(m.group(1)), 4) if m else 1
 
 
 def card(cid, name, ctype, text, deck="base", min_players=1, cost=None,
@@ -58,6 +107,47 @@ def in_play(player):
 def add_goods(target, goods):
     for k, v in goods.items():
         target[k] = target.get(k, 0) + v
+
+
+def compendium_card(code, hooks=None, prereq=None, cost=None, points=None,
+                    min_players=None, traveling=False, **abilities):
+    """Register a card from the compendium DB by its code. Name, text,
+    cost, points, and player count default to the parsed compendium
+    entry; pass overrides only where the parse needs correction."""
+    entry = compendium()[code]
+    return card(
+        code,
+        entry["name"],
+        entry["type"],
+        entry["text"],
+        deck=entry["deck"],
+        min_players=(min_players if min_players is not None
+                     else parse_players(entry.get("players"))),
+        cost=cost if cost is not None else parse_cost(entry.get("cost")),
+        prereq=prereq,
+        points=points if points is not None else entry.get("vp", 0),
+        traveling=traveling or "pass it to the player on your left"
+        in entry["text"],
+        hooks=hooks,
+        edition=entry.get("edition"),
+        **abilities,
+    )
+
+
+# ── Prompts (mid-effect choices) ─────────────────────────────────────
+
+def prompt_choice(state, player, card_id, prompt, options, data=None):
+    """Queue a blocking choice for `player`. The card's spec must define
+    resolve_choice(state, player, inst, ctx) — ctx carries "index" (the
+    chosen option), "data", "log", and "extra"."""
+    state["prompts"].append({
+        "type": "choice",
+        "player": player["index"] if isinstance(player, dict) else player,
+        "card": card_id,
+        "prompt": prompt,
+        "options": list(options),
+        "data": data or {},
+    })
 
 
 # ── Event firing ─────────────────────────────────────────────────────
@@ -791,23 +881,65 @@ card("minor_scythe", "Scythe", "minor", cost={"wood": 1}, points=1,
      hooks={"harvest_field": _scythe_hook})
 
 
+# ── Conversions and card actions (queries) ───────────────────────────
+
+def conversion_options(player):
+    """All card-provided conversions: list of (key, spec_conv) where key
+    is "<card_id>:<index>". Conversions look like
+    {"give": {...}, "get": {...}, "per_harvest": n?}."""
+    out = []
+    for inst in in_play(player):
+        for i, conv in enumerate(spec(inst).get("conversions", ())):
+            out.append((f"{inst['id']}:{i}", conv, inst))
+    return out
+
+
+def card_actions(state, player):
+    """Activated abilities currently available to the player."""
+    out = []
+    for inst in in_play(player):
+        ca = spec(inst).get("card_action")
+        if ca and ca["available"](state, player, inst):
+            out.append({
+                "kind": "card_action",
+                "card": inst["id"],
+                "description": ca.get("description", spec(inst)["name"]),
+            })
+    return out
+
+
 # ── Deck helpers ─────────────────────────────────────────────────────
 
-def deck_for(ctype, player_count):
+def load_decks():
+    """Import all compendium deck modules (idempotent). Returns the
+    UNIMPLEMENTED map {code: reason}."""
+    from server.agricola import decks
+    return decks.UNIMPLEMENTED
+
+
+def implemented_decks():
+    load_decks()
+    return sorted({c["deck"] for c in CARDS.values()})
+
+
+def deck_for(ctype, player_count, decks):
     return sorted(
         cid for cid, c in CARDS.items()
-        if c["type"] == ctype and c["min_players"] <= player_count)
+        if c["type"] == ctype and c["min_players"] <= player_count
+        and c["deck"] in decks)
 
 
-def deal_hands(player_count, rng):
-    """Returns (occ_hands, minor_hands): a list of 7-card lists per player."""
-    occs = deck_for("occupation", player_count)
-    minors = deck_for("minor", player_count)
+def deal_hands(player_count, rng, decks, hand_size=7):
+    """Returns (occ_hands, minor_hands, hand_size). If the selected decks
+    cannot cover 7+7 per player, the hand size shrinks to fit."""
+    occs = deck_for("occupation", player_count, decks)
+    minors = deck_for("minor", player_count, decks)
     rng.shuffle(occs)
     rng.shuffle(minors)
-    need = player_count * 7
-    if len(occs) < need or len(minors) < need:
-        raise ValueError("Not enough implemented cards for this player count")
-    occ_hands = [occs[i * 7:(i + 1) * 7] for i in range(player_count)]
-    minor_hands = [minors[i * 7:(i + 1) * 7] for i in range(player_count)]
-    return occ_hands, minor_hands
+    size = min(hand_size, len(occs) // player_count,
+               len(minors) // player_count)
+    if size < 1:
+        raise ValueError("Not enough implemented cards in the selected decks")
+    occ_hands = [occs[i * size:(i + 1) * size] for i in range(player_count)]
+    minor_hands = [minors[i * size:(i + 1) * size] for i in range(player_count)]
+    return occ_hands, minor_hands, size

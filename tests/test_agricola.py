@@ -483,7 +483,7 @@ def test_shepherds_crook(engine):
     s = place(engine, s, {"kind": "place", "space": "fencing",
                           "fences": sorted(fences)})
     # 2 sheep granted → accommodation pending.
-    assert s["pending"]["gained"] == {"sheep": 2}
+    assert s["prompts"][0]["gained"] == {"sheep": 2}
     pid = s["players"][first]["player_id"]
     s = engine.apply_action(s, pid, {
         "kind": "accommodate",
@@ -546,7 +546,7 @@ def test_harvest_totem_custom_card(engine):
     s = place(engine, s, {"kind": "place", "space": "lessons",
                           "card": "occ_tutor"})
     # Harvest Totem grants a wild boar on playing an occupation.
-    assert s["pending"]["gained"] == {"boar": 1}
+    assert s["prompts"][0]["gained"] == {"boar": 1}
 
 
 # ── Farm development (unchanged core rules) ──────────────────────────
@@ -700,14 +700,16 @@ def test_fencing_strands_animals_forces_accommodate(engine):
     add_space(s, "fencing", "Fencing")
     s = place(engine, s, {"kind": "place", "space": "fencing",
                           "fences": ["v-0-4"]})
-    assert s["pending"] == {"player": first, "gained": {}}
+    prompt = s["prompts"][0]
+    assert (prompt["type"], prompt["player"], prompt["gained"]) == \
+        ("accommodate", first, {})
     pid = p["player_id"]
     s = engine.apply_action(s, pid, {
         "kind": "accommodate",
         "placements": [{"cell": 3, "type": "sheep", "count": 2},
                        {"cell": 4, "type": "sheep", "count": 2}],
     }).new_state
-    assert s["pending"] is None
+    assert s["prompts"] == []
 
 
 # ── Animals ──────────────────────────────────────────────────────────
@@ -735,7 +737,7 @@ def test_take_sheep_accommodate(engine):
     s, first = sheep_pasture_state(engine)
     set_sheep_market(s, 2)
     s = place(engine, s, {"kind": "place", "space": "sheep_market"})
-    assert s["pending"]["gained"] == {"sheep": 2}
+    assert s["prompts"][0]["gained"] == {"sheep": 2}
     pid = s["players"][first]["player_id"]
     s = engine.apply_action(s, pid, {
         "kind": "accommodate",
@@ -1149,6 +1151,13 @@ def test_game_over_and_winner(engine):
 def random_bot_action(engine, state, pid, rng):
     """Pick a random valid action with randomly generated parameters."""
     acts = engine.get_valid_actions(state, pid)
+    # Answer card choice prompts randomly.
+    choice = next((a for a in acts if a["kind"] == "choice"), None)
+    if choice:
+        return {"kind": "choice", "index": rng.randrange(len(choice["options"]))}
+    # Skip optional activated card abilities in the fuzz (they may need
+    # params); deck tests cover them directly.
+    acts = [a for a in acts if a["kind"] != "card_action"]
     if not acts:
         return None
     act = rng.choice(acts)
@@ -1248,6 +1257,29 @@ def random_bot_action(engine, state, pid, rng):
     return action
 
 
+def bot_fallback(engine, state, pid, rng):
+    """A safe action that must exist: feed plainly, resolve prompts,
+    or place on an always-usable space."""
+    acts = engine.get_valid_actions(state, pid)
+    choice = next((a for a in acts if a["kind"] == "choice"), None)
+    if choice:
+        return {"kind": "choice", "index": 0}
+    if any(a["kind"] == "accommodate" for a in acts):
+        p = next(pl for pl in state["players"] if pl["player_id"] == pid)
+        gained = next(a for a in acts if a["kind"] == "accommodate")["gained"]
+        totals = animal_counts(p)
+        for a, n in gained.items():
+            totals[a] += n
+        return {"kind": "accommodate", "placements": [],
+                "discard": {a: n for a, n in totals.items() if n}}
+    if any(a["kind"] == "feed" for a in acts):
+        return {"kind": "feed"}
+    simple = [a for a in acts if a["kind"] == "place"
+              and a["space"] in SAFE_SPACES]
+    assert simple, f"no fallback action ({[a.get('space') for a in acts]})"
+    return {"kind": "place", "space": rng.choice(simple)["space"]}
+
+
 def bot_pick_minor(engine, state, p, rng):
     playable = [cid for cid in p["hand_minors"]
                 if engine._minor_playable(state, p, cid)]
@@ -1345,13 +1377,14 @@ def test_random_full_game(engine, n_players, seed):
         pid = waiting[0]
         action = random_bot_action(engine, s, pid, rng)
         if action is None:
-            acts = engine.get_valid_actions(s, pid)
-            simple = [a for a in acts if a["kind"] == "place" and a["space"] in
-                      SAFE_SPACES]
-            assert simple, f"no fallback action ({[a.get('space') for a in acts]})"
-            action = {"kind": "place", "space": rng.choice(simple)["space"]}
-        result = engine.apply_action(s, pid, action)
-        s = result.new_state
+            action = bot_fallback(engine, s, pid, rng)
+        try:
+            s = engine.apply_action(s, pid, action).new_state
+        except ValueError:
+            # Bot-generated params can be invalid for cards that need
+            # richer input; fall back to a safe space (state unchanged).
+            s = engine.apply_action(s, pid,
+                                    bot_fallback(engine, s, pid, rng)).new_state
 
     assert s["round"] == 14
     assert s["scores"] is not None
@@ -1364,3 +1397,38 @@ def test_random_full_game(engine, n_players, seed):
     total_played = sum(len(p["occupations"]) + len(p["minors"])
                       for p in s["players"])
     assert total_played > 0
+
+
+@pytest.mark.parametrize("n_players,seed", [(2, 31), (3, 32), (4, 33),
+                                            (2, 34), (4, 35)])
+def test_random_full_game_compendium_decks(engine, n_players, seed):
+    """Fuzz full games dealing from every implemented compendium deck."""
+    decks = [d for d in cards.implemented_decks()
+             if d not in ("base", "custom")]
+    if not decks:
+        pytest.skip("no compendium decks implemented yet")
+    rng = random.Random(seed)
+    random.seed(seed)
+    ids = [f"p_{i}" for i in range(n_players)]
+    names = [f"Bot{i}" for i in range(n_players)]
+    s = engine.initial_state(ids, names, {"decks": decks})
+    assert s["decks"] == decks
+
+    steps = 0
+    while not s["game_over"]:
+        steps += 1
+        assert steps < 4000, "game did not terminate"
+        waiting = engine.get_waiting_for(s)
+        assert waiting, f"nobody to act but game not over (phase {s['phase']})"
+        pid = waiting[0]
+        action = random_bot_action(engine, s, pid, rng)
+        if action is None:
+            action = bot_fallback(engine, s, pid, rng)
+        try:
+            s = engine.apply_action(s, pid, action).new_state
+        except ValueError:
+            s = engine.apply_action(s, pid,
+                                    bot_fallback(engine, s, pid, rng)).new_state
+
+    assert s["round"] == 14
+    assert s["scores"] is not None

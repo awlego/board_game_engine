@@ -3,5 +3,5 @@ __pycache__/
 dist/
 .claude/
 
-# Room persistence snapshots
-data/
+# Room persistence snapshots (repo root only)
+/data/
