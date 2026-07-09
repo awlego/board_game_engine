@@ -23,10 +23,12 @@ from server.agricola.state import (
 
 UNIMPLEMENTED = {
     "I220": "reclassifies the Well as a minor improvement with a special "
-            "cost just for this player; cost_mod for kind='improvement' "
-            "folds over ALL major improvements uniformly with no "
-            "per-improvement id in ctx, so a discount (or a major->minor "
-            "reclassification) can't be targeted at the Well alone.",
+            "cost just for this player. cost_mod for kind='improvement' "
+            "now carries ctx['improvement'] (engine phase 7), so a "
+            "discount targeted at the Well alone is expressible -- but "
+            "the major->minor reclassification itself is a separate, "
+            "still-unsupported score/category-manipulation gap (same "
+            "class as E15's Clay/Stone Oven reclassification).",
     "I222": "requires tracking the game-wide order in which players "
             "first renovate to clay/stone; the 'renovate' event only "
             "fires to the acting player's own cards (fire_player, not a "
@@ -377,7 +379,8 @@ def _clay_plasterer_mod(state, player, kind, cost, ctx):
     if kind == "renovation" and player["house_type"] == "wood":
         return {"clay": 1, "reed": 1}
     if kind == "room" and player["house_type"] == "clay":
-        return {"clay": 3, "reed": 2}
+        n = ctx.get("count", 1)
+        return {"clay": 3 * n, "reed": 2 * n}
     return cost
 
 compendium_card("I241", cost_mod=_clay_plasterer_mod)
@@ -403,7 +406,7 @@ def _bricklayer_mod(state, player, kind, cost, ctx):
         cost["clay"] = max(0, cost["clay"] - 1)
     elif kind == "room" and cost.get("clay"):
         cost = dict(cost)
-        cost["clay"] = max(0, cost["clay"] - 2)
+        cost["clay"] = max(0, cost["clay"] - 2 * ctx.get("count", 1))
     return cost
 
 compendium_card("I243", cost_mod=_bricklayer_mod)

@@ -78,10 +78,11 @@ UNIMPLEMENTED = {
             "calls cards.fire_player, not cards.fire) -- widening that "
             "means editing engine.py",
     "D082": "the discount is conditioned on building via House/Farm "
-            "Redevelopment specifically, but cost_mod's ctx doesn't carry "
-            "which action space triggered the build -- Redevelopment "
-            "spaces reuse the same kind='improvement'/'fences' calls as "
-            "the dedicated Major-Improvement/Fencing spaces",
+            "Redevelopment specifically. engine._resolve_space now threads "
+            "ctx['space_id'] into every build/renovate/improvement "
+            "cost_mod call (engine phase 7), so a card can target "
+            "space_id=='house_redevelopment'/'farm_redevelopment' -- this "
+            "is now a plain implementation gap, not a plumbing one",
     "D083": "would need to grant an animal through a feeding-phase "
             "conversion, but the engine's conversion 'get' path only "
             "credits player resources with no accommodation route for "

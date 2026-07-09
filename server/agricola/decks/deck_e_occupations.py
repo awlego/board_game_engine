@@ -307,7 +307,8 @@ compendium_card("E154", conversions=[
 def _thatcher_mod(state, player, kind, cost, ctx):
     if kind in ("room", "renovation") and cost.get("reed"):
         cost = dict(cost)
-        cost["reed"] = max(0, cost["reed"] - 1)
+        n = ctx.get("count", 1) if kind == "room" else 1
+        cost["reed"] = max(0, cost["reed"] - n)
     return cost
 
 compendium_card("E157", cost_mod=_thatcher_mod)
@@ -1049,7 +1050,8 @@ compendium_card("E210", hooks={"space_used": _stone_carrier_space},
 def _e211_stonecutter_mod(state, player, kind, cost, ctx):
     if kind in ("room", "renovation", "improvement") and cost.get("stone"):
         cost = dict(cost)
-        cost["stone"] -= 1
+        n = ctx.get("count", 1) if kind == "room" else 1
+        cost["stone"] -= n
     return cost
 
 compendium_card("E211", cost_mod=_e211_stonecutter_mod)
@@ -1112,9 +1114,10 @@ compendium_card("E217", hooks={"play": _reeve_play}, score_bonus=_reeve_score)
 def _e218_carpenter_mod(state, player, kind, cost, ctx):
     if kind == "room":
         cost = dict(cost)
+        discount = 2 * ctx.get("count", 1)
         for material in ("wood", "clay", "stone"):
             if cost.get(material):
-                cost[material] = max(0, cost[material] - 2)
+                cost[material] = max(0, cost[material] - discount)
     return cost
 
 compendium_card("E218", cost_mod=_e218_carpenter_mod)

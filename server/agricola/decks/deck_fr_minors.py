@@ -51,10 +51,10 @@ UNIMPLEMENTED = {
              "open-ended fence-edge parameters outside the normal "
              "placement flow (same gap as B088/B093/B130)",
     "FR024": "discounts the food cost of playing an Occupation or Minor "
-             "Improvement; _play_minor pays a minor's printed cost "
-             "directly with no cost_mod query at all (only room/"
-             "renovation/improvement/fences costs are modifiable), so "
-             "half the card's effect can't be expressed",
+             "Improvement. play_occupation/play_minor now both route "
+             "their cost through modified_cost (kind='occupation'/"
+             "'minor', engine phase 7), so this is now a plain "
+             "implementation gap, not a plumbing one",
     "FR025": "lets a played minor be discarded to fully pay for a major "
              "improvement, and treats Clay/Stone Ovens as minors for "
              "other cards' prerequisites; neither an alternate-payment-"
@@ -894,7 +894,8 @@ compendium_card(
 # ── FR046 Straw-Thatched Hut ──────────────────────────────────────────
 def _straw_thatched_hut_mod(state, player, kind, cost, ctx):
     if kind == "room" and player["house_type"] == "clay":
-        return {"clay": 2, "grain": 1, "food": 1}
+        n = ctx.get("count", 1)
+        return {"clay": 2 * n, "grain": 1 * n, "food": 1 * n}
     return cost
 
 compendium_card(

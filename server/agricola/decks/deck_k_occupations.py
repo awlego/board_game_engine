@@ -343,10 +343,14 @@ def _frame_builder_mod(state, player, kind, cost, ctx):
                 cost["wood"] = cost.get("wood", 0) + 1
                 break
     elif kind == "room":
+        # Room cost is a batch total; "each extension" gets its own
+        # 2-for-1 swap, so an N-room batch needs 2*N to swap and adds N
+        # wood.
+        n = ctx.get("count", 1)
         for material in ("clay", "stone"):
-            if cost.get(material, 0) >= 2:
-                cost[material] -= 2
-                cost["wood"] = cost.get("wood", 0) + 1
+            if cost.get(material, 0) >= 2 * n:
+                cost[material] -= 2 * n
+                cost["wood"] = cost.get("wood", 0) + n
                 break
     return cost
 
@@ -722,8 +726,9 @@ compendium_card("K293", hooks={"play": _ploughman_play,
 def _brushwood_collector_mod(state, player, kind, cost, ctx):
     if kind in ("room", "renovation") and cost.get("reed"):
         cost = dict(cost)
+        n = ctx.get("count", 1) if kind == "room" else 1
         cost["reed"] = 0
-        cost["wood"] = cost.get("wood", 0) + 1
+        cost["wood"] = cost.get("wood", 0) + n
     return cost
 
 compendium_card("K294", cost_mod=_brushwood_collector_mod)

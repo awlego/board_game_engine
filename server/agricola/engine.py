@@ -709,7 +709,7 @@ class AgricolaEngine(GameEngine):
         if sid == "farmland":
             return bool(plowable_cells(p))
         if sid == "farm_expansion":
-            room_ok = (self._can_afford(p, self._room_cost(state, p))
+            room_ok = (self._can_afford(p, self._room_cost(state, p, 1))
                        and self._buildable_room_cells(p))
             return bool(room_ok) or self._stable_possible(state, p)
         if sid == "fencing":
@@ -845,7 +845,7 @@ class AgricolaEngine(GameEngine):
             state["starting_player"] = p["index"]
             log.append(f"{p['name']} becomes the starting player")
             if action.get("minor"):
-                self._play_minor(state, p, action["minor"], log)
+                self._play_minor(state, p, action["minor"], log, space_id=sid)
         elif sid in ("lessons", "lessons_b"):
             self._play_occupation(state, p, sid, action, log)
         elif sid == "farmland":
@@ -859,12 +859,16 @@ class AgricolaEngine(GameEngine):
             stables = action.get("stables") or []
             if not rooms and not stables:
                 raise ValueError("Build at least one room or stable")
+            payment = action.get("payment")
             if rooms:
-                self._do_build_rooms(state, p, rooms, log)
+                self._do_build_rooms(state, p, rooms, log, space_id=sid,
+                                     payment=payment)
             if stables:
-                self._do_build_stables(state, p, stables, log=log)
+                self._do_build_stables(state, p, stables, log=log,
+                                       space_id=sid, payment=payment)
         elif sid == "fencing":
-            self._do_build_fences(state, p, action.get("fences"), log)
+            self._do_build_fences(state, p, action.get("fences"), log,
+                                  space_id=sid, payment=action.get("payment"))
         elif sid == "grain_utilization":
             sow = action.get("sow") or []
             bake = action.get("bake")
@@ -889,26 +893,27 @@ class AgricolaEngine(GameEngine):
                 self._do_bake(state, p, action["bake"], log)
         elif sid == "major_improvement":
             if action.get("minor"):
-                self._play_minor(state, p, action["minor"], log)
+                self._play_minor(state, p, action["minor"], log, space_id=sid)
             elif action.get("improvement"):
-                self._do_improvement(state, p, action, log)
+                self._do_improvement(state, p, action, log, space_id=sid)
             else:
                 raise ValueError("Build a major improvement or play a minor one")
         elif sid in ("basic_wish", "urgent_wish"):
             sub_actions.family_growth(state, p, log,
                                       require_room=(sid == "basic_wish"))
             if sid == "basic_wish" and action.get("minor"):
-                self._play_minor(state, p, action["minor"], log)
+                self._play_minor(state, p, action["minor"], log, space_id=sid)
         elif sid == "house_redevelopment":
-            self._do_renovate(state, p, action, log)
+            self._do_renovate(state, p, action, log, space_id=sid)
             if action.get("minor"):
-                self._play_minor(state, p, action["minor"], log)
+                self._play_minor(state, p, action["minor"], log, space_id=sid)
             elif action.get("improvement"):
-                self._do_improvement(state, p, action, log)
+                self._do_improvement(state, p, action, log, space_id=sid)
         elif sid == "farm_redevelopment":
-            self._do_renovate(state, p, action, log)
+            self._do_renovate(state, p, action, log, space_id=sid)
             if action.get("fences"):
-                self._do_build_fences(state, p, action["fences"], log)
+                self._do_build_fences(state, p, action["fences"], log,
+                                      space_id=sid, payment=action.get("payment"))
         else:
             raise ValueError(f"Unhandled action space: {sid}")
 
@@ -944,12 +949,14 @@ class AgricolaEngine(GameEngine):
                                     params=action.get("params"),
                                     cost_override={"food": cost})
 
-    def _play_minor(self, state, p, minor, log):
+    def _play_minor(self, state, p, minor, log, space_id=None):
         if not isinstance(minor, dict):
             raise ValueError("Invalid minor improvement action")
         cid = minor.get("card")
         sub_actions.play_minor(state, p, cid, log,
-                               params=minor.get("params"))
+                               params=minor.get("params"),
+                               ctx={"space_id": space_id,
+                                    "payment": minor.get("payment")})
 
     # ── Farm development ─────────────────────────────────────────────
 
@@ -963,30 +970,35 @@ class AgricolaEngine(GameEngine):
         self._fire(state, "plow", p, {"cell": cell}, log, to_all=False)
         self._fire_any(state, "plow", p, {"cell": cell}, log)
 
-    def _room_cost(self, state, p):
-        return sub_actions.room_cost(state, p)
+    def _room_cost(self, state, p, count=1):
+        return sub_actions.room_cost(state, p, count)
 
     def _buildable_room_cells(self, p, extra_rooms=()):
         return sub_actions.buildable_room_cells(p, extra_rooms)
 
-    def _do_build_rooms(self, state, p, cells, log):
-        sub_actions.build_rooms(state, p, cells, log)
+    def _do_build_rooms(self, state, p, cells, log, space_id=None, payment=None):
+        sub_actions.build_rooms(state, p, cells, log,
+                                ctx={"space_id": space_id, "payment": payment})
 
     def _stable_possible(self, state, p):
         return sub_actions.stable_possible(state, p)
 
-    def _do_build_stables(self, state, p, cells, log):
-        sub_actions.build_stables(state, p, cells, log)
+    def _do_build_stables(self, state, p, cells, log, space_id=None, payment=None):
+        sub_actions.build_stables(state, p, cells, log,
+                                  ctx={"space_id": space_id, "payment": payment})
 
-    def _do_build_fences(self, state, p, new_fences, log):
-        sub_actions.build_fences(state, p, new_fences, log)
+    def _do_build_fences(self, state, p, new_fences, log, space_id=None, payment=None):
+        sub_actions.build_fences(state, p, new_fences, log,
+                                 ctx={"space_id": space_id, "payment": payment})
 
     def _renovation_possible(self, state, p):
         return sub_actions.renovation_possible(state, p)
 
-    def _do_renovate(self, state, p, action, log):
+    def _do_renovate(self, state, p, action, log, space_id=None):
         sub_actions.renovate(state, p, log,
-                             free_stable_cell=action.get("stable"))
+                             free_stable_cell=action.get("stable"),
+                             ctx={"space_id": space_id,
+                                  "payment": action.get("payment")})
 
     # ── Improvements, baking, sowing ─────────────────────────────────
 
@@ -994,11 +1006,13 @@ class AgricolaEngine(GameEngine):
         """Major improvement ids the player could get now (incl. upgrades)."""
         return sub_actions.buildable_improvements(state, p)
 
-    def _do_improvement(self, state, p, action, log):
+    def _do_improvement(self, state, p, action, log, space_id=None):
         imp = action.get("improvement")
         spec = MAJOR_IMPROVEMENTS.get(imp)
         sub_actions.build_improvement(state, p, imp, log,
-                                      upgrade=bool(action.get("upgrade")))
+                                      upgrade=bool(action.get("upgrade")),
+                                      ctx={"space_id": space_id,
+                                           "payment": action.get("payment")})
         if spec and spec.get("bake_on_build") and action.get("bake"):
             self._do_bake(state, p, action["bake"], log)
 

@@ -2838,3 +2838,364 @@ def test_keep_crops_on_harvest_credits_without_decrementing_field(
     assert p["resources"]["vegetable"] == veg_before + 1
     # The field keeps its crop count -- not decremented.
     assert p["cells"][0]["crops"]["count"] == 2
+
+
+# ── Engine phase 7: cost_mod ctx (count/start_index/index/space_id/
+# improvement/card/payment) -- see decks/GUIDE.md's cost_mod section ──
+
+def advance_until_turn(engine, s, player_id):
+    """Cycle safe filler placements until it's `player_id`'s turn AND a
+    new round has started (action spaces -- including single-use ones
+    like farm_expansion/fencing -- reset each round, so a space already
+    used this round becomes available again)."""
+    start_round = s["round"]
+    guard = 0
+    while s["round"] == start_round or current_pid(engine, s) != player_id:
+        pid = current_pid(engine, s)
+        acts = engine.get_valid_actions(s, pid)
+        chosen = next(a for a in acts
+                      if a["kind"] == "place" and a["space"] in SAFE_SPACES)
+        s = engine.apply_action(s, pid, {"kind": "place",
+                                         "space": chosen["space"]}).new_state
+        guard += 1
+        assert guard < 50
+    return s
+
+
+def test_room_batch_cost_mod_uses_count(engine, temp_card):
+    """A014-style: a total discount that only kicks in for a 2+ room
+    batch (needs ctx["count"])."""
+    cid = "test_carpenters_hammer_style"
+    def mod(state, player, kind, cost, ctx):
+        if kind == "room" and ctx.get("count", 1) >= 2:
+            cost = dict(cost)
+            cost["reed"] = max(0, cost.get("reed", 0) - 2)
+        return cost
+    temp_card(cid, "Batch Hammer Style", "occupation", "test", cost_mod=mod)
+
+    # 2 rooms at once: 10 wood + 4 reed normally, -2 reed total.
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, cid)
+    give(s, first, wood=10, reed=4)
+    s = place(engine, s, {"kind": "place", "space": "farm_expansion",
+                          "rooms": [0, 1]})
+    p = s["players"][first]
+    assert p["resources"]["wood"] == 0
+    assert p["resources"]["reed"] == 2
+
+    # 1 room: count == 1, no discount.
+    s2 = make_state(engine, 2)
+    first2 = s2["current_player"]
+    put_in_play(s2, first2, cid)
+    give(s2, first2, wood=5, reed=2)
+    s2 = place(engine, s2, {"kind": "place", "space": "farm_expansion",
+                           "rooms": [0]})
+    p2 = s2["players"][first2]
+    assert p2["resources"]["wood"] == 0 and p2["resources"]["reed"] == 0
+
+
+def test_room_batch_migration_carpenter_regression(engine):
+    """Regression for the count-scaling migration: an existing per-room
+    discount card (Carpenter, -2 wood/clay/stone per room) must still
+    charge the correct TOTAL for a 2-room batch."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "occ_carpenter")
+    # 2 rooms * (5-2) wood + 2 * 2 reed.
+    give(s, first, wood=6, reed=4)
+    s = place(engine, s, {"kind": "place", "space": "farm_expansion",
+                          "rooms": [0, 1]})
+    p = s["players"][first]
+    assert p["resources"]["wood"] == 0 and p["resources"]["reed"] == 0
+
+
+def test_stable_cost_mod_indexed_across_batches(engine, temp_card):
+    """C088-style: 'your 3rd and 4th stable each cost 1 wood less',
+    built across two separate batches (2 stables each) spanning the
+    3rd/4th boundary."""
+    cid = "test_carpenters_apprentice_style"
+    def mod(state, player, kind, cost, ctx):
+        if kind == "stable" and ctx.get("index") in (3, 4) and cost.get("wood"):
+            cost = dict(cost)
+            cost["wood"] = max(0, cost["wood"] - 1)
+        return cost
+    temp_card(cid, "Apprentice Style", "occupation", "test", cost_mod=mod)
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    first_pid = s["players"][first]["player_id"]
+    put_in_play(s, first, cid)
+    give(s, first, wood=10)
+    s = place(engine, s, {"kind": "place", "space": "farm_expansion",
+                          "stables": [0, 1]})
+    p = s["players"][first]
+    assert p["resources"]["wood"] == 6  # stables #1-2: full price (2 each)
+
+    s = advance_until_turn(engine, s, first_pid)
+    s = place(engine, s, {"kind": "place", "space": "farm_expansion",
+                          "stables": [2, 3]})
+    p = s["players"][first]
+    assert p["resources"]["wood"] == 4  # stables #3-4: 1 wood less each
+
+
+def test_stable_cost_mod_next_stable_free_one_time(engine, temp_card):
+    """K121-style: 'the next stable you place costs nothing', a one-time
+    freebie committed only when a real build follows (mirrors FR080
+    Fencing Master's pending/commit pattern)."""
+    cid = "test_sawhorse_stable_style"
+    def mod(state, player, kind, cost, ctx):
+        if kind != "stable":
+            return cost
+        inst = next((i for i in player["minors"] if i["id"] == cid), None)
+        if inst is None or inst["data"].get("used"):
+            return cost
+        if ctx.get("index") != ctx.get("start_index", 0) + 1:
+            return cost
+        inst["data"]["_pending"] = True
+        cost = dict(cost)
+        cost["wood"] = 0
+        return cost
+    def built_hook(state, player, inst, ctx):
+        if inst["data"].pop("_pending", False):
+            inst["data"]["used"] = True
+    temp_card(cid, "Sawhorse Stable Style", "minor", "test", cost_mod=mod,
+              hooks={"stable_built": built_hook})
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    first_pid = s["players"][first]["player_id"]
+    put_in_play(s, first, cid)
+    give(s, first, wood=6)
+    s = place(engine, s, {"kind": "place", "space": "farm_expansion",
+                          "stables": [0, 1]})
+    p = s["players"][first]
+    assert p["resources"]["wood"] == 4  # 1st free, 2nd costs 2
+
+    s = advance_until_turn(engine, s, first_pid)
+    s = place(engine, s, {"kind": "place", "space": "farm_expansion",
+                          "stables": [2]})
+    p = s["players"][first]
+    assert p["resources"]["wood"] == 2  # freebie already spent
+
+
+def test_fences_cost_mod_uses_start_index(engine, temp_card):
+    """A '3rd/6th fence built is free' card needs ctx["start_index"] to
+    know how many fences existed before this batch, so it can tell
+    which absolute positions the new batch covers."""
+    cid = "test_every_3rd_fence_free"
+    free_positions = (3, 6)
+    def mod(state, player, kind, cost, ctx):
+        if kind != "fences" or not cost.get("wood"):
+            return cost
+        existing = ctx.get("start_index", 0)
+        count = ctx.get("count", 0)
+        free = sum(1 for i in range(1, count + 1)
+                  if (existing + i) in free_positions)
+        if free:
+            cost = dict(cost)
+            cost["wood"] = max(0, cost["wood"] - free)
+        return cost
+    temp_card(cid, "Every 3rd Fence Free", "occupation", "test", cost_mod=mod)
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    first_pid = s["players"][first]["player_id"]
+    put_in_play(s, first, cid)
+    give(s, first, wood=10)
+    add_space(s, "fencing", "Fencing")
+    # Fences #1-4 (single-cell pasture around cell 4): #3 is free.
+    s = place(engine, s, {"kind": "place", "space": "fencing",
+                          "fences": cell_edges(4)})
+    p = s["players"][first]
+    assert p["resources"]["wood"] == 7  # 4 - 1 free = 3 spent
+
+    s = advance_until_turn(engine, s, first_pid)
+    # Fences #5-7 (extends the pasture to cell 9, below cell 4 -- the
+    # shared edge h-1-4 is already fenced): #6 is free.
+    s = place(engine, s, {"kind": "place", "space": "fencing",
+                          "fences": ["h-2-4", "v-1-4", "v-1-5"]})
+    p = s["players"][first]
+    assert p["resources"]["wood"] == 5  # 3 - 1 free = 2 spent
+
+
+def test_cost_mod_space_id_targets_specific_space(engine, temp_card):
+    """D082-style: a discount conditioned on the originating action
+    space (House Redevelopment), not on kind alone -- kind='improvement'
+    is also reachable from the plain Major Improvement space, so the
+    card must check ctx["space_id"]."""
+    cid = "test_hunting_trophy_style"
+    def mod(state, player, kind, cost, ctx):
+        if (kind == "improvement" and ctx.get("space_id") == "house_redevelopment"
+                and cost.get("stone")):
+            cost = dict(cost)
+            cost["stone"] -= 1
+        return cost
+    temp_card(cid, "Hunting Trophy Style", "occupation", "test", cost_mod=mod)
+
+    # Via House Redevelopment: renovate wood->clay, then build the Well
+    # (normally 1 wood + 3 stone) at a 1-stone discount.
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, cid)
+    p = s["players"][first]
+    rooms_n = sum(1 for c in p["cells"] if c["type"] == "room")
+    give(s, first, clay=rooms_n, reed=1, wood=1, stone=2)
+    add_space(s, "house_redevelopment", "House Redevelopment")
+    s = place(engine, s, {"kind": "place", "space": "house_redevelopment",
+                          "improvement": "well"})
+    p = s["players"][first]
+    assert "well" in p["improvements"]
+    assert p["resources"]["stone"] == 0 and p["resources"]["wood"] == 0
+
+    # Via the plain Major Improvement space: no discount, 2 stone isn't
+    # enough (needs the full 3).
+    s2 = make_state(engine, 2)
+    first2 = s2["current_player"]
+    put_in_play(s2, first2, cid)
+    give(s2, first2, wood=1, stone=2)
+    add_space(s2, "major_improvement", "Major Improvement")
+    with pytest.raises(ValueError):
+        place(engine, s2, {"kind": "place", "space": "major_improvement",
+                          "improvement": "well"})
+
+
+def test_minor_kind_cost_mod_food_discount(engine, temp_card):
+    """FR024-style: 'pay up to 2 food less to play an occupation or
+    minor' needs minor costs routed through modified_cost (kind='minor'),
+    which they weren't before engine phase 7."""
+    minor_cid = "test_costly_minor"
+    temp_card(minor_cid, "Costly Minor", "minor", "test",
+              cost={"food": 2, "wood": 1})
+    disc_cid = "test_golden_rose_style"
+    def mod(state, player, kind, cost, ctx):
+        if kind in ("minor", "occupation") and cost.get("food"):
+            cost = dict(cost)
+            cost["food"] = max(0, cost["food"] - 2)
+        return cost
+    temp_card(disc_cid, "Golden Rose Style", "occupation", "test", cost_mod=mod)
+
+    # Without the discount card: 0 food isn't enough (needs 2). (Base
+    # game grants starting food, so zero it out first.)
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    s["players"][first]["resources"]["food"] = 0
+    give_card(s, first, minor_cid)
+    give(s, first, wood=1)
+    add_space(s, "meeting_place", "Meeting Place")
+    with pytest.raises(ValueError):
+        place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": minor_cid}})
+
+    # With the discount card: food cost fully waived (net cost is just
+    # the 1 wood).
+    s2 = make_state(engine, 2)
+    first2 = s2["current_player"]
+    s2["players"][first2]["resources"]["food"] = 0
+    put_in_play(s2, first2, disc_cid)
+    give_card(s2, first2, minor_cid)
+    give(s2, first2, wood=1)
+    add_space(s2, "meeting_place", "Meeting Place")
+    s2 = place(engine, s2, {"kind": "place", "space": "meeting_place",
+                           "minor": {"card": minor_cid}})
+    p2 = s2["players"][first2]
+    assert minor_cid in [i["id"] for i in p2["minors"]]
+    assert p2["resources"]["food"] == 0
+    assert p2["resources"]["wood"] == 0
+
+
+def test_occupation_kind_cost_mod_food_discount(engine, temp_card):
+    """FR024-style, occupation half: the Lessons space's food cost now
+    also runs through modified_cost (kind='occupation')."""
+    disc_cid = "test_golden_rose_occ_style"
+    def mod(state, player, kind, cost, ctx):
+        if kind == "occupation" and cost.get("food"):
+            cost = dict(cost)
+            cost["food"] = max(0, cost["food"] - 2)
+        return cost
+    temp_card(disc_cid, "Golden Rose Occ Style", "occupation", "test",
+              cost_mod=mod)
+    occ_cid = "test_playable_occ"
+    temp_card(occ_cid, "Playable Occ", "occupation", "test")
+
+    # occs_played > 0 forces the Lessons space's escalating cost to 1
+    # food, so there's something to discount. (Base game grants starting
+    # food, so zero it out first.)
+
+    # Without the discount card: 0 food isn't enough.
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    s["players"][first]["occs_played"] = 1
+    s["players"][first]["resources"]["food"] = 0
+    give_card(s, first, occ_cid)
+    add_space(s, "lessons", "Lessons")
+    with pytest.raises(ValueError):
+        place(engine, s, {"kind": "place", "space": "lessons", "card": occ_cid})
+
+    # With the discount card: the 1-food cost is waived.
+    s2 = make_state(engine, 2)
+    first2 = s2["current_player"]
+    s2["players"][first2]["occs_played"] = 1
+    s2["players"][first2]["resources"]["food"] = 0
+    put_in_play(s2, first2, disc_cid)
+    give_card(s2, first2, occ_cid)
+    add_space(s2, "lessons", "Lessons")
+    s2 = place(engine, s2, {"kind": "place", "space": "lessons",
+                           "card": occ_cid})
+    p2 = s2["players"][first2]
+    assert occ_cid in [i["id"] for i in p2["occupations"]]
+    assert p2["resources"]["food"] == 0
+
+
+def test_payment_channel_reed_to_clay(engine, temp_card):
+    """E36-style: 'replace 1 or 2 reed with the same amount of clay when
+    you renovate', driven by the client action's own "payment" field
+    (threaded into ctx by engine._resolve_space). Garbage payment must
+    raise ValueError rather than being silently ignored."""
+    cid = "test_clay_roof_style"
+    def mod(state, player, kind, cost, ctx):
+        if kind != "renovation":
+            return cost
+        payment = ctx.get("payment")
+        if payment is None:
+            return cost
+        if not isinstance(payment, dict) or set(payment) != {"reed_to_clay"}:
+            raise ValueError("Clay Roof: invalid payment")
+        n = payment["reed_to_clay"]
+        if not isinstance(n, int) or n <= 0 or n > 2 or n > cost.get("reed", 0):
+            raise ValueError("Clay Roof: invalid payment")
+        cost = dict(cost)
+        cost["reed"] -= n
+        cost["clay"] = cost.get("clay", 0) + n
+        return cost
+    temp_card(cid, "Clay Roof Style", "occupation", "test", cost_mod=mod)
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    rooms_n = sum(1 for c in p["cells"] if c["type"] == "room")
+    put_in_play(s, first, cid)
+    # renovation_possible (the _space_usable preview) has no visibility
+    # into ctx["payment"] -- it only knows the space is usable at all if
+    # the UNMODIFIED cost {clay: rooms_n, reed: 1} is affordable, so the
+    # player needs the normal reed too even though the real payment
+    # won't end up spending it. Give clay for the swap ON TOP of that.
+    give(s, first, clay=rooms_n + 1, reed=1)
+    add_space(s, "house_redevelopment", "House Redevelopment")
+    s = place(engine, s, {"kind": "place", "space": "house_redevelopment",
+                          "payment": {"reed_to_clay": 1}})
+    p = s["players"][first]
+    assert p["house_type"] == "clay"
+    # The 1 reed was never charged (cost["reed"] became 0 and was
+    # dropped, so pay() never touches it) -- it's saved, not spent --
+    # while the extra clay covering the swap WAS spent.
+    assert p["resources"]["reed"] == 1 and p["resources"]["clay"] == 0
+
+    s2 = make_state(engine, 2)
+    first2 = s2["current_player"]
+    put_in_play(s2, first2, cid)
+    give(s2, first2, clay=rooms_n, reed=1)
+    add_space(s2, "house_redevelopment", "House Redevelopment")
+    with pytest.raises(ValueError):
+        place(engine, s2, {"kind": "place", "space": "house_redevelopment",
+                          "payment": {"reed_to_clay": 5}})

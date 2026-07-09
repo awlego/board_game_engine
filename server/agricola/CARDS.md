@@ -115,8 +115,18 @@ the acting player's in-play specs:
 
 - `modified_cost(state, player, kind, cost, ctx)` — folds every card's
   `cost_mod(kind, cost, ctx)` over the base cost. Kinds: `room`,
-  `renovation`, `improvement`, `fences` (ctx has the fence count), plus
-  `occ_cost_delta` for occupation costs ("each occupation costs 1 less").
+  `stable`, `fences`, `renovation`, `improvement`, `minor`,
+  `occupation`. `ctx` carries a batch `count`/`start_index` (rooms and
+  fences are priced as one batch total; stables are priced one at a
+  time and additionally get a 1-based `index`), the originating
+  `space_id` (when the build came from an action space), the
+  `improvement`/`card` id, and a `payment` choice blob (opaque; the
+  card decides the schema, e.g. `{"reed_to_clay": 2}`) threaded from
+  the client action's own `payment` field. See `decks/GUIDE.md`'s
+  `cost_mod` entry for the full per-kind contract and a worked payment
+  example. `occ_cost_delta` (a separate, simpler query) still applies a
+  flat per-occupation delta ("each occupation costs 1 less") ahead of
+  the `kind="occupation"` fold.
 - `pasture_bonus(player)` — extra capacity per pasture (additive).
 - `house_capacity(player)` — how many pets the house holds (Animal Tamer
   returns one per room; declared as data: `house_capacity="per_room"`).
@@ -322,3 +332,37 @@ Known remaining gaps, and how they'd fit if a future card needs them:
   (`harvest_start`/enriched `harvest_field`) — implementing each card's
   own text (and, for D070, the "pay 1 grain, up to 2 fields" choice
   itself) is still a separate pass.
+- **A richer `cost_mod` ctx, plus `stable`/`minor`/`occupation` joining
+  `room`/`fences`/`renovation`/`improvement` as cost_mod kinds**, are
+  now supported (engine phase 7). Previously: `room`/`renovation`/
+  `improvement` cost_mod calls got no ctx at all (no build count, no
+  originating space, no improvement/card id); stables paid a hardcoded
+  `{"wood": 2}` never routed through `modified_cost`; `play_minor`/the
+  Lessons spaces' food cost never called `modified_cost` either. Now:
+  room and fence cost is priced as one BATCH TOTAL with `ctx["count"]`
+  (and `ctx["start_index"]` for fences); stables route through
+  `modified_cost` one at a time with `ctx["index"]`/`ctx["start_index"]`
+  for per-Nth pricing; every kind gets `ctx["space_id"]` (the
+  originating action space, absent for card-driven calls) and, where
+  relevant, `ctx["improvement"]`/`ctx["card"]`; minor and occupation
+  food costs run through `modified_cost` (kinds `minor`/`occupation`);
+  and a new `ctx["payment"]` channel carries an opaque, card-defined
+  payment choice from the client action's own `payment` field (a
+  cost_mod consuming it must validate it and raise `ValueError` on
+  garbage). See `decks/GUIDE.md`'s `cost_mod` entry for the full
+  contract and a worked payment example. This unblocks compendium cards
+  previously marked `UNIMPLEMENTED` for exactly these gaps -- A014
+  Carpenter's Hammer and FR094 Miser (batch/exact-count room discounts,
+  need `ctx["count"]`); D082 Hunting Trophy (space-conditioned discount,
+  needs `ctx["space_id"]`); E15 (Clay/Stone Oven) and I220 Well Builder
+  (per-improvement discount, needs `ctx["improvement"]` -- the
+  major->minor reclassification half of each card is still a separate,
+  unrelated gap); E36 Clay Roof (reed<->clay payment choice, needs
+  `ctx["payment"]`); FR069 Cat Lover and C088 Carpenter's Apprentice
+  (stable-cost discounts, need `kind="stable"`); FR024 (food discount on
+  occupations/minors, needs `kind="minor"`/`"occupation"`); K121
+  Sawhorse's stable clause was migrated off its old refund-after-the-
+  fact hack onto a real `kind="stable"` cost_mod. Implementing the
+  still-unregistered cards (A014, FR094, D082, E15, I220, E36, C088,
+  FR024) themselves -- i.e. registering them with `compendium_card`, not
+  just closing the plumbing gap -- is still a separate pass.

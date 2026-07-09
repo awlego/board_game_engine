@@ -345,37 +345,53 @@ compendium_card("K120", points=1,
 
 
 # ── K121 Sawhorse ─────────────────────────────────────────────────────
-# "The next stable... costs nothing" can't be a cost_mod (stables pay a
-# hardcoded {wood: 2} in engine._do_build_stables, never routed through
-# modified_cost -- same gap noted for C089 in deck_c_occupations.py), so
-# it's modeled as a one-time 2-wood refund after the next stable_built
-# fires (same "must afford it up-front, refunded after" shape as Forest
-# Plow/B017 in deck_b_minors.py). The fence clause IS a cost_mod.
+# "The next stable... costs nothing" is now a genuine kind="stable"
+# cost_mod (stables are routed through modified_cost like every other
+# build): it zeroes the cost of whichever stable is priced first
+# (ctx["index"] == ctx["start_index"] + 1) as long as this card hasn't
+# granted its one-time freebie yet. Repeated previews (stable_possible)
+# before any real build just recompute the same zero cost harmlessly --
+# the `stable_built` hook (which only fires after a real build) is what
+# permanently marks the freebie spent, mirroring FR080 Fencing Master's
+# "commit on the real event" pattern. The fence clause is also a
+# cost_mod, unchanged.
 _SAWHORSE_FREE_FENCES = (3, 6, 9, 12, 15)
 
-def _sawhorse_fences_mod(state, player, kind, cost, ctx):
-    if kind != "fences" or not cost.get("wood"):
+def _sawhorse_cost_mod(state, player, kind, cost, ctx):
+    if kind == "fences" and cost.get("wood"):
+        existing = len(player["fences"])
+        count = ctx.get("count", 0)
+        free = sum(1 for i in range(1, count + 1)
+                  if (existing + i) in _SAWHORSE_FREE_FENCES)
+        if free:
+            cost = dict(cost)
+            cost["wood"] = max(0, cost["wood"] - free)
         return cost
-    existing = len(player["fences"])
-    count = ctx.get("count", 0)
-    free = sum(1 for i in range(1, count + 1)
-              if (existing + i) in _SAWHORSE_FREE_FENCES)
-    if free:
+    if kind == "stable":
+        inst = next((i for i in player["minors"] if i["id"] == "K121"), None)
+        if inst is None or inst["data"].get("stable_used"):
+            return cost
+        if ctx.get("index") != ctx.get("start_index", 0) + 1:
+            return cost
+        # Recorded, not consumed yet -- same "the last cost_mod call
+        # before payment is the real one" safety argument as FR080
+        # Fencing Master: previews recompute (and overwrite) this same
+        # pending flag harmlessly; only stable_built (which follows a
+        # real payment) commits it.
+        inst["data"]["_pending_stable"] = True
         cost = dict(cost)
-        cost["wood"] = max(0, cost["wood"] - free)
+        cost["wood"] = 0
+        return cost
     return cost
 
 def _sawhorse_stable_built(state, player, inst, ctx):
-    if inst["data"].get("stable_refunded") or not ctx["cells"]:
-        return
-    inst["data"]["stable_refunded"] = True
-    player["resources"]["wood"] += 2
-    ctx["log"].append(f"{player['name']}'s Sawhorse refunds 2 wood for a "
-                      "free stable")
+    if inst["data"].pop("_pending_stable", False):
+        inst["data"]["stable_used"] = True
+        ctx["log"].append(f"{player['name']}'s Sawhorse stable is free")
 
 compendium_card("K121", cost={"wood": 2},
                 hooks={"stable_built": _sawhorse_stable_built},
-                cost_mod=_sawhorse_fences_mod)
+                cost_mod=_sawhorse_cost_mod)
 
 
 # ── K122 Sawmill ──────────────────────────────────────────────────────
@@ -570,8 +586,11 @@ def _brushwood_roof_mod(state, player, kind, cost, ctx):
     reed_cost = cost.get("reed", 0)
     if reed_cost <= 0:
         return cost
+    # Room cost is now a batch total: the "1 or 2 reed" cap applies once
+    # per room, so an N-room batch allows up to 2*N reed->wood.
+    cap = 2 * ctx.get("count", 1) if kind == "room" else 2
     shortfall = max(0, reed_cost - player["resources"]["reed"])
-    swap = min(2, reed_cost, shortfall)
+    swap = min(cap, reed_cost, shortfall)
     if swap <= 0:
         return cost
     cost = dict(cost)

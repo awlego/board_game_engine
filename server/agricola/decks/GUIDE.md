@@ -216,8 +216,82 @@ mechanism.
 
 **Static ability keys** (data on the spec, queried by the engine):
 
-- `cost_mod=fn(state, player, kind, cost, ctx) -> cost` — kinds:
-  `room`, `renovation`, `improvement`, `fences` (ctx has `count`).
+- `cost_mod=fn(state, player, kind, cost, ctx) -> cost` — folds over a
+  base cost dict; return a (possibly reduced) dict, never negative
+  (`modified_cost` drops non-positive entries for you). Kinds:
+  `room`, `stable`, `fences`, `renovation`, `improvement`, `minor`,
+  `occupation`. `ctx` carries whichever of these the caller has:
+  - `count` — items in this batch. **Room and fence cost is a BATCH
+    TOTAL**, not per-item: `build_rooms`/`build_fences` price the whole
+    batch in one `modified_cost` call (base cost already `count`x the
+    per-item amount), so a flat per-item discount must multiply by
+    `ctx.get("count", 1)` (see occ_carpenter/occ_stonecutter in
+    `cards.py` for the pattern). Stables are priced ONE AT A TIME (see
+    below) but still get `count` (the whole batch's size) in ctx.
+  - `start_index` — how many of that thing the player already had
+    *before* this batch (existing fences/stables) — lets a "your Nth
+    item" card compute which absolute positions
+    `[start_index+1 .. start_index+count]` this batch covers. Not
+    present for rooms (room count has no positional meaning).
+  - `index` — kind=`stable` only: the 1-based overall index of THIS
+    stable (`start_index` + its position in the batch). Unlike rooms/
+    fences, `build_stables` calls `modified_cost` once per stable (each
+    stable's cost = `modified_cost(state, player, "stable", {"wood": 2},
+    ctx)` with its own `index`), since per-Nth pricing can differ stable
+    to stable within one batch (e.g. "your 3rd and 4th stable cost 1
+    wood less" spanning a 2+2 split).
+  - `space_id` — the originating action-space id, when the build/
+    renovate/improvement/minor came from an action space (threaded from
+    `engine._resolve_space`); absent/`None` for a card-driven call (a
+    `card_action`/hook calling a `sub_actions` transaction directly with
+    no space) — see D082 Hunting Trophy (discount only via House/Farm
+    Redevelopment, not the plain Major Improvement/Fencing spaces).
+  - `improvement` — the major-improvement id, for kind=`improvement`
+    (lets a card single out one improvement, e.g. I220 Well Builder,
+    instead of misfiring on every major improvement).
+  - `card` — the card id, for kind=`minor`/`occupation` (an occupation's
+    own food cost passes its own `cid`; the Lessons spaces do too).
+  - `payment` — the raw payment-choice value from the client action
+    dict (opaque; the CARD decides the schema, e.g.
+    `{"reed_to_clay": 2}`). Threaded from `action.get("payment")` (or,
+    for a minor played via the `"minor": {...}` sub-dict, that sub-dict's
+    own `"payment"` key) into `build_rooms`/`renovate`/
+    `build_improvement`/`build_fences`/`play_minor`'s ctx. A cost_mod
+    that consumes `ctx["payment"]` MUST validate it and raise
+    `ValueError` on garbage (unrecognized shape, out-of-range amount,
+    more than the cost it's replacing) — never silently ignore or clamp
+    it, per rule 2's "don't approximate silently".
+
+  **Worked payment-channel example** (E36 Clay Roof: "replace 1 or 2
+  reed with the same amount of clay whenever you extend or renovate"):
+  ```python
+  def _clay_roof_mod(state, player, kind, cost, ctx):
+      if kind not in ("room", "renovation"):
+          return cost
+      payment = ctx.get("payment")
+      if payment is None:
+          return cost
+      if not isinstance(payment, dict) or set(payment) != {"reed_to_clay"}:
+          raise ValueError("Clay Roof: invalid payment")
+      n = payment["reed_to_clay"]
+      if not isinstance(n, int) or n <= 0 or n > 2 or n > cost.get("reed", 0):
+          raise ValueError("Clay Roof: invalid payment")
+      cost = dict(cost)
+      cost["reed"] -= n
+      cost["clay"] = cost.get("clay", 0) + n
+      return cost
+  ```
+  The client sends `{"kind": "place", "space": "house_redevelopment",
+  "payment": {"reed_to_clay": 1}}` (or nests `"payment"` inside a
+  `"minor": {...}` action for a minor's own cost). **Caveat:** the
+  `can_*`/`*_possible` preview predicates (`renovation_possible`,
+  `can_build_rooms`, etc. — what `_space_usable` uses to decide whether
+  a space is offered at all) are called with no `payment` in ctx, so a
+  card that relies on a payment choice to make an otherwise-unaffordable
+  build affordable can make the space look unusable in the preview even
+  though the real payment would cover it; the player must hold enough
+  for the UNMODIFIED cost too. This is a known limitation, not a bug to
+  route around per-card.
 - `occ_cost_delta=-1` — future occupations cost less.
 - `pasture_capacity_bonus=n` — each pasture holds +n.
 - `house_capacity=n or "per_room"` — house pet slots.
@@ -328,15 +402,21 @@ from server.agricola import sub_actions
 
 | transaction | function | cost-aware `can_*`/`*_possible` check |
 |---|---|---|
-| build rooms | `build_rooms(state, player, cells, log, cost_override=None)` | `can_build_rooms(state, player, cost_override=None)` |
-| build stables | `build_stables(state, player, cells, log, cost_override=None)` | `can_build_stables(state, player, cost_override=None)` (alias of `stable_possible`) |
-| build fences | `build_fences(state, player, new_fences, log, cost_override=None)` | `can_build_fences(state, player, cost_override=None)` |
-| renovate | `renovate(state, player, log, free_stable_cell=None, cost_override=None)` | `can_renovate(state, player, cost_override=None)` (alias of `renovation_possible`) |
-| build a major improvement | `build_improvement(state, player, imp, log, upgrade=False, cost_override=None)` | `can_build_improvement(state, player, imp=None, cost_override=None)` |
-| play a minor improvement | `play_minor(state, player, cid, log, params=None, cost_override=None)` | `can_play_minor(state, player, cid, cost_override=None)` |
-| play an occupation | `play_occupation(state, player, cid, log, params=None, cost_override=None)` | `can_play_occupation(state, player, cid, cost_override=None)` |
+| build rooms | `build_rooms(state, player, cells, log, cost_override=None, ctx=None)` (cost is a BATCH TOTAL for `len(cells)` rooms, not per-room) | `can_build_rooms(state, player, cost_override=None, ctx=None)` (checks affording 1 room) |
+| build stables | `build_stables(state, player, cells, log, cost_override=None, ctx=None)` (priced one at a time; a dict `cost_override` is per-stable) | `can_build_stables(state, player, cost_override=None, ctx=None)` (alias of `stable_possible`) |
+| build fences | `build_fences(state, player, new_fences, log, cost_override=None, ctx=None)` (cost is a batch total) | `can_build_fences(state, player, cost_override=None, ctx=None)` |
+| renovate | `renovate(state, player, log, free_stable_cell=None, cost_override=None, ctx=None)` | `can_renovate(state, player, cost_override=None, ctx=None)` (alias of `renovation_possible`) |
+| build a major improvement | `build_improvement(state, player, imp, log, upgrade=False, cost_override=None, ctx=None)` | `can_build_improvement(state, player, imp=None, cost_override=None, ctx=None)` |
+| play a minor improvement | `play_minor(state, player, cid, log, params=None, cost_override=None, ctx=None)` | `can_play_minor(state, player, cid, cost_override=None, ctx=None)` |
+| play an occupation | `play_occupation(state, player, cid, log, params=None, cost_override=None, ctx=None)` | `can_play_occupation(state, player, cid, cost_override=None, ctx=None)` |
 | sow | `sow(state, player, sow_items, log)` (no cost concept -- consumes the sower's own crop, same as the normal action) | `can_sow(player)` |
 | family growth (no room/urgent-wish flavor) | `family_growth(state, player, log, require_room=True)` | `can_family_growth(player, require_room=True)` |
+
+`ctx` (optional, default `None`) is folded into whatever ctx that
+transaction's own `modified_cost` call builds (see the `cost_mod` entry
+above for the full per-kind contract) — pass whatever you have (a
+card-driven call typically has nothing to add and can omit it
+entirely).
 
 Every transaction function **raises `ValueError` on an illegal target**
 (bad cell, occupied space, invalid fence layout, unmet prereq, unaffordable

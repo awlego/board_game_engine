@@ -45,6 +45,16 @@ Every transaction that has a resource cost takes `cost_override`:
   a pile of boolean flags.
 - the string `"free"` -- skip payment altogether.
 
+Every cost-bearing transaction also takes an optional `ctx` dict, folded
+into whatever ctx `cards.modified_cost` builds for that transaction's
+own kind (batch `count`/`start_index`, the originating `space_id`, the
+`improvement`/`card` id, a `payment` choice blob) -- see
+`cards.modified_cost`'s docstring for the full per-kind contract and
+`decks/GUIDE.md`. Pass `None` (default) if the caller has nothing to
+add (a card-driven call with no originating space, for instance).
+`ctx` is ignored when `cost_override` is a dict or `"free"`, same as
+the base cost it would otherwise modify.
+
 Validity preview (no mutation)
 -------------------------------
 Each transaction has a matching `can_*` predicate with the same
@@ -191,12 +201,18 @@ def _fire_broadcast(state, event, player, fields, log):
 
 # ── Build rooms ────────────────────────────────────────────────────────
 
-def room_cost(state, player, cost_override=None):
+def room_cost(state, player, count=1, cost_override=None, ctx=None):
+    """Total cost for `count` rooms built in one batch (NOT per-room --
+    every cost_mod fn handling kind="room" must scale a flat per-room
+    discount by ctx["count"]; see cards.modified_cost's docstring)."""
     material = ROOM_COST_MATERIAL[player["house_type"]]
+    full_ctx = dict(ctx or {})
+    full_ctx["count"] = count
     return _effective_cost(
         cost_override,
         lambda: cards.modified_cost(state, player, "room",
-                                     {material: 5, "reed": 2}))
+                                     {material: 5 * count, "reed": 2 * count},
+                                     full_ctx))
 
 
 def buildable_room_cells(player, extra_rooms=()):
@@ -215,19 +231,21 @@ def buildable_room_cells(player, extra_rooms=()):
     return eligible
 
 
-def can_build_rooms(state, player, cost_override=None):
+def can_build_rooms(state, player, cost_override=None, ctx=None):
     if not buildable_room_cells(player):
         return False
     if cost_override == "free":
         return True
-    return can_afford(player, room_cost(state, player, cost_override))
+    return can_afford(player, room_cost(state, player, 1, cost_override, ctx))
 
 
-def build_rooms(state, player, cells, log, cost_override=None):
+def build_rooms(state, player, cells, log, cost_override=None, ctx=None):
     """Build a room on each of `cells` (in order -- a cell only needs to
     be adjacent to a room that exists *after* the earlier cells in this
-    same call are built, matching the normal Farm Expansion action)."""
-    cost = room_cost(state, player, cost_override)
+    same call are built, matching the normal Farm Expansion action).
+    Cells are validated first, then the WHOLE BATCH is paid for as one
+    total (see room_cost), then placed -- a card discounting "2+ rooms
+    built at once" (A014-style) needs the final count before pricing."""
     built = []
     for cell in cells:
         if not isinstance(cell, int):
@@ -235,12 +253,14 @@ def build_rooms(state, player, cells, log, cost_override=None):
         if cell not in buildable_room_cells(player, built):
             raise ValueError(
                 "Rooms must go on empty spaces adjacent to your house")
-        if cost_override != "free":
-            pay(player, cost)
-        player["cells"][cell]["type"] = "room"
         built.append(cell)
     if not built:
         raise ValueError("Choose at least one room to build")
+    cost = room_cost(state, player, len(built), cost_override, ctx)
+    if cost_override != "free":
+        pay(player, cost)
+    for cell in built:
+        player["cells"][cell]["type"] = "room"
     log.append(f"{player['name']} builds {len(built)} {player['house_type']} room(s)")
     _fire_owner_and_any(state, "rooms_built", player, {"cells": built}, log)
     return built
@@ -248,30 +268,42 @@ def build_rooms(state, player, cells, log, cost_override=None):
 
 # ── Build stables ──────────────────────────────────────────────────────
 
-def stable_possible(state, player, cost_override=None):
-    """`state` is unused today (stable cost has no cost_mod query, unlike
-    rooms/fences/renovation/improvements) but kept in the signature for
-    consistency with the other can_build_*/can_* predicates."""
+def _stable_cost(state, player, cost_override, count, start_index, index, ctx):
+    """Cost of ONE stable at 1-based overall position `index` (within a
+    batch of `count`, `start_index` stables already built beforehand).
+    Unlike rooms/fences, stables are priced one at a time -- per-Nth
+    pricing (e.g. "your 3rd and 4th stable cost 1 wood less") can differ
+    stable to stable within the same batch."""
+    if isinstance(cost_override, dict):
+        return cost_override
+    full_ctx = dict(ctx or {})
+    full_ctx.update({"count": count, "start_index": start_index, "index": index})
+    return cards.modified_cost(state, player, "stable", {"wood": 2}, full_ctx)
+
+
+def stable_possible(state, player, cost_override=None, ctx=None):
     if stables(player) >= MAX_STABLES:
         return False
     if not any(c["type"] == "empty" and not c["stable"] for c in player["cells"]):
         return False
     if cost_override == "free":
         return True
-    cost = cost_override if isinstance(cost_override, dict) else {"wood": 2}
+    n = stables(player)
+    cost = _stable_cost(state, player, cost_override, 1, n, n + 1, ctx)
     return can_afford(player, cost)
 
 
 can_build_stables = stable_possible
 
 
-def build_stables(state, player, cells, log, cost_override=None):
+def build_stables(state, player, cells, log, cost_override=None, ctx=None):
     if not cells:
         raise ValueError("Choose at least one stable to build")
     if len(cells) != len(set(cells)):
         raise ValueError("Duplicate stable spaces")
-    cost = cost_override if isinstance(cost_override, dict) else {"wood": 2}
-    for cell in cells:
+    start_index = stables(player)
+    count = len(cells)
+    for i, cell in enumerate(cells):
         if not isinstance(cell, int) or not (0 <= cell < NUM_CELLS):
             raise ValueError("Invalid stable space")
         if stables(player) >= MAX_STABLES:
@@ -280,6 +312,8 @@ def build_stables(state, player, cells, log, cost_override=None):
         if c["type"] != "empty" or c["stable"]:
             raise ValueError("Stables need an empty space without a tile")
         if cost_override != "free":
+            cost = _stable_cost(state, player, cost_override, count,
+                                start_index, start_index + i + 1, ctx)
             pay(player, cost)
         c["stable"] = True
     log.append(f"{player['name']} builds {len(cells)} stable(s)")
@@ -289,18 +323,20 @@ def build_stables(state, player, cells, log, cost_override=None):
 
 # ── Build fences ─────────────────────────────────────────────────────
 
-def can_build_fences(state, player, cost_override=None):
+def can_build_fences(state, player, cost_override=None, ctx=None):
     if len(player["fences"]) >= MAX_FENCES:
         return False
     n = 1 if player["fences"] else 4
     if cost_override == "free":
         return True
+    full_ctx = dict(ctx or {})
+    full_ctx.update({"count": n, "start_index": len(player["fences"])})
     cost = cost_override if isinstance(cost_override, dict) else \
-        cards.modified_cost(state, player, "fences", {"wood": n}, {"count": n})
+        cards.modified_cost(state, player, "fences", {"wood": n}, full_ctx)
     return can_afford(player, cost)
 
 
-def build_fences(state, player, new_fences, log, cost_override=None):
+def build_fences(state, player, new_fences, log, cost_override=None, ctx=None):
     if not new_fences or not isinstance(new_fences, list):
         raise ValueError("Choose fences to build")
     if len(new_fences) != len(set(new_fences)):
@@ -309,15 +345,18 @@ def build_fences(state, player, new_fences, log, cost_override=None):
         if e in player["fences"]:
             raise ValueError("Fence already built there")
     old_pastures = {tuple(pa) for pa in compute_pastures(player)}
+    start_index = len(player["fences"])
     layout = player["fences"] + list(new_fences)
     ok, err, _pastures = validate_fence_layout(player, layout)
     if not ok:
         raise ValueError(err)
+    full_ctx = dict(ctx or {})
+    full_ctx.update({"count": len(new_fences), "start_index": start_index})
     cost = _effective_cost(
         cost_override,
         lambda: cards.modified_cost(state, player, "fences",
                                      {"wood": len(new_fences)},
-                                     {"count": len(new_fences)}))
+                                     full_ctx))
     if cost_override != "free":
         pay(player, cost)
     player["fences"] = sorted(layout)
@@ -343,7 +382,7 @@ def build_fences(state, player, new_fences, log, cost_override=None):
 
 # ── Renovate ───────────────────────────────────────────────────────────
 
-def renovation_possible(state, player, cost_override=None):
+def renovation_possible(state, player, cost_override=None, ctx=None):
     target = RENOVATION_TARGET.get(player["house_type"])
     if not target:
         return False
@@ -351,21 +390,21 @@ def renovation_possible(state, player, cost_override=None):
         return True
     cost = cost_override if isinstance(cost_override, dict) else \
         cards.modified_cost(state, player, "renovation",
-                            {target: rooms(player), "reed": 1})
+                            {target: rooms(player), "reed": 1}, ctx or {})
     return can_afford(player, cost)
 
 
 can_renovate = renovation_possible
 
 
-def renovate(state, player, log, free_stable_cell=None, cost_override=None):
+def renovate(state, player, log, free_stable_cell=None, cost_override=None, ctx=None):
     target = RENOVATION_TARGET.get(player["house_type"])
     if not target:
         raise ValueError("Your house is already stone")
     cost = _effective_cost(
         cost_override,
         lambda: cards.modified_cost(state, player, "renovation",
-                                    {target: rooms(player), "reed": 1}))
+                                    {target: rooms(player), "reed": 1}, ctx or {}))
     if cost_override != "free":
         pay(player, cost)
     player["house_type"] = target
@@ -377,14 +416,16 @@ def renovate(state, player, log, free_stable_cell=None, cost_override=None):
 
 # ── Major improvements ─────────────────────────────────────────────────
 
-def buildable_improvements(state, player):
+def buildable_improvements(state, player, ctx=None):
     """Major improvement ids the player could build right now (at
     normal cost, incl. Fireplace->Cooking Hearth upgrades)."""
     out = []
     owns_fireplace = any(i in FIREPLACES for i in player["improvements"])
     for imp in state["available_improvements"]:
         spec = MAJOR_IMPROVEMENTS[imp]
-        cost = cards.modified_cost(state, player, "improvement", spec["cost"])
+        full_ctx = dict(ctx or {})
+        full_ctx["improvement"] = imp
+        cost = cards.modified_cost(state, player, "improvement", spec["cost"], full_ctx)
         if can_afford(player, cost):
             out.append(imp)
         elif imp in COOKING_HEARTHS and owns_fireplace:
@@ -392,18 +433,20 @@ def buildable_improvements(state, player):
     return out
 
 
-def can_build_improvement(state, player, imp=None, cost_override=None):
+def can_build_improvement(state, player, imp=None, cost_override=None, ctx=None):
     if imp is None:
         if cost_override == "free":
             return bool(state["available_improvements"])
-        return bool(buildable_improvements(state, player))
+        return bool(buildable_improvements(state, player, ctx))
     if imp not in state["available_improvements"]:
         return False
     if cost_override == "free":
         return True
+    full_ctx = dict(ctx or {})
+    full_ctx["improvement"] = imp
     cost = cost_override if isinstance(cost_override, dict) else \
         cards.modified_cost(state, player, "improvement",
-                            MAJOR_IMPROVEMENTS[imp]["cost"])
+                            MAJOR_IMPROVEMENTS[imp]["cost"], full_ctx)
     if can_afford(player, cost):
         return True
     owns_fireplace = any(i in FIREPLACES for i in player["improvements"])
@@ -411,7 +454,7 @@ def can_build_improvement(state, player, imp=None, cost_override=None):
 
 
 def build_improvement(state, player, imp, log, upgrade=False,
-                       cost_override=None):
+                       cost_override=None, ctx=None):
     if imp not in MAJOR_IMPROVEMENTS:
         raise ValueError("Unknown improvement")
     if imp not in state["available_improvements"]:
@@ -429,9 +472,12 @@ def build_improvement(state, player, imp, log, upgrade=False,
         state["available_improvements"].sort()
         log.append(f"{player['name']} upgrades their Fireplace to a {spec['name']}")
     else:
+        full_ctx = dict(ctx or {})
+        full_ctx["improvement"] = imp
         cost = _effective_cost(
             cost_override,
-            lambda: cards.modified_cost(state, player, "improvement", spec["cost"]))
+            lambda: cards.modified_cost(state, player, "improvement",
+                                        spec["cost"], full_ctx))
         if cost_override != "free":
             pay(player, cost)
         log.append(f"{player['name']} builds the {spec['name']}")
@@ -456,12 +502,14 @@ def build_improvement(state, player, imp, log, upgrade=False,
 def lessons_occupation_cost(state, player, space_id):
     """The Lessons/Lessons(3-4p) action spaces' own escalating occupation
     cost (0/1 or 1/2 food, depending on how many occupations this player
-    has already played this game, modified by `occ_cost_delta`). A card
-    granting an out-of-turn/bonus play should almost always use
-    `play_occupation`'s generic 1-food default (`cost_override=None`)
-    instead -- this space-specific pricing is only meaningful for the
-    Lessons action spaces themselves, or a card that explicitly mirrors
-    them (Junior Artist)."""
+    has already played this game, modified by `occ_cost_delta`, then by
+    any kind="occupation" cost_mod -- e.g. FR024-style "pay up to 2 food
+    less to play an occupation or minor"). A card granting an
+    out-of-turn/bonus play should almost always use `play_occupation`'s
+    generic 1-food default (`cost_override=None`) instead -- this
+    space-specific pricing is only meaningful for the Lessons action
+    spaces themselves, or a card that explicitly mirrors them (Junior
+    Artist)."""
     if space_id == "lessons":
         base = 0 if player["occs_played"] == 0 else 1
     elif space_id == "lessons_b":
@@ -469,10 +517,13 @@ def lessons_occupation_cost(state, player, space_id):
             if state["player_count"] >= 4 else 2
     else:
         base = 1
-    return max(0, base + cards.occ_cost_delta(player))
+    n = max(0, base + cards.occ_cost_delta(player))
+    cost = cards.modified_cost(state, player, "occupation", {"food": n},
+                               {"space_id": space_id})
+    return cost.get("food", 0)
 
 
-def can_play_occupation(state, player, cid, cost_override=None):
+def can_play_occupation(state, player, cid, cost_override=None, ctx=None):
     spec = cards.CARDS.get(cid)
     if not spec or spec["type"] != "occupation":
         return False
@@ -482,20 +533,26 @@ def can_play_occupation(state, player, cid, cost_override=None):
         return False
     if cost_override == "free":
         return True
-    cost = cost_override if isinstance(cost_override, dict) else \
-        {"food": max(0, 1 + cards.occ_cost_delta(player))}
+    if isinstance(cost_override, dict):
+        cost = cost_override
+    else:
+        n = max(0, 1 + cards.occ_cost_delta(player))
+        full_ctx = dict(ctx or {})
+        full_ctx["card"] = cid
+        cost = cards.modified_cost(state, player, "occupation", {"food": n}, full_ctx)
     return can_afford(player, cost)
 
 
-def play_occupation(state, player, cid, log, params=None, cost_override=None):
+def play_occupation(state, player, cid, log, params=None, cost_override=None, ctx=None):
     """Play an occupation from hand outside the normal Lessons dispatch
     (an out-of-turn/free/discounted play granted by another card, e.g.
     Educator/Scholar/Craft Teacher). `cost_override=None` charges the
-    generic 1-food baseline (modified by occ_cost_delta) -- pass an
-    explicit dict/`"free"` for anything else; the space-specific Lessons
-    pricing (occs_played-dependent escalation) is `engine._occupation_cost`,
-    only meaningful for the Lessons/Lessons(3-4p) action spaces
-    themselves."""
+    generic 1-food baseline (modified by occ_cost_delta, then any
+    kind="occupation" cost_mod) -- pass an explicit dict/`"free"` for
+    anything else; the space-specific Lessons pricing (occs_played-
+    dependent escalation) is `engine._occupation_cost`/
+    `lessons_occupation_cost`, only meaningful for the Lessons/
+    Lessons(3-4p) action spaces themselves."""
     if cid not in player["hand_occupations"]:
         raise ValueError("That occupation is not in your hand")
     spec = cards.CARDS[cid]
@@ -503,9 +560,15 @@ def play_occupation(state, player, cid, log, params=None, cost_override=None):
         raise ValueError("Not an occupation")
     if not cards.check_prereq(state, player, cid):
         raise ValueError(f"Prerequisite not met: {spec['prereq'][1]}")
-    cost = cost_override if isinstance(cost_override, dict) else \
-        ({} if cost_override == "free" else
-         {"food": max(0, 1 + cards.occ_cost_delta(player))})
+    if isinstance(cost_override, dict):
+        cost = cost_override
+    elif cost_override == "free":
+        cost = {}
+    else:
+        n = max(0, 1 + cards.occ_cost_delta(player))
+        full_ctx = dict(ctx or {})
+        full_ctx["card"] = cid
+        cost = cards.modified_cost(state, player, "occupation", {"food": n}, full_ctx)
     if cost_override != "free":
         pay(player, cost)
     player["hand_occupations"].remove(cid)
@@ -529,7 +592,7 @@ def play_occupation(state, player, cid, log, params=None, cost_override=None):
     return inst
 
 
-def can_play_minor(state, player, cid, cost_override=None):
+def can_play_minor(state, player, cid, cost_override=None, ctx=None):
     spec = cards.CARDS.get(cid)
     if not spec or spec["type"] != "minor":
         return False
@@ -539,11 +602,16 @@ def can_play_minor(state, player, cid, cost_override=None):
         return False
     if cost_override == "free":
         return True
-    cost = cost_override if isinstance(cost_override, dict) else spec["cost"]
+    if isinstance(cost_override, dict):
+        cost = cost_override
+    else:
+        full_ctx = dict(ctx or {})
+        full_ctx["card"] = cid
+        cost = cards.modified_cost(state, player, "minor", spec["cost"], full_ctx)
     return can_afford(player, cost)
 
 
-def play_minor(state, player, cid, log, params=None, cost_override=None):
+def play_minor(state, player, cid, log, params=None, cost_override=None, ctx=None):
     if cid not in player["hand_minors"]:
         raise ValueError("That minor improvement is not in your hand")
     spec = cards.CARDS[cid]
@@ -551,8 +619,14 @@ def play_minor(state, player, cid, log, params=None, cost_override=None):
         raise ValueError("Not a minor improvement")
     if not cards.check_prereq(state, player, cid):
         raise ValueError(f"Prerequisite not met: {spec['prereq'][1]}")
-    cost = cost_override if isinstance(cost_override, dict) else \
-        ({} if cost_override == "free" else spec["cost"])
+    if isinstance(cost_override, dict):
+        cost = cost_override
+    elif cost_override == "free":
+        cost = {}
+    else:
+        full_ctx = dict(ctx or {})
+        full_ctx["card"] = cid
+        cost = cards.modified_cost(state, player, "minor", spec["cost"], full_ctx)
     if cost_override != "free":
         pay(player, cost)
     player["hand_minors"].remove(cid)

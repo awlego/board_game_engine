@@ -100,9 +100,9 @@ UNIMPLEMENTED = {
              "any way' can't be observed without a comprehensive per-"
              "round gain ledger.",
     "FR094": "Miser: the discount only applies when you build EXACTLY 1 "
-             "room, but cost_mod for kind='room' is never told how many "
-             "rooms are being built in this action (only 'fences' carries "
-             "a count in ctx); the condition can't be evaluated.",
+             "room. cost_mod for kind='room' now gets a batch count in "
+             "ctx (engine phase 7), so the condition is expressible -- "
+             "this is now a plain implementation gap, not a plumbing one.",
     "FR095": "Musketeer: 'place an Arrow marker at the intersection of 4 "
              "action spaces' needs 2-D adjacency/positioning between "
              "action spaces, which this engine doesn't model (same gap "
@@ -389,7 +389,7 @@ def _cat_lover_mod(state, player, kind, cost, ctx):
         discount = 1
     else:
         return cost
-    return _apply_flat_discount(cost, discount)
+    return _apply_flat_discount(cost, discount * ctx.get("count", 1))
 
 compendium_card("FR069", cost_mod=_cat_lover_mod)
 

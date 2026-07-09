@@ -175,7 +175,43 @@ def fire_player(state, player, event, ctx):
 # ── Modifier queries (pull) ──────────────────────────────────────────
 
 def modified_cost(state, player, kind, cost, ctx=None):
-    """Fold every in-play card's cost_mod over a base cost dict."""
+    """Fold every in-play card's cost_mod over a base cost dict.
+
+    `kind` is one of "room", "stable", "fences", "renovation",
+    "improvement", "minor", "occupation". `ctx` is whichever of the
+    following the caller has available (any subset; a cost_mod fn must
+    use `.get()` defensively since unrelated kinds won't populate all of
+    them):
+
+    - "count": items in this batch (rooms/fences; stables also get a
+      per-stable call, see below).
+    - "start_index": how many of that thing the player already had
+      *before* this batch (fences already built, stables already
+      built) -- lets a "your Nth item" card compute overlap with
+      [start_index+1 .. start_index+count]. Rooms don't carry this
+      (room count is a lifetime total, not slotted).
+    - "index": for kind="stable" only -- the 1-based overall index of
+      THIS stable within the player's stable history (start_index plus
+      its position in the batch); stables are priced one at a time
+      (per-Nth pricing can differ stable to stable) so each call gets
+      its own index, unlike rooms/fences which are priced as one
+      batch total.
+    - "space_id": the originating action-space id, when the build came
+      from an action space (threaded from engine._resolve_space);
+      absent/None for a card-driven build (card_action, or a hook
+      calling a sub_actions transaction directly with no space).
+    - "improvement": the major-improvement id, for kind="improvement".
+    - "card": the card id, for kind="minor".
+    - "payment": the raw payment-choice value from the client action
+      dict (opaque -- the card's own cost_mod decides the schema, e.g.
+      {"reed_to_clay": 2}). A cost_mod that consumes ctx["payment"]
+      must validate it and raise ValueError on garbage.
+
+    Rooms and fences are priced as a BATCH TOTAL (the base `cost` passed
+    in is already `count`x the per-item amount) -- a cost_mod expressing
+    a flat per-item discount must scale its subtraction by
+    `ctx.get("count", 1)` to keep a fixed discount per item over the
+    whole batch (see decks/GUIDE.md)."""
     cost = dict(cost)
     for inst in in_play(player):
         fn = spec(inst).get("cost_mod")
@@ -611,7 +647,10 @@ card("occ_water_carrier", "Water Carrier", "occupation", min_players=4,
 def _stonecutter_mod(state, player, kind, cost, ctx):
     if kind in ("room", "renovation", "improvement") and cost.get("stone"):
         cost = dict(cost)
-        cost["stone"] -= 1
+        # "room" is priced as a batch total; scale the flat 1-stone
+        # discount by the room count so it still applies once per room.
+        n = ctx.get("count", 1) if kind == "room" else 1
+        cost["stone"] -= n
     return cost
 
 card("occ_stonecutter", "Stonecutter", "occupation",
@@ -622,9 +661,12 @@ card("occ_stonecutter", "Stonecutter", "occupation",
 def _carpenter_mod(state, player, kind, cost, ctx):
     if kind == "room":
         cost = dict(cost)
+        # Room cost is a batch total; a fixed -2 per room becomes
+        # -2*count over the whole batch.
+        discount = 2 * ctx.get("count", 1)
         for material in ("wood", "clay", "stone"):
             if cost.get(material):
-                cost[material] = max(0, cost[material] - 2)
+                cost[material] = max(0, cost[material] - discount)
     return cost
 
 card("occ_carpenter", "Carpenter", "occupation",

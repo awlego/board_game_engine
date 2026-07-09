@@ -462,14 +462,15 @@ compendium_card("I90", prereq=needs_occupations(2),
 # ── I91 Ladder ─────────────────────────────────────────────────────────
 # Only the room/renovation reed discount is implemented; the printed
 # text also discounts the reed cost of playing specific OTHER minor
-# cards (Water Mill, Chicken Coop, ...), but minor-improvement costs are
-# paid as a fixed dict (_play_minor) never passed through modified_cost/
-# cost_mod, so that half of the effect can't be expressed (same gap
-# noted for deck_b_minors' Wood Workshop).
+# cards (Water Mill, Chicken Coop, ...) -- kind="minor" cost_mod calls
+# now carry ctx["card"], so that half is no longer blocked in principle,
+# but singling out those specific (currently unimplemented) cards is a
+# separate per-card pass, not this plumbing change.
 def _ladder_mod(state, player, kind, cost, ctx):
     if kind in ("room", "renovation") and cost.get("reed"):
         cost = dict(cost)
-        cost["reed"] = max(0, cost["reed"] - 1)
+        n = ctx.get("count", 1) if kind == "room" else 1
+        cost["reed"] = max(0, cost["reed"] - n)
     return cost
 
 

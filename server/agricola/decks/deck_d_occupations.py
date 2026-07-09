@@ -37,8 +37,12 @@ UNIMPLEMENTED = {
             "per-occupation-card animal-capacity mode; house_capacity only "
             "supports a flat int or 'per_room'.",
     "D088": "Millwright: 'replace up to 2 building resources of any type "
-            "with 1 grain each' is an optional per-build substitution with "
-            "no parameter channel in cost_mod (which is automatic-only).",
+            "with 1 grain each' is an optional per-build substitution. "
+            "engine._resolve_space now threads ctx['payment'] (the "
+            "client action's own 'payment' field) into build/renovate/"
+            "improvement cost_mod calls (engine phase 7; see "
+            "decks/GUIDE.md's cost_mod section), so this is now a plain "
+            "implementation gap, not a plumbing one.",
     "D093": "Sheep Inspector: 'return another person you placed home' "
             "requires vacating an occupied action space mid-round -- the "
             "replacement-effect gap noted in CARDS.md as a known future "
@@ -47,7 +51,11 @@ UNIMPLEMENTED = {
             "as D093 -- no way to vacate an occupied action space.",
     "D095": "Site Manager: on-play major-improvement build with 'replace "
             "up to 1 resource of each type with 1 food' has the same "
-            "no-parameter-channel substitution problem as D088/D117.",
+            "substitution shape as D088/D117 -- build_improvement's "
+            "ctx['payment'] (engine phase 7) can carry this card's own "
+            "choice too (the play hook builds the ctx itself, same as "
+            "any card_action would), so this is a plain implementation "
+            "gap, not a plumbing one.",
     "D102": "Sample Stable Maker: fires 'at the start of each returning "
             "home phase', a phase this engine has no hook for (only "
             "round_start/harvest_field/etc.), and requires removing a "
@@ -68,8 +76,9 @@ UNIMPLEMENTED = {
             "action spaces are a single shared/global list.",
     "D117": "Wood Expert: 'each improvement costs up to 2 wood less, if "
             "you pay 1 food instead' is the same optional-substitution "
-            "problem as D088 (cost_mod has no parameter channel for the "
-            "player's choice of how much to substitute).",
+            "shape as D088 -- now expressible via ctx['payment'] "
+            "(engine phase 7), so this is a plain implementation gap, "
+            "not a plumbing one.",
     "D126": "Field Cultivator: 'each time you harvest a field tile, take "
             "the top good from the pile' needs the count of field tiles "
             "harvested this phase, but the harvest_field hook fires after "

@@ -23,8 +23,10 @@ General simplifications (documented once, not repeated per card):
 - A handful of cards partially implement their printed text (documented
   inline) where one clause is expressible and a second clause hits an
   engine limitation already catalogued in sibling decks (score-category
-  manipulation, cost_mod's lack of an improvement-id channel, etc.) --
-  these are registered (not UNIMPLEMENTED) since real effect remains.
+  manipulation, etc. -- cost_mod's lack of an improvement-id channel was
+  one of these until engine phase 7 added ctx['improvement']/ctx['card'],
+  see E15/E36's UNIMPLEMENTED notes) -- these are registered (not
+  UNIMPLEMENTED) since real effect remains.
 - Traveling cards (pass to the left neighbor) never keep their instance
   in play, so any decision they need is taken as a `params` value at
   play time (mirroring Shifting Cultivation in the base deck), never via
@@ -51,14 +53,14 @@ from server.agricola.state import (
 UNIMPLEMENTED = {
     "E15": "makes Clay Oven/Stone Oven count as minor improvements for "
            "you (score-category manipulation beyond bonus points is "
-           "unsupported) and discounts their cost by 1 resource of your "
-           "choice -- but modified_cost's kind='improvement' call passes "
-           "no ctx identifying which improvement is being built, so a "
-           "cost_mod can't target just these two ovens without misfiring "
-           "on every other major improvement; the same discount on the "
-           "Wood-fired Oven (a minor card, E27) is unreachable too, since "
-           "_play_minor pays a minor's own cost directly and never calls "
-           "modified_cost.",
+           "still unsupported -- this half remains blocked) and "
+           "discounts their cost by 1 resource of your choice. "
+           "modified_cost's kind='improvement'/'minor' calls now carry "
+           "ctx['improvement']/ctx['card'] (engine phase 7), so a "
+           "cost_mod CAN target just these cards (and the Wood-fired "
+           "Oven minor, E27) without misfiring on every other "
+           "improvement/minor -- the discount half is no longer a "
+           "plumbing gap, only the score-category-manipulation half is.",
     "E19": "requires detecting a Fireplace/Cooking Hearth 'convert 2+ "
            "goods to food at once' event; the cook conversion in "
            "_apply_feed's feeding-phase loop never fires a card event "
@@ -79,9 +81,12 @@ UNIMPLEMENTED = {
            "with no card-modifier hook (same class of gap as B012).",
     "E36": "lets the player substitute up to 2 reed for the same amount "
            "of clay when building a room or renovating -- a genuine "
-           "per-build payment-material choice, but cost_mod is a pure "
-           "automatic function with no parameter channel for that "
-           "choice (same limitation noted for B065/D088).",
+           "per-build payment-material choice. engine._resolve_space now "
+           "threads ctx['payment'] (the client action's own 'payment' "
+           "field) into every build/renovate cost_mod call (engine phase "
+           "7; see decks/GUIDE.md's cost_mod section for the worked "
+           "'reed_to_clay' example), so this is now a plain "
+           "implementation gap, not a plumbing one.",
     "E58": "a card-held slot for 2 animals of any type, kept outside the "
            "house/pastures; validate_animal_placement only recognizes "
            "pastures, unfenced stables, and the house as accommodation "
@@ -148,7 +153,7 @@ compendium_card("E12", cost={"wood": 1}, hooks={"space_used": _e12_hook})
 def _e13_mod(state, player, kind, cost, ctx):
     if kind == "room" and player["house_type"] == "wood" and cost.get("wood"):
         cost = dict(cost)
-        cost["wood"] = 2
+        cost["wood"] = 2 * ctx.get("count", 1)
     return cost
 
 compendium_card("E13", cost={"wood": 1, "stone": 1}, cost_mod=_e13_mod)
@@ -403,9 +408,10 @@ compendium_card("E35", cost={"wood": 1},
 def _e37_mod(state, player, kind, cost, ctx):
     if kind == "room" and player["house_type"] == "clay" and cost.get("clay"):
         cost = dict(cost)
-        cost["clay"] = 2
-        cost["wood"] = cost.get("wood", 0) + 1
-        cost["reed"] = 1
+        n = ctx.get("count", 1)
+        cost["clay"] = 2 * n
+        cost["wood"] = cost.get("wood", 0) + 1 * n
+        cost["reed"] = 1 * n
     return cost
 
 compendium_card("E37", cost={"wood": 2}, cost_mod=_e37_mod)

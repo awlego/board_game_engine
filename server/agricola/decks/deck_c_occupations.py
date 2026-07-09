@@ -11,9 +11,9 @@ real rules text; the rest is a scrape artifact and is not implemented.
 This is noted per-card below.
 
 Engine limitations discovered while implementing this slice (see the
-final report / UNIMPLEMENTED reasons for detail): stables are built via a
-hardcoded `{"wood": 2}` cost in `_do_build_stables` (never routed through
-`modified_cost`, so no stable-cost card can hook in); `extra_rooms` is a
+final report / UNIMPLEMENTED reasons for detail; stables now route
+through `modified_cost` via `kind="stable"`, added in engine phase 7 --
+see C088's UNIMPLEMENTED note, which predates that fix): `extra_rooms` is a
 static per-spec constant (can't be gated on a runtime purchase);
 `renovate` and `harvest_field` fire only to the acting/own player's cards
 (`fire_player`), not broadcast, so "each time *another player*
@@ -107,11 +107,12 @@ UNIMPLEMENTED["C085"] = (
 # C088 Carpenter's Apprentice — UNIMPLEMENTED
 # ═════════════════════════════════════════════════════════════════════
 UNIMPLEMENTED["C088"] = (
-    "wood-room and fence discounts are easy (cost_mod), but the '3rd/4th "
-    "stable costs 1 wood less' clause can't be: _do_build_stables pays a "
-    "hardcoded {wood: 2} and is never routed through modified_cost, so "
-    "no cost_mod kind exists for stables; implementing only 2 of the "
-    "card's 3 clauses would misrepresent it")
+    "wood-room and fence discounts are easy (cost_mod); the '3rd/4th "
+    "stable costs 1 wood less' clause needed a cost_mod kind for "
+    "stables, which now exists (kind='stable', with 'index'/'start_index' "
+    "ctx for per-Nth pricing -- engine phase 7), so all 3 clauses are "
+    "expressible -- this is now a plain implementation gap, not a "
+    "plumbing one")
 
 # ═════════════════════════════════════════════════════════════════════
 # C089 Stablemaster
@@ -770,9 +771,10 @@ compendium_card("C127", hooks={"play": _lover_play})
 def _wooden_hut_extender_mod(state, player, kind, cost, ctx):
     if kind == "room" and player["house_type"] == "wood" and cost.get("wood"):
         cost = dict(cost)
+        n = ctx.get("count", 1)
         rnd = state["round"]
-        cost["wood"] = 5 if rnd <= 5 else 4 if rnd <= 7 else 3
-        cost["reed"] = 1
+        cost["wood"] = (5 if rnd <= 5 else 4 if rnd <= 7 else 3) * n
+        cost["reed"] = 1 * n
     return cost
 
 

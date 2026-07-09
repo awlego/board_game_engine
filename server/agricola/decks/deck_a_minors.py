@@ -276,9 +276,11 @@ compendium_card(
 
 UNIMPLEMENTED["A014"] = (
     "Carpenter's Hammer discounts room-building only when >=2 rooms are "
-    "built at once, but cost_mod for kind='room' isn't given a build-count "
-    "in ctx (only 'fences' passes ctx['count']), so the condition can't be "
-    "evaluated")
+    "built at once. cost_mod for kind='room' now gets a batch count in "
+    "ctx and room cost is priced as one batch total (engine phase 7), "
+    "so the condition and the batch-level discount are both "
+    "expressible -- this is now a plain implementation gap, not a "
+    "plumbing one")
 
 
 # ── A015 Carpenter's Axe ──────────────────────────────────────────────
