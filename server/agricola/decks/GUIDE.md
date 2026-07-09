@@ -877,6 +877,179 @@ exist, so an unrevealed round slot never causes a lookup error. Reading
 occupancy is a raw `state["action_spaces"]` scan -- no new primitive
 needed, `occupied_by`/`extra_occupants` are already plain state.
 
+## Turn structure (engine phase 11)
+
+Three affordances for cards that manipulate WHO places WHEN, or whether
+a placement happens at all -- as opposed to what a placement produces
+(every earlier phase). Motivating cards: D053 Tea House, I260 Taster,
+I71 Holiday House; K269 Acrobat/K289 Countryman need no engine change
+at all (a `returning_home` recipe, see below).
+
+### Skip a placement (D053 Tea House)
+
+D053: "Once per round, you can skip placing your second person and get
+1 food instead. (You can place the person later that round.)" Spec key
+`skip_turn=fn(state, player, inst) -> gain dict | None` -- the card's
+own fn decides when skipping is available (once per round via
+`inst["data"]`, "only your 2nd person" via `player["people_placed"]`,
+...) and what it grants; the engine never guesses at a card's own
+conditions.
+
+While it's a player's placement turn (work phase, no prompt pending,
+capacity remaining, not `placement_blocked` -- see below), `cards.
+_skip_actions`/`get_valid_actions` offer `{"kind": "skip", "card":
+<cid>, "gain": {...}}` for every in-play card whose `skip_turn`
+currently returns a truthy dict, **plus one engine-level guard**: at
+least one OTHER player must still have an unplaced person. Skipping
+when everyone else is already done would be a no-op turn (there is
+nobody left to place ahead of) -- the guard makes that structurally
+impossible rather than relying on every card's own once-per-round gate
+to prevent it.
+
+`{"kind": "skip", "card": <cid>}` (`_apply_skip`) re-validates all of
+the above, re-calls `skip_turn` (never trusts the listing), credits
+the returned gain through the normal `apply_extras` hub (non-animal
+goods straight to resources, animal goods queued for accommodation,
+`gained(source="card")` fired) -- exactly like any other hook-granted
+extra -- then calls the optional spec key `after_skip=fn(state, player,
+inst, log)` so the card can mark its own usage (`inst["data"]
+["used_round"] = state["round"]`); this is the ONLY point that mutates
+`inst["data"]`, so `skip_turn` itself stays a pure query, matching
+`occupied_ok`'s contract. Crucially, **`people_placed` is never
+touched** -- the skip defers that placement, it does not forfeit it,
+so the same player is revisited later in the round with their capacity
+intact. If the gain queued an accommodation prompt, `_apply_skip`
+leaves `current_player` as-is and returns without advancing; the
+prompt's own resolution (`_apply_accommodate`/`_apply_choice`) calls
+`_advance_work(state, log)` with no explicit `start_pidx` once it
+drains, which naturally continues from `current_player + 1` -- the same
+place `_apply_skip` would have advanced to itself. No `after_lasso`-
+style flag is needed (skip has no "immediately place again" clause to
+carry across the prompt).
+
+`_advance_work`'s forfeit loop ("cannot use any action space") also
+checks `_skip_actions` alongside `_placement_actions` before deciding a
+player has nothing to do this turn: a player with a real skip option
+available is not "stuck," so they get the turn (to either place or
+skip) instead of being force-forfeited.
+
+No `"skipped"` event was added (YAGNI) -- nothing motivating needs to
+react to a skip specifically; a card that wants to react to the gain
+itself already sees it via `gained(source="card")`.
+
+### One-shot first-placer override (I260 Taster)
+
+I260: "Whenever another player is the starting player, you can pay them
+1 food at the start of the round and be the first to place a family
+member. After that, play starts with the starting player as usual."
+This is a recipe built entirely from existing mechanisms plus one new
+`_advance_work` fallback -- **the card itself is not registered**, only
+the recipe is documented here (a `temp_card`-only test in
+`tests/test_agricola.py` exercises the mechanism end to end).
+
+`_advance_work`'s `start_pidx` resolution order is now: explicit arg →
+`state.pop("_pending_work_start", None)` → **NEW:**
+`state.pop("_resume_from", None)` → `(current_player + 1) % n`.
+`_resume_from` is a one-shot fallback: whichever `_advance_work` call
+first falls all the way through to it pops (consumes) it; a
+`_pending_work_start` stash set in the meantime (a prompt stalling the
+game) already carries the resolved value forward, so `_resume_from`
+itself is never read a second time.
+
+The recipe:
+1. A `round_start` hook (Taster's owner's card) checks
+   `state["starting_player"] != player["index"]` and, if so, calls
+   `cards.prompt_choice(state, player, inst["id"], "Pay 1 food to place
+   first?", ["yes", "no"])`.
+2. `_start_round` finishes firing every player's `round_start` hooks,
+   then calls `self._advance_work(state, log, state["starting_player"])`
+   -- an EXPLICIT `start_pidx`, so the `_pending_work_start`/
+   `_resume_from` fallback chain above is skipped entirely this first
+   time. Since the choice prompt from step 1 is already queued,
+   `_advance_work` stashes `state["_pending_work_start"] =
+   state["starting_player"]` and stops (see its docstring).
+3. `resolve_choice`, on `"yes"`: pays the starting player 1 food from
+   the owner, then **overwrites** the stash --
+   `state["_pending_work_start"] = player["index"]` (the owner, who
+   should place first) and sets `state["_resume_from"] =
+   state["starting_player"]` (where rotation should resume once the
+   owner's out-of-turn placement is done). Overwriting
+   `_pending_work_start` here is safe and necessary -- it was only ever
+   a "resume once the prompt drains" stash, not yet consumed by
+   anything.
+4. `_apply_choice`'s own tail calls `_advance_work(state, log)` (no
+   explicit `start_pidx`) once the prompt drains; this pops the
+   overwritten `_pending_work_start` (the owner's index) and gives them
+   the turn.
+5. The owner places their one person via the normal `_apply_place`,
+   whose own tail again calls `_advance_work(state, log)` with no
+   explicit `start_pidx`. This time `_pending_work_start` is already
+   gone (step 4 consumed it), so the new fallback fires: it pops
+   `_resume_from` (the true starting player, stashed in step 3) and
+   rotation resumes from there in normal order -- exactly "after that,
+   play starts with the starting player as usual."
+
+A card implementing this recipe for real also needs its own
+"food" affordability check before offering the prompt (declining or not
+prompting at all if the owner can't pay) -- omitted here since the
+recipe itself, not the card's cost-checking, is what's being
+documented.
+
+### Placement lockout (I71 Holiday House)
+
+I71: "In round 14, you cannot place any people." Spec key
+`placement_blocked=fn(state, player, inst) -> bool`; `cards.
+placement_blocked(state, player)` is `True` if any in-play card's fn
+returns `True` (query mirrors `occupied_ok`'s shape). `_placement_
+actions` and `_skip_actions` both return `[]` immediately for a blocked
+player (checked before anything else, including `people_placed`/
+capacity), and `_apply_place`/`_apply_skip` both re-check and raise if
+blocked -- so a stale/forged action can't sneak a placement through.
+`_advance_work`'s existing forfeit branch then picks the blocked player
+up automatically (no usable space, no skip either) and logs a
+lockout-specific line ("cannot place any people this round and
+forfeits N placement(s)") rather than the generic "cannot use any
+action space" one, which would be misleading for a card-level lockout
+rather than "every space happens to be unaffordable/unusable this
+round." Feeding, scoring, and every other per-round mechanic are
+untouched -- a locked-out player still eats normally at the next
+harvest.
+
+### K269 Acrobat / K289 Countryman: no engine change needed
+
+Both read "after all players have placed [a person on some space], you
+may move that person to [some other space] and use it." No new
+mechanism is needed -- this is exactly the existing `returning_home`
+hook (fires once per player, at the end of the work phase, before
+`occupied_by`/`extra_occupants` reset) plus the existing `sub_actions`
+transaction API:
+
+```python
+def _acrobat_style_hook(state, player, inst, ctx):
+    if "some_space_id" not in ctx["spaces"]:
+        return  # the person never occupied the qualifying space
+    # Perform the target space's effect directly via sub_actions (e.g.
+    # sub_actions.sow(...), sub_actions.build_rooms(..., cost_override=
+    # "free"), grant_goods(...) for a fixed-gain space) -- NOT a literal
+    # person move.
+```
+
+**Fidelity simplification, worth calling out explicitly:** this
+recipe performs the TARGET action space's effect at the right time, but
+does not literally relocate the person token -- the farmyard-cell
+occupancy model has no "move a placed person to a different space"
+primitive (see "Not supported" below: moving/removing built fences,
+rooms, fields is the closest existing precedent for "no primitive
+exists"), so the moved person never actually occupies the destination
+space for `space_used`/`occupied_ok`/adjacency purposes, and the
+ORIGINAL space they returned home from is what shows up in that
+player's `returning_home` `ctx["spaces"]`. For K269/K289 specifically
+this is invisible in practice (their target actions -- Fishing,
+Farmland-style plow-and-sow -- don't depend on space occupancy after
+the fact), but a future card whose target space cares about who's
+"still standing there" would need a real fidelity check before reusing
+this recipe.
+
 ## Not supported (mark UNIMPLEMENTED, cite the mechanic)
 
 - Affecting other players' hands, people, or farms directly (guest

@@ -177,6 +177,7 @@ class AgricolaEngine(GameEngine):
 
         if state["phase"] == "work" and state["current_player"] == pidx:
             return self._placement_actions(state, pidx) + \
+                self._skip_actions(state, pidx) + \
                 cards.card_actions(state, p)
 
         return []
@@ -200,6 +201,8 @@ class AgricolaEngine(GameEngine):
             return self._apply_feed(state, pidx, action)
         if kind == "place":
             return self._apply_place(state, pidx, action)
+        if kind == "skip":
+            return self._apply_skip(state, pidx, action)
         raise ValueError(f"Unknown action kind: {kind}")
 
     def get_waiting_for(self, state):
@@ -493,7 +496,19 @@ class AgricolaEngine(GameEngine):
         if start_pidx is None:
             start_pidx = state.pop("_pending_work_start", None)
             if start_pidx is None:
-                start_pidx = (state["current_player"] + 1) % n
+                # One-shot first-placer override (I260 Taster-style: see
+                # decks/GUIDE.md's "Turn structure" section). A
+                # round_start hook's resolve_choice may set this to let
+                # one player place ahead of the normal rotation, then
+                # have rotation resume from wherever it actually belongs
+                # once that placement is made. Consumed exactly once,
+                # right here -- the first _advance_work call that falls
+                # all the way through to this fallback (an intervening
+                # prompt stall re-stashes the already-resolved value into
+                # _pending_work_start above, so it is never read twice).
+                start_pidx = state.pop("_resume_from", None)
+                if start_pidx is None:
+                    start_pidx = (state["current_player"] + 1) % n
 
         if self._prompt(state):
             state["_pending_work_start"] = start_pidx
@@ -505,14 +520,23 @@ class AgricolaEngine(GameEngine):
             capacity = self._capacity(p)
             if p["people_placed"] >= capacity:
                 continue
-            if self._placement_actions(state, pidx):
+            # A player with no usable action space may still have a
+            # skip-placement option (D053 Tea House-style) -- that's a
+            # real choice, not "nobody can place", so don't forfeit them.
+            if self._placement_actions(state, pidx) or \
+                    self._skip_actions(state, pidx):
                 state["current_player"] = pidx
                 return
             remaining = capacity - p["people_placed"]
             p["people_placed"] = capacity
-            log.append(
-                f"{p['name']} cannot use any action space and forfeits "
-                f"{remaining} placement(s)")
+            if cards.placement_blocked(state, p):
+                log.append(
+                    f"{p['name']} cannot place any people this round and "
+                    f"forfeits {remaining} placement(s)")
+            else:
+                log.append(
+                    f"{p['name']} cannot use any action space and forfeits "
+                    f"{remaining} placement(s)")
 
         self._end_work_phase(state, log)
 
@@ -681,6 +705,8 @@ class AgricolaEngine(GameEngine):
             return []
         if p["people_placed"] >= self._capacity(p):
             return []
+        if cards.placement_blocked(state, p):
+            return []
 
         actions = []
         for space in state["action_spaces"]:
@@ -702,6 +728,42 @@ class AgricolaEngine(GameEngine):
                 if space["id"] in ("lessons", "lessons_b"):
                     entry["occ_cost"] = self._occupation_cost(state, p, space["id"])
                 actions.append(entry)
+        return actions
+
+    def _skip_actions(self, state, pidx):
+        """Skip-placement actions (D053 Tea House: "skip placing your
+        second person and get 1 food instead; place them later"). Each
+        in-play card's `skip_turn=fn(state, player, inst) -> gain dict |
+        None` spec key is queried; a truthy return offers `{"kind":
+        "skip", "card": <cid>, "gain": {...}}`. The card's own fn is
+        responsible for its own conditions (once per round via
+        `inst["data"]`, "only your Nth person" via `people_placed`,
+        ...) -- this method only adds the one engine-level guard no
+        card should have to re-implement: at least one OTHER player must
+        still have an unplaced person, or skipping would be a no-op turn
+        (nobody left to place ahead of) that could recur every time this
+        player is revisited."""
+        if state["phase"] != "work" or self._prompt(state):
+            return []
+        p = state["players"][pidx]
+        if p["people_placed"] >= self._capacity(p):
+            return []
+        if cards.placement_blocked(state, p):
+            return []
+        others_remaining = any(
+            state["players"][i]["people_placed"] < self._capacity(state["players"][i])
+            for i in range(state["player_count"]) if i != pidx)
+        if not others_remaining:
+            return []
+        actions = []
+        for inst in cards.in_play(p):
+            fn = cards.spec(inst).get("skip_turn")
+            if not fn:
+                continue
+            gain = fn(state, p, inst)
+            if gain:
+                actions.append({"kind": "skip", "card": inst["id"],
+                                "gain": dict(gain)})
         return actions
 
     def _occupation_cost(self, state, player, space_id):
@@ -802,6 +864,8 @@ class AgricolaEngine(GameEngine):
         p = state["players"][pidx]
         if p["people_placed"] >= self._capacity(p):
             raise ValueError("No people left to place")
+        if cards.placement_blocked(state, p):
+            raise ValueError("You cannot place people this round")
 
         space = self._space(state, action.get("space"))
         if space is None:
@@ -842,6 +906,55 @@ class AgricolaEngine(GameEngine):
                 self._advance_work(state, log)
         else:
             state["prompts"][0]["after_lasso"] = lasso
+        return self._result(state, log)
+
+    def _apply_skip(self, state, pidx, action):
+        """D053 Tea House-style skip-placement action: instead of
+        placing a person now, credit the card's `skip_turn` gain and
+        move on -- `people_placed` is deliberately left untouched (the
+        placement is deferred, not forfeited), so this player is
+        revisited later in the same round's rotation with their
+        capacity intact (see `_advance_work` and `_skip_actions`)."""
+        if state["phase"] != "work":
+            raise ValueError("Not the work phase")
+        if self._prompt(state):
+            raise ValueError("A pending decision must be resolved first")
+        if state["current_player"] != pidx:
+            raise ValueError("Not your turn")
+
+        p = state["players"][pidx]
+        if p["people_placed"] >= self._capacity(p):
+            raise ValueError("No people left to place")
+        if cards.placement_blocked(state, p):
+            raise ValueError("You cannot place people this round")
+        others_remaining = any(
+            state["players"][i]["people_placed"] < self._capacity(state["players"][i])
+            for i in range(state["player_count"]) if i != pidx)
+        if not others_remaining:
+            raise ValueError(
+                "No other player has a placement left to skip ahead of")
+
+        inst = next((i for i in cards.in_play(p)
+                     if i["id"] == action.get("card")), None)
+        if inst is None:
+            raise ValueError("You do not have that card in play")
+        skip_fn = cards.spec(inst).get("skip_turn")
+        if not skip_fn:
+            raise ValueError("That card does not support skipping a turn")
+        gain = skip_fn(state, p, inst)
+        if not gain:
+            raise ValueError("You cannot skip your placement right now")
+
+        log = [f"{p['name']} skips placing a person using "
+              f"\"{cards.spec(inst)['name']}\" ({cards.goods_str(gain)})"]
+        self._apply_extras(state, p, dict(gain), log)
+
+        after_skip = cards.spec(inst).get("after_skip")
+        if after_skip:
+            after_skip(state, p, inst, log)
+
+        if not self._prompt(state):
+            self._advance_work(state, log)
         return self._result(state, log)
 
     def _resolve_space(self, state, p, space, action, log):

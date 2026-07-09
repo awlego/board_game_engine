@@ -493,3 +493,41 @@ Known remaining gaps, and how they'd fit if a future card needs them:
   4-player extension's layout (in particular Copse's position) is
   placed by analogy to the 3-player extension's pattern, not a
   confirmed layout.
+- **Turn-structure manipulation (item 17)** is now supported (engine
+  phase 11). Previously there was no way for a card to let a player skip
+  their placement turn for a consolation gain, to place out of the
+  normal rotation order, or to be locked out of placing altogether for
+  a round. Now: `skip_turn=fn(state, player, inst) -> gain dict | None`
+  (queried by `_skip_actions`/offered as a `{"kind": "skip", ...}`
+  action alongside placements, guarded so it's never offered once every
+  OTHER player is already done placing) plus the optional `after_skip=
+  fn(state, player, inst, log)` for the card to mark its own usage;
+  `_advance_work`'s `start_pidx` resolution gained a new `_resume_from`
+  fallback (after the existing `_pending_work_start` stash, before the
+  default `current_player + 1`), a one-shot value a `resolve_choice` can
+  set to let one player place ahead of rotation and then have rotation
+  resume from wherever it actually belongs; and `placement_blocked=
+  fn(state, player, inst) -> bool` (`cards.placement_blocked`), which
+  `_placement_actions`/`_skip_actions` both return `[]` for, so the
+  existing forfeit branch in `_advance_work` picks a blocked player up
+  automatically (now with a lockout-specific log line instead of the
+  generic "no usable space" one). See `decks/GUIDE.md`'s "Turn
+  structure" section for the full contracts, the I260 first-placer
+  recipe worked step by step, and the K269/K289 `returning_home` recipe
+  (no engine change needed for those two -- just an existing hook plus
+  the `sub_actions` API, with a documented fidelity simplification: the
+  "moved" person never literally occupies the target space). This
+  unblocks the motivating compendium cards: D053 Tea House (`skip_turn`/
+  `after_skip`), I260 Taster (the `_resume_from` recipe), I71 Holiday
+  House (`placement_blocked`), K269 Acrobat/K289 Countryman (the
+  `returning_home` recipe, no engine change). I238 Chamberlain is only
+  PARTIALLY unblocked: revealing upcoming round cards to one player
+  needs a player-specific view of `state["deck"]` (currently hidden from
+  every view; `get_player_view` would need a new field gated to the
+  chamberlain's owner), and its "exclusive use of the current round
+  space" clause is per-card `occupied_ok`/`usable`-style work -- neither
+  is built by this pass, so I238 stays gated on a view-layer gap, not a
+  turn-structure one. None of the motivating cards (D053, I260, I71,
+  K269, K289) are registered by this pass (`temp_card`-only tests in
+  `tests/test_agricola.py` exercise each mechanism); registering them
+  with `compendium_card` is still a separate pass.

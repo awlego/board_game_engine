@@ -81,7 +81,8 @@ def card(cid, name, ctype, text, deck="base", min_players=1, cost=None,
     bake, raw_values, bake_bonus, cost_mod, occ_cost_delta,
     pasture_capacity_bonus, pasture_capacity_mod, unfenced_stable_capacity_mod,
     pasture_secondary_types, holds_animals, house_capacity, extra_rooms,
-    field, bake_on_spaces, lasso, score_bonus, card_space)."""
+    field, bake_on_spaces, lasso, score_bonus, card_space, skip_turn,
+    after_skip, placement_blocked)."""
     assert cid not in CARDS, cid
     # A traveling card is handed to the left neighbor (or removed, solo)
     # right after its `play` hook runs and never sits in `player["minors"]`
@@ -425,6 +426,20 @@ def occupied_ok(state, player, space):
     for inst in in_play(player):
         fn = spec(inst).get("occupied_ok")
         if fn and fn(state, player, inst, space):
+            return True
+    return False
+
+
+def placement_blocked(state, player):
+    """True if any in-play card's `placement_blocked=fn(state, player,
+    inst) -> bool` currently blocks `player` from placing anyone this
+    round (I71 Holiday House: "In round 14, you cannot place any
+    people."). `_placement_actions` and `_skip_actions` both return []
+    for a blocked player, so `_advance_work`'s existing forfeit branch
+    (no usable space, no skip option) picks them up automatically."""
+    for inst in in_play(player):
+        fn = spec(inst).get("placement_blocked")
+        if fn and fn(state, player, inst):
             return True
     return False
 

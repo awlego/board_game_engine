@@ -4078,3 +4078,260 @@ def test_legworker_style_hook_adjacent_occupancy(engine, temp_card):
     wood_before = s["players"][first]["resources"]["wood"]
     s = place(engine, s, {"kind": "place", "space": "day_laborer"})
     assert s["players"][first]["resources"]["wood"] == wood_before
+
+
+# ── Turn structure (engine phase 11) ─────────────────────────────────
+
+def test_skip_turn_full_flow(engine, temp_card):
+    """D053 Tea House-style: skip a placement for a gain, keep the
+    deferred person's capacity, and get revisited later in rotation."""
+    def skip_gain(state, player, inst):
+        if inst["data"].get("used_round") == state["round"]:
+            return None
+        if player["people_placed"] != 1:
+            return None
+        return {"food": 1}
+
+    def after_skip(state, player, inst, log):
+        inst["data"]["used_round"] = state["round"]
+
+    cid = "test_tea_house"
+    temp_card(cid, "Test Tea House", "minor", cost={}, text="test",
+              skip_turn=skip_gain, after_skip=after_skip)
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = 1 - first
+    put_in_play(s, first, cid)
+
+    s = place(engine, s, {"kind": "place", "space": "grain_seeds"})  # first
+    assert s["current_player"] == other
+    s = place(engine, s, {"kind": "place", "space": "day_laborer"})  # other
+    assert s["current_player"] == first
+    assert s["players"][first]["people_placed"] == 1
+
+    pid = s["players"][first]["player_id"]
+    actions = engine.get_valid_actions(s, pid)
+    skip_action = next((a for a in actions if a["kind"] == "skip"), None)
+    assert skip_action == {"kind": "skip", "card": cid, "gain": {"food": 1}}
+
+    food_before = s["players"][first]["resources"]["food"]
+    s = engine.apply_action(s, pid, {"kind": "skip", "card": cid}).new_state
+    assert s["players"][first]["resources"]["food"] == food_before + 1
+    # The deferred placement is not consumed.
+    assert s["players"][first]["people_placed"] == 1
+    # Rotation moves on to the other player instead of stalling.
+    assert s["current_player"] == other
+
+    s = place(engine, s, {"kind": "place", "space": "forest"})  # other
+    # first is revisited (still has capacity) to place their deferred
+    # 2nd person now -- and the skip is no longer offered this round.
+    assert s["current_player"] == first
+    actions = engine.get_valid_actions(s, pid)
+    assert not any(a["kind"] == "skip" for a in actions)
+    s = place(engine, s, {"kind": "place", "space": "clay_pit"})
+    # first's deferred 2nd person did place -- this was everyone's last
+    # placement this round, so the round rolled straight into round 2.
+    assert s["round"] == 2
+
+
+def test_skip_turn_not_offered_once_all_others_done(engine, temp_card):
+    """The engine-level guard: skipping when no OTHER player still has
+    an unplaced person would be a no-op turn, so it's not offered."""
+    temp_card("test_tea_house_others", "Test Tea House", "minor", cost={},
+              text="test",
+              skip_turn=lambda state, player, inst: {"food": 1})
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = 1 - first
+    put_in_play(s, other, "test_tea_house_others")
+
+    s = place(engine, s, {"kind": "place", "space": "grain_seeds"})  # first
+    s = place(engine, s, {"kind": "place", "space": "day_laborer"})  # other
+    s = place(engine, s, {"kind": "place", "space": "forest"})  # first, done
+    assert s["players"][first]["people_placed"] == 2
+    assert s["current_player"] == other
+
+    actions = engine.get_valid_actions(s, s["players"][other]["player_id"])
+    assert not any(a["kind"] == "skip" for a in actions)
+
+
+def test_skip_turn_not_offered_when_card_declines(engine, temp_card):
+    """A `skip_turn` fn returning None (its own condition not met) means
+    no skip action is offered, full stop."""
+    temp_card("test_tea_house_none", "Test Tea House", "minor", cost={},
+              text="test",
+              skip_turn=lambda state, player, inst: None)
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "test_tea_house_none")
+
+    actions = engine.get_valid_actions(s, s["players"][first]["player_id"])
+    assert not any(a["kind"] == "skip" for a in actions)
+
+
+def test_first_placer_override_full_round_order(engine, temp_card):
+    """I260 Taster recipe (documented in decks/GUIDE.md's "Turn
+    structure" section): a round_start hook queues a choice; accepting
+    pays the starting player 1 food and places the accepting (non-
+    starting) player first via _pending_work_start + _resume_from --
+    after their single placement, rotation resumes from the TRUE
+    starting player in normal order."""
+    s = make_state(engine, 2)
+    starting = s["starting_player"]
+    owner_idx = 1 - starting
+    cid = "test_taster"
+
+    def round_start_hook(state, player, inst, ctx):
+        if player["index"] == owner_idx and state["starting_player"] != owner_idx:
+            cards.prompt_choice(state, player, inst["id"],
+                                "Pay 1 food to place first?", ["yes", "no"])
+
+    def resolve(state, player, inst, ctx):
+        if ctx["option"] != "yes":
+            return
+        starting_p = state["players"][state["starting_player"]]
+        player["resources"]["food"] -= 1
+        starting_p["resources"]["food"] += 1
+        ctx["log"].append(f"{player['name']} pays 1 food to place first")
+        state["_pending_work_start"] = player["index"]
+        state["_resume_from"] = state["starting_player"]
+
+    temp_card(cid, "Test Taster", "occupation", "test",
+              hooks={"round_start": round_start_hook}, resolve_choice=resolve)
+    put_in_play(s, owner_idx, cid)
+    give(s, owner_idx, food=5)
+
+    owner_food_before = s["players"][owner_idx]["resources"]["food"]
+    starting_food_before = s["players"][starting]["resources"]["food"]
+
+    log = []
+    engine._start_round(s, log)  # round 2
+
+    assert s["prompts"][0]["type"] == "choice"
+    owner_pid = s["players"][owner_idx]["player_id"]
+    s = engine.apply_action(s, owner_pid, {"kind": "choice", "index": 0}).new_state
+
+    assert s["players"][owner_idx]["resources"]["food"] == owner_food_before - 1
+    assert s["players"][starting]["resources"]["food"] == starting_food_before + 1
+    assert s["current_player"] == owner_idx
+    assert "_resume_from" in s  # not consumed until the placement resolves
+
+    s = place(engine, s, {"kind": "place", "space": "grain_seeds"})  # owner, 1st
+    # Rotation resumed from the TRUE starting player, not owner+1.
+    assert s["current_player"] == starting
+    assert "_resume_from" not in s
+
+    s = place(engine, s, {"kind": "place", "space": "day_laborer"})  # starting
+    assert s["current_player"] == owner_idx  # owner's remaining person
+    s = place(engine, s, {"kind": "place", "space": "forest"})  # owner, 2nd
+    assert s["current_player"] == starting
+    s = place(engine, s, {"kind": "place", "space": "clay_pit"})  # starting
+    assert s["round"] == 3
+
+
+def test_resume_from_consumed_exactly_once(engine):
+    """`_resume_from` is a one-shot fallback: `_advance_work` consumes
+    it on the first call that reaches that branch and never re-reads a
+    stale value on a later call within the same round."""
+    s = make_state(engine, 3)
+    log = []
+    target = (s["current_player"] + 2) % 3
+    s["_resume_from"] = target
+    engine._advance_work(s, log)
+    assert s["current_player"] == target
+    assert "_resume_from" not in s
+
+    prev = s["current_player"]
+    s["players"][prev]["people_placed"] += 1  # pretend they just placed
+    engine._advance_work(s, log)
+    # Falls through to normal rotation (current_player + 1), not a
+    # stale/re-read _resume_from.
+    assert s["current_player"] == (prev + 1) % 3
+
+
+def test_resume_from_does_not_leak_into_next_round(engine, temp_card):
+    """A `_resume_from` consumed mid-round must not still be present (or
+    accidentally re-triggered) once the next round starts."""
+    s = make_state(engine, 2)
+    starting = s["starting_player"]
+    owner_idx = 1 - starting
+    cid = "test_taster_leak"
+
+    def round_start_hook(state, player, inst, ctx):
+        if player["index"] == owner_idx and state["round"] == 2:
+            state["_pending_work_start"] = owner_idx
+            state["_resume_from"] = state["starting_player"]
+
+    temp_card(cid, "Test Taster Leak", "occupation", "test",
+              hooks={"round_start": round_start_hook})
+    put_in_play(s, owner_idx, cid)
+
+    log = []
+    engine._start_round(s, log)  # round 2: sets _pending_work_start/_resume_from
+    assert "_resume_from" in s
+
+    # Play out round 2 entirely.
+    while s["round"] == 2:
+        pid = current_pid(engine, s)
+        act = next(a for a in engine.get_valid_actions(s, pid)
+                  if a["kind"] == "place" and a["space"] in SAFE_SPACES)
+        s = place(engine, s, {"kind": "place", "space": act["space"]})
+
+    assert "_resume_from" not in s
+    assert "_pending_work_start" not in s
+
+
+def test_placement_lockout_forfeits_with_sensible_log(engine, temp_card):
+    """I71 Holiday House recipe: `placement_blocked` makes a player
+    forfeit their placements for the round (with a log line distinct
+    from the generic "no usable space" one), without offering them a
+    skip either, while other players and feeding are unaffected."""
+    def blocked(state, player, inst):
+        return state["round"] == 2
+
+    cid = "test_holiday_house"
+    temp_card(cid, "Test Holiday House", "minor", cost={}, text="test",
+              placement_blocked=blocked)
+
+    s = make_state(engine, 2)
+    put_in_play(s, 0, cid)
+    other = 1
+
+    # Fast-forward straight into round 2's work phase.
+    s["phase"] = "work"
+    for p in s["players"]:
+        p["people_placed"] = p["people_total"]
+    log = []
+    engine._end_work_phase(s, log)
+    assert s["round"] == 2
+    assert s["phase"] == "work"
+
+    # The blocked player already forfeited during round setup (before
+    # anyone placed), with a lockout-specific log line -- not the
+    # generic "no usable space" one.
+    assert s["players"][0]["people_placed"] == s["players"][0]["people_total"]
+    assert any("cannot place any people this round and forfeits" in line
+              for line in log)
+    assert not any("cannot use any action space and forfeits" in line
+                  for line in log)
+
+    # The blocked player is offered neither a placement nor a skip.
+    assert engine._placement_actions(s, 0) == []
+    assert engine._skip_actions(s, 0) == []
+
+    # Feeding math is untouched by the lockout.
+    assert engine._food_needed(s, s["players"][0]) == \
+        engine._food_needed(s, s["players"][other])
+
+    # The other player places normally for the rest of round 2.
+    assert s["current_player"] == other
+    while s["round"] == 2:
+        pid = current_pid(engine, s)
+        act = next(a for a in engine.get_valid_actions(s, pid)
+                  if a["kind"] == "place" and a["space"] in SAFE_SPACES)
+        s = place(engine, s, {"kind": "place", "space": act["space"]})
+
+    assert s["players"][0]["people_placed"] == 0  # reset for round 3
