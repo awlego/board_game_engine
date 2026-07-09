@@ -3901,3 +3901,180 @@ def test_card_space_occupancy_blocks_and_resets(engine, temp_card):
                 if sp["id"] == "card:test_occupancy_space")
     assert space["occupied_by"] is None
     assert space["extra_occupants"] == []
+
+
+# ── Board geometry (engine phase 10) ─────────────────────────────────
+
+def reveal_all_rounds(engine, state):
+    """Advance state["revealed"]/state["action_spaces"] straight through
+    all 14 rounds without playing them out (same shortcut the
+    round_start-hook tests above use: call the engine's own
+    _start_round directly). Good enough for geometry tests, which only
+    care that every round space exists with the right id, not that a
+    full game was played."""
+    while state["round"] < 14:
+        engine._start_round(state, [])
+    return state
+
+
+def test_space_positions_no_duplicates(engine):
+    """Every action space on the board (permanent + all 14 revealed
+    round spaces) has a position, and no two spaces share one, for
+    every player count."""
+    for n in (1, 2, 3, 4):
+        s = make_state(engine, n, seed=100 + n)
+        reveal_all_rounds(engine, s)
+        seen = {}
+        for space in s["action_spaces"]:
+            pos = cards.space_position(s, space["id"])
+            assert pos is not None, f"{n}p: {space['id']} has no position"
+            assert pos not in seen, (
+                f"{n}p: {space['id']} and {seen.get(pos)} share position {pos}")
+            seen[pos] = space["id"]
+        assert len(seen) == len(s["action_spaces"])
+
+
+def test_fishing_has_three_neighbors_4p(engine):
+    """D144 Water Worker's own text: Fishing has exactly three
+    orthogonally adjacent action spaces. Ground-truth check that the
+    derived layout (state.py's SPACE_POSITIONS/ROUND_SLOTS) matches the
+    printed board once every round space exists."""
+    s = make_state(engine, 4, seed=7)
+    reveal_all_rounds(engine, s)
+    neighbors = cards.adjacent_spaces(s, "fishing")
+    # Day Laborer and Reed Bank are always neighbors (same board every
+    # game); the third is whichever stage-1 card landed on round 4 --
+    # column 2 is the only round-space column tall enough to reach
+    # Fishing's row (see decks/GUIDE.md's "Board geometry" section).
+    assert set(neighbors) == {"day_laborer", "reed_bank", s["revealed"][3]}
+    assert len(neighbors) == 3
+
+
+def test_adjacent_spaces_only_existing():
+    """adjacent_spaces never returns a round slot that hasn't been
+    revealed yet -- it's simply absent from state["action_spaces"]."""
+    engine = AgricolaEngine()
+    s = make_state(engine, 2)
+    assert s["round"] == 1 and len(s["revealed"]) == 1
+    # Reed Bank's round-space neighbor (round 3, same column) doesn't
+    # exist yet -- only its three permanent neighbors (Lessons, Clay
+    # Pit, Fishing) do.
+    assert set(cards.adjacent_spaces(s, "reed_bank")) == \
+        {"lessons", "clay_pit", "fishing"}
+
+    engine._start_round(s, [])  # round 2
+    engine._start_round(s, [])  # round 3 -- reveals round 3's card
+    assert set(cards.adjacent_spaces(s, "reed_bank")) == \
+        {"lessons", "clay_pit", "fishing", s["revealed"][2]}
+
+
+def test_card_space_has_no_position_and_no_adjacency(engine, temp_card):
+    """A card_space ("card:<cid>") sits beside the board, not on it: no
+    position, and never adjacent to anything (nor is anything adjacent
+    to it)."""
+    temp_card("test_geo_card_space", "Test Card Space", "minor", "test",
+              cost={}, card_space={"resolve": lambda state, player, inst,
+                                    action, log: {}})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "test_geo_card_space")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "test_geo_card_space"}})
+
+    assert cards.space_position(s, "card:test_geo_card_space") is None
+    assert cards.adjacent_spaces(s, "card:test_geo_card_space") == []
+    # And no real space considers the card_space one of its neighbors.
+    assert "card:test_geo_card_space" not in cards.adjacent_spaces(s, "meeting_place")
+    assert "card:test_geo_card_space" not in cards.adjacent_spaces(s, "farm_expansion")
+
+
+def test_spaces_adjacent_symmetric(engine):
+    s = make_state(engine, 2)
+    pairs = [("farm_expansion", "meeting_place"), ("grain_seeds", "forest"),
+             ("day_laborer", "fishing"), ("farm_expansion", "day_laborer")]
+    for a, b in pairs:
+        assert cards.spaces_adjacent(s, a, b) == cards.spaces_adjacent(s, b, a)
+    assert cards.spaces_adjacent(s, "farm_expansion", "meeting_place") is True
+    assert cards.spaces_adjacent(s, "farm_expansion", "day_laborer") is False
+
+
+def test_extra_adjacency_grove_farm_expansion(engine):
+    """The Appendix's documented pair ("The Grove is adjacent to both
+    Farm Expansion and Meeting Place") is restored via EXTRA_ADJACENCY
+    at 3p and 4p; the override doesn't leak into other player counts."""
+    for n in (3, 4):
+        s = make_state(engine, n)
+        assert cards.spaces_adjacent(s, "grove", "farm_expansion") is True
+        assert cards.spaces_adjacent(s, "farm_expansion", "grove") is True
+        assert cards.spaces_adjacent(s, "grove", "meeting_place") is True
+        assert "grove" in cards.adjacent_spaces(s, "farm_expansion")
+    s2 = make_state(engine, 2)  # no grove on the 2p board at all
+    assert "grove" not in cards.adjacent_spaces(s2, "farm_expansion")
+    assert sorted(cards.adjacent_spaces(s2, "farm_expansion")) == \
+        ["meeting_place"]
+
+
+def test_left_neighbor_of_round_spaces(engine):
+    """B120 Sweep's recipe: left_neighbor(state, state["revealed"][-1])."""
+    s = make_state(engine, 2)
+    assert cards.left_neighbor(s, s["revealed"][-1]) == "forest"
+    engine._start_round(s, [])  # round 2
+    assert cards.left_neighbor(s, s["revealed"][-1]) == "clay_pit"
+    engine._start_round(s, [])  # round 3
+    assert cards.left_neighbor(s, s["revealed"][-1]) == "reed_bank"
+    engine._start_round(s, [])  # round 4
+    assert cards.left_neighbor(s, s["revealed"][-1]) == "fishing"
+    engine._start_round(s, [])  # round 5 -- left neighbor is round 1
+    assert cards.left_neighbor(s, s["revealed"][-1]) == s["revealed"][0]
+
+
+def test_legworker_style_hook_adjacent_occupancy(engine, temp_card):
+    """A C117 Legworker-style card: using a space adjacent to another
+    space occupied by the SAME player's own person grants 1 wood;
+    using a space with no such adjacent occupant does not."""
+    def hook(state, player, inst, ctx):
+        if ctx["actor"] != player["index"]:
+            return
+        for sid in cards.adjacent_spaces(state, ctx["space_id"]):
+            space = next(sp for sp in state["action_spaces"] if sp["id"] == sid)
+            occupants = ([space["occupied_by"]]
+                        if space["occupied_by"] is not None else []) \
+                + space.get("extra_occupants", [])
+            if player["index"] in occupants:
+                cards.add_goods(ctx["extra"], {"wood": 1})
+                return
+
+    cid = "test_legworker"
+    temp_card(cid, "Test Legworker", "occupation", "test",
+              hooks={"space_used": hook})
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = 1 - first
+    put_in_play(s, first, cid)
+
+    # Round 1: first places on Grain Seeds, then (after other's turn)
+    # on Forest -- orthogonally adjacent (state.py's SPACE_POSITIONS:
+    # (0, 2) and (1, 2)) and occupied by first's own person -> +1 wood.
+    # (Both spaces take a bare placement -- no build cost to worry
+    # about, unlike Farm Expansion/Meeting Place.)
+    s = place(engine, s, {"kind": "place", "space": "grain_seeds"})
+    s = place(engine, s, {"kind": "place", "space": "clay_pit"})  # other, safe
+    wood_before = s["players"][first]["resources"]["wood"]
+    s = place(engine, s, {"kind": "place", "space": "forest"})
+    # Forest's own accumulation reward (3 wood, 2p) plus the hook's +1.
+    assert s["players"][first]["resources"]["wood"] == wood_before + 3 + 1
+
+    while s["round"] == 1:
+        pid = current_pid(engine, s)
+        act = next(a for a in engine.get_valid_actions(s, pid)
+                  if a["kind"] == "place" and a["space"] in SAFE_SPACES)
+        s = place(engine, s, {"kind": "place", "space": act["space"]})
+
+    # Round 2: first places on Grain Seeds, then Day Laborer -- NOT
+    # adjacent ((0, 2) vs (0, 5)) -> no bonus.
+    s = place(engine, s, {"kind": "place", "space": "grain_seeds"})
+    s = place(engine, s, {"kind": "place", "space": "reed_bank"})  # other, safe
+    wood_before = s["players"][first]["resources"]["wood"]
+    s = place(engine, s, {"kind": "place", "space": "day_laborer"})
+    assert s["players"][first]["resources"]["wood"] == wood_before

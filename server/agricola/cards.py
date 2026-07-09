@@ -22,6 +22,7 @@ import re
 
 from server.agricola.state import (
     ANIMAL_TYPES, TOTAL_ROUNDS, NUM_CELLS,
+    SPACE_POSITIONS, ROUND_SLOTS, EXTRA_ADJACENCY,
     pasture_capacity as _base_pasture_capacity,
 )
 
@@ -437,6 +438,69 @@ def card_space_owner(state, inst):
     space = next(s for s in state["action_spaces"]
                  if s["id"] == f"card:{inst['id']}")
     return state["players"][space["owner"]]
+
+
+def space_position(state, space_id):
+    """(col, row) of `space_id` on the physical board, or None if it has
+    no position -- a `card_space` ("card:<cid>", it sits beside the
+    board), or an id not on this player count's board at all. Permanent
+    spaces come from the static SPACE_POSITIONS map (keyed by
+    state["player_count"]); a revealed round space's position comes
+    from its ROUND_SLOTS entry, keyed by which ROUND revealed it (its
+    index in state["revealed"]), not by which stage card it is -- see
+    state.py's "Board geometry" comment and GUIDE.md for the derivation
+    and fidelity caveats."""
+    positions = SPACE_POSITIONS.get(state["player_count"], {})
+    if space_id in positions:
+        return positions[space_id]
+    if space_id in state["revealed"]:
+        rnd = state["revealed"].index(space_id) + 1
+        return ROUND_SLOTS.get(rnd)
+    return None
+
+
+def adjacent_spaces(state, space_id):
+    """Ids of action spaces EXISTING right now (in state["action_spaces"])
+    that are orthogonally adjacent (grid distance 1) to `space_id`,
+    plus any EXTRA_ADJACENCY override pairs (printed-board adjacencies
+    the single-cell grid can't express -- Grove/Farm Expansion). A
+    space with no position (see space_position) has no grid neighbors,
+    and a round slot not revealed yet is simply absent from the search --
+    it's not in state["action_spaces"] to be found."""
+    extra = set()
+    for a, b in EXTRA_ADJACENCY.get(state["player_count"], ()):
+        if a == space_id:
+            extra.add(b)
+        elif b == space_id:
+            extra.add(a)
+    pos = space_position(state, space_id)
+    if pos is None:
+        targets = set()
+    else:
+        col, row = pos
+        targets = {(col - 1, row), (col + 1, row), (col, row - 1), (col, row + 1)}
+    return [s["id"] for s in state["action_spaces"]
+            if s["id"] != space_id
+            and (s["id"] in extra
+                 or space_position(state, s["id"]) in targets)]
+
+
+def spaces_adjacent(state, a, b):
+    """True if action spaces `a` and `b` are orthogonally adjacent."""
+    return b in adjacent_spaces(state, a)
+
+
+def left_neighbor(state, space_id):
+    """The existing action space directly to the left of `space_id`
+    (same row, column - 1), or None -- B120 Sweep's recipe: pass
+    state["revealed"][-1] (the round space most recently placed)."""
+    pos = space_position(state, space_id)
+    if pos is None:
+        return None
+    col, row = pos
+    target = (col - 1, row)
+    return next((s["id"] for s in state["action_spaces"]
+                 if space_position(state, s["id"]) == target), None)
 
 
 def card_fields(player):

@@ -750,6 +750,133 @@ invisible on the board, even though it's fully placeable server-side.
 A future client pass needs a third group (or to fold it into "Round
 cards") once a real card uses this mechanism.
 
+## Board geometry (engine phase 10)
+
+Some cards reference the board's physical 2D layout rather than just
+occupancy: B120 Sweep ("the action space card LEFT OF the card most
+recently placed on a round space"), C117 Legworker ("an action space
+orthogonally adjacent to another action space occupied by one of your
+people"), D144 Water Worker ("Fishing... or one of the three
+orthogonally adjacent action spaces"), D165 Pig Stalker ("the action
+space immediately ABOVE OR BELOW that accumulation space"), FR006
+Badger (a marker that moves to an "orthogonally adjacent revealed
+Action space" each round), FR027 Ground Pickaxe Plow ("1/2
+orthogonally adjacent Action spaces"), FR037 Necklace ("2 Family
+members occupying 2 orthogonally adjacent Action spaces"). None of
+these seven cards is registered yet -- this pass only builds the
+geometry and queries they'd need (`temp_card`-only tests exercise the
+mechanism); registering them is a separate pass, same as items 14/15.
+
+### Coordinate system
+
+`state.py`'s `SPACE_POSITIONS` (keyed by `state["player_count"]`) gives
+every PERMANENT_SPACES id a static `(col, row)`; columns increase
+rightward, rows increase downward. `ROUND_SLOTS` gives every ROUND
+NUMBER (1..14, not stage-card id) a `(col, row)` -- the card revealed
+in round N always sits at slot N's position, whatever that stage's
+(shuffled) card happens to be. Derived from the Revised Edition
+rulebook's board photos and Appendix text (see the derivation comment
+above `SPACE_POSITIONS` in `state.py` for exact page references and
+caveats) -- the photos are too low-resolution to read pixel-exact, so
+the round-space grid is a best-effort reconstruction cross-checked
+against the cards' own text (D144 needs Fishing to have exactly 3
+neighbors; D165 needs a real above/below pair to ever exist for a
+round-space animal market) rather than a confirmed pixel reading.
+Treat it as the best available model, not ground truth photographed
+off the box.
+
+2-player and 1-player board (1p shares the 2p board):
+```
+col        0                 1           2        3        4         5         6         7
+row 0  Farm Expansion         .           .        .        .         .         .         .
+row 1  Meeting Place          .           .        .        .         .         .         .
+row 2  Grain Seeds         Forest      Round1   Round5   Round8    Round10   Round12   Round14
+row 3  Farmland           Clay Pit     Round2   Round6   Round9    Round11   Round13      .
+row 4  Lessons            Reed Bank    Round3   Round7      .         .         .         .
+row 5  Day Laborer         Fishing     Round4      .         .         .         .         .
+```
+Columns 2-7 are the six STAGE_CARDS columns (stage 1: 4 rounds, stage
+2: 3, stages 3-5: 2 each, stage 6: 1), each stacked downward from row 2
+in round order -- so column 2 (stage 1) is the only one that reaches
+row 5, which is what gives Fishing exactly 3 neighbors (Day Laborer
+left, Reed Bank above, Round 4 right) once all rounds are revealed.
+
+3-player board adds a column -1 to the left of Farm Expansion:
+```
+col       -1                0             1
+row 0       .          Farm Expansion      .
+row 1     Grove         Meeting Place      .
+row 2  Resource Mkt      Grain Seeds     Forest
+row 3     Hollow          Farmland      Clay Pit
+row 4   Lessons_b          Lessons     Reed Bank
+row 5       .            Day Laborer    Fishing
+```
+(columns 2+ continue exactly as the 2-player board above). Row 0 has no
+column -1 space -- the Appendix's own worked example ("The Grove is
+adjacent to both Farm Expansion and Meeting Place") can't be
+reproduced by a single-cell-per-space grid (the printed extension
+boxes are taller than one base row), so that documented pair is
+restored via `state.EXTRA_ADJACENCY` (per-player-count unordered
+override pairs, unioned into `adjacent_spaces`/`spaces_adjacent`).
+Extend EXTRA_ADJACENCY only for adjacencies a primary source
+documents; everything else stays grid-derived.
+
+4-player board fills all six rows of column -1 (Grove/Lessons_b are the
+same spaces as the 3-player board, unchanged per the Appendix; Copse,
+the bigger Hollow/Resource Market, and Traveling Players are 4p-only):
+```
+col       -1                0             1
+row 0    Copse        Farm Expansion      .
+row 1    Grove         Meeting Place      .
+row 2  Resource Mkt     Grain Seeds     Forest
+row 3    Hollow          Farmland      Clay Pit
+row 4  Lessons_b          Lessons     Reed Bank
+row 5  Traveling Players  Day Laborer   Fishing
+```
+Neither PDF shows the 4-player board's own photo; Copse's row-0 slot
+(the one row the 3-player extension leaves empty) is a placement
+choice, not a confirmed layout -- it does incidentally restore a
+Farm-Expansion adjacency in the extension column (via Copse, one row
+up from Grove) that the 3-player board lacks.
+
+A `card_space` ("card:<cid>") has no position -- it sits beside the
+board, not on it -- and neither does any id not on the current player
+count's board.
+
+### Queries (`cards.py`)
+
+- `space_position(state, space_id) -> (col, row) | None` -- the lookup
+  above.
+- `adjacent_spaces(state, space_id) -> [ids]` -- ids of spaces that
+  EXIST right now (are in `state["action_spaces"]`) at grid distance 1.
+  A round slot that hasn't been revealed yet is simply absent from
+  `state["action_spaces"]`, so it never appears.
+- `spaces_adjacent(state, a, b) -> bool`.
+- `left_neighbor(state, space_id) -> id | None` -- the existing space
+  at `(col - 1, row)`. B120 Sweep's recipe: call this with
+  `state["revealed"][-1]` (the round space most recently placed).
+
+### Worked example (C117-style hook)
+
+```python
+def _legworker_hook(state, player, inst, ctx):
+    if ctx["actor"] != player["index"]:
+        return
+    for sid in adjacent_spaces(state, ctx["space_id"]):
+        space = next(s for s in state["action_spaces"] if s["id"] == sid)
+        occupants = ([space["occupied_by"]] if space["occupied_by"] is not None else []) \
+            + space.get("extra_occupants", [])
+        if player["index"] in occupants:
+            add_goods(ctx["extra"], {"wood": 1})
+            ctx["log"].append(f"{player['name']}'s {spec(inst)['name']} adds 1 wood")
+            return
+```
+`ctx["space_id"]` is the space just used (from `space_used`'s ctx, see
+the hook table above); `adjacent_spaces` only returns spaces that
+exist, so an unrevealed round slot never causes a lookup error. Reading
+occupancy is a raw `state["action_spaces"]` scan -- no new primitive
+needed, `occupied_by`/`extra_occupants` are already plain state.
+
 ## Not supported (mark UNIMPLEMENTED, cite the mechanic)
 
 - Affecting other players' hands, people, or farms directly (guest

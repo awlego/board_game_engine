@@ -455,3 +455,41 @@ Known remaining gaps, and how they'd fit if a future card needs them:
   by this pass (`temp_card`-only tests in `tests/test_agricola.py`
   exercise the mechanism); registering them with `compendium_card` is
   still a separate pass.
+- **The board's 2D geometry (item 16)** is now supported (engine phase
+  10). Previously there was no way for a card to reference the
+  physical layout of action spaces -- which one is left of another, or
+  orthogonally adjacent, on the actual printed board. Now: `state.py`'s
+  `SPACE_POSITIONS` (keyed by player count) gives every permanent
+  action space a static `(col, row)`, and `ROUND_SLOTS` gives every
+  round NUMBER (1-14) a position, so a revealed round space's position
+  follows from `state["revealed"]`'s reveal order; `cards.space_position`,
+  `cards.adjacent_spaces`, `cards.spaces_adjacent`, and
+  `cards.left_neighbor` are the queries a card hook uses. See
+  `decks/GUIDE.md`'s "Board geometry" section for the full coordinate
+  system (ASCII board diagrams per player count), the queries, and a
+  worked example. This unblocks the motivating compendium cards: B120
+  Sweep (left-of a round space), C117 Legworker (adjacent occupied
+  space), D144 Water Worker (Fishing's 3 neighbors), D165 Pig Stalker
+  (above/below an accumulation space), FR006 Badger (a marker that
+  walks between adjacent revealed spaces), FR027 Ground Pickaxe Plow
+  (adjacent-space bonus plows), FR037 Necklace (2 people on adjacent
+  spaces at end of work phase). None are registered by this pass
+  (`temp_card`-only tests exercise the mechanism); registering them is
+  a separate pass, same as items 14/15.
+  **Fidelity caveats**: the coordinate map is a best-effort
+  reconstruction from the Revised Edition rulebook's low-resolution
+  board photos plus its Appendix text, cross-checked against the
+  cards' own text (D144's "exactly 3" Fishing neighbors; D165 needing
+  a genuine above/below pair for a round-space animal market to ever
+  trigger) rather than a pixel-confirmed reading -- see the derivation
+  comment above `SPACE_POSITIONS` in `state.py` for exact PDF pages.
+  Two specific notes: (1) the Appendix's own worked example, "The Grove
+  is adjacent to both Farm Expansion and Meeting Place," can't be
+  reproduced by a single-cell-per-space grid (the printed extension
+  boxes are taller than one base row), so that documented pair is
+  encoded in `state.EXTRA_ADJACENCY` (per-player-count override pairs
+  unioned into the adjacency queries; extend it only from primary
+  sources). (2) neither PDF shows the 4-player board's photo, so the
+  4-player extension's layout (in particular Copse's position) is
+  placed by analogy to the 3-player extension's pattern, not a
+  confirmed layout.
