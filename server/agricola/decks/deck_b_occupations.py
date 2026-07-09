@@ -15,6 +15,7 @@ from server.agricola.cards import (
     compendium_card, add_goods, goods_str, prompt_choice,
 )
 import server.agricola.cards as cards
+from server.agricola import sub_actions
 from server.agricola.state import (
     ANIMAL_TYPES, TOTAL_ROUNDS, MAX_PEOPLE,
     compute_pastures, plowable_cells, table_score, MAJOR_IMPROVEMENTS,
@@ -162,17 +163,9 @@ def _remove_animal(player, animal_type, count=1):
     return remaining == 0
 
 
-def _bonus_occ_cost(state, player, space_id):
-    """Mirror engine._occupation_cost (duplicated: cards.py cannot import
-    the engine, which imports cards.py)."""
-    if space_id == "lessons":
-        base = 0 if player["occs_played"] == 0 else 1
-    elif space_id == "lessons_b":
-        base = (1 if player["occs_played"] < 2 else 2) \
-            if state["player_count"] >= 4 else 2
-    else:
-        base = 1
-    return max(0, base + cards.occ_cost_delta(player))
+# The Lessons spaces' own escalating occupation cost, shared with
+# engine._occupation_cost via sub_actions.py (see that module).
+_bonus_occ_cost = sub_actions.lessons_occupation_cost
 
 
 # Minors that read ctx["params"] in their own play hook (Shifting
@@ -909,22 +902,9 @@ def _junior_artist_choice(state, player, inst, ctx):
                 or player["resources"]["food"] < occ_cost:
             return
         lessons_sp["occupied_by"] = player["index"]
-        player["resources"]["food"] -= occ_cost
-        spec = cards.CARDS[cid]
-        player["hand_occupations"].remove(cid)
-        new_inst = cards.new_instance(cid)
-        player["occupations"].append(new_inst)
-        player["occs_played"] += 1
-        ctx["log"].append(f"{player['name']}'s Junior Artist plays the "
-                          f"occupation \"{spec['name']}\"")
-        play_fn = spec["hooks"].get("play")
-        if play_fn:
-            play_fn(state, player, new_inst,
-                   {"params": {}, "log": ctx["log"], "actor": ctx["actor"],
-                    "extra": ctx["extra"]})
-        cards.fire(state, "occupation_played",
-                  {"card_id": cid, "actor": ctx["actor"], "log": ctx["log"],
-                   "extra": ctx["extra"]})
+        sub_actions.play_occupation(state, player, cid, ctx["log"],
+                                    cost_override={"food": occ_cost})
+        ctx["log"].append(f"{player['name']}'s Junior Artist enabled this play")
 
 compendium_card("B152", hooks={"space_used": _junior_artist_space},
                 resolve_choice=_junior_artist_choice)

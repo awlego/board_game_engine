@@ -39,6 +39,7 @@ from server.agricola.cards import (
     space_bonus, on_play_gain,
     animal_totals_of, needs_occupations, combine, check_prereq, card_fields,
 )
+from server.agricola import sub_actions
 from server.agricola.state import (
     TOTAL_ROUNDS, NUM_CELLS, ANIMAL_TYPES, HARVEST_ROUNDS, MAX_PEOPLE,
     MAX_STABLES, MAJOR_IMPROVEMENTS, FIREPLACES, COOKING_HEARTHS,
@@ -258,16 +259,10 @@ def _renovation_company_play(state, player, inst, ctx):
                  ["Renovate for free", "Skip"])
 
 def _renovation_company_choice(state, player, inst, ctx):
-    if ctx["index"] != 0:
+    if ctx["index"] != 0 or not sub_actions.can_renovate(state, player, cost_override="free"):
         return
-    from server.agricola.engine import RENOVATION_TARGET
-    target = RENOVATION_TARGET.get(player["house_type"])
-    if not target:
-        return
-    player["house_type"] = target
-    ctx["log"].append(
-        f"{player['name']} renovates to a {target} house at no cost "
-        "(Renovation Company)")
+    sub_actions.renovate(state, player, ctx["log"], cost_override="free")
+    ctx["log"].append(f"{player['name']} pays nothing (Renovation Company)")
 
 compendium_card(
     "A013",
@@ -293,25 +288,17 @@ UNIMPLEMENTED["A014"] = (
 def _carpenters_axe_action_available(state, player, inst):
     if state["phase"] != "work" or state["current_player"] != player["index"]:
         return False
-    if player["resources"]["wood"] < 1 or player["resources"]["wood"] < 7:
+    if player["resources"]["wood"] < 7:
         return False
-    stables = sum(1 for c in player["cells"] if c["stable"])
-    if stables >= MAX_STABLES:
-        return False
-    return any(c["type"] == "empty" and not c["stable"]
-               for c in player["cells"])
+    return sub_actions.can_build_stables(state, player, cost_override={"wood": 1})
 
 def _carpenters_axe_action_apply(state, player, inst, ctx):
     cell = (ctx.get("params") or {}).get("cell")
-    if not isinstance(cell, int) or not (0 <= cell < NUM_CELLS):
+    if not isinstance(cell, int):
         raise ValueError("Carpenter's Axe: choose a cell")
-    c = player["cells"][cell]
-    if c["type"] != "empty" or c["stable"]:
-        raise ValueError("That space cannot hold a stable")
-    player["resources"]["wood"] -= 1
-    c["stable"] = True
-    ctx["log"].append(f"{player['name']} builds a stable for 1 wood "
-                      "(Carpenter's Axe)")
+    sub_actions.build_stables(state, player, [cell], ctx["log"],
+                              cost_override={"wood": 1})
+    ctx["log"].append(f"{player['name']} used the Carpenter's Axe discount")
 
 compendium_card(
     "A015",

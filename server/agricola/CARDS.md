@@ -161,6 +161,42 @@ category; printed `points` join the improvements category. Bonus functions
 receive the full state so cross-player conditions ("no player has more...")
 are one comparison, not an engine feature.
 
+### 7. Bonus build/play sub-actions (`sub_actions.py`)
+
+Roughly 25 cards grant something like "immediately build a room / up to 2
+stables / fences / a minor or major improvement / sow / play an occupation,
+possibly at a discount or free". Building a room, raising fences, renovating
+a house, building a major improvement, playing an occupation/minor, and
+sowing a field all have real rules (cell adjacency, house-type-dependent
+cost, `available_improvements`/`occs_played` bookkeeping, ...); duplicating
+that per-card is exactly the kind of drift the architecture exists to avoid,
+so **`server/agricola/sub_actions.py`** is the single, engine-independent
+implementation of each transaction. `engine.py` cannot be imported from
+`cards.py`/`decks/*.py` (it imports `cards`, which would create a cycle), so
+`sub_actions.py` is a third module both sides call into: `engine.py`'s own
+action-space dispatch (`_do_build_rooms`, `_do_build_stables`,
+`_do_build_fences`, `_do_renovate`, `_do_improvement`, `_play_minor`,
+`_play_occupation`, `_do_sow`) is now a thin wrapper around it, and any card
+hook or `card_action` can call the same functions directly.
+
+Each transaction function takes the normal `(state, player, ..., log)`
+shape and raises `ValueError` on an illegal target (adjacency, occupied
+cell, invalid fence layout, ...) — safe to call from any hook because the
+engine deep-copies state before applying an action, so a raised error rolls
+back cleanly. Cost is `cost_override=None|dict|"free"`: `None` runs the
+normal cost through `cards.modified_cost` (so a Stonecutter/Hedge
+Keeper-style discount still folds in); a dict is an exact cost to charge
+instead (compute your own flat discount and pass it); `"free"` skips
+payment. A matching `can_*`/`*_possible` predicate exists for each
+transaction (same cost contract) for a `card_action`'s `available` or a
+hook's own gating — see `decks/GUIDE.md` for the full API and examples per
+input channel (`play` hook params, `card_action` params, `prompt_choice`).
+The (behavior-preserving) migration of the pre-existing cards that used to
+hand-duplicate fragments of these transactions — Builder's Trowel, Educator,
+Scholar, Junior Artist, Craft Teacher, Master Builder, Mason, Hammer
+Crusher, Dwelling Plan, Renovation Company, Carpenter's Axe, Furrows, Hut
+Builder — is the reference for how to use the module.
+
 ## Prerequisites, costs, decks, and dealing
 
 - **Prereq** is a `(predicate, text)` pair; helpers exist for the common
@@ -245,3 +281,16 @@ Known remaining gaps, and how they'd fit if a future card needs them:
 - **Farmers of the Moor** (deck M): fuel/heating, horses, forest/moor
   tiles — a whole expansion's systems; M-deck cards stay unimplemented
   until that lands.
+- **Bonus build/play sub-actions** (build a room/stable/fence, renovate,
+  build a major improvement, play a minor improvement, sow, play an
+  occupation, at full/discounted/free cost) are now supported — see
+  section 7 above and `sub_actions.py`. This unblocks the "reactively
+  grant a discounted/free build or play, banked as a credit and spent via
+  a `card_action`" shape (the same pattern Craft Teacher/Scholar/Educator
+  already used before they were migrated onto the shared implementation)
+  for compendium cards previously marked `UNIMPLEMENTED` for exactly this
+  reason (A095, A096, A128, A149, A150, B088, B093, B130, B150, C096,
+  C097, C131, C152, D129, D130, E179, FR072, FR078, I228, I249, among
+  others) — implementing them is still a separate pass (fidelity to each
+  card's own text, and in a few cases a still-missing mechanic like a
+  "which action space" redirect, remain to work out per card).

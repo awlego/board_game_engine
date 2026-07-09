@@ -12,7 +12,7 @@ import random
 import pytest
 
 from server.agricola.engine import AgricolaEngine
-from server.agricola import cards
+from server.agricola import cards, sub_actions
 from server.agricola.decks import deck_e_occupations as deck_e
 from server.agricola.state import cell_edges, table_score
 
@@ -489,7 +489,7 @@ def test_master_builder_and_mason_free_room(engine):
     for c in range(5):
         p["cells"][c]["type"] = "room"
     assert cards.CARDS["E151"]["card_action"]["available"](s, p, inst)
-    cell = deck_e._buildable_room_cells(p)[0]
+    cell = sub_actions.buildable_room_cells(p)[0]
     ctx = {"log": [], "actor": 0, "params": {"cell": cell}, "extra": {}}
     cards.CARDS["E151"]["card_action"]["apply"](s, p, inst, ctx)
     assert p["cells"][cell]["type"] == "room"

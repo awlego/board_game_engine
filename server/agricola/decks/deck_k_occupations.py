@@ -24,6 +24,7 @@ import server.agricola.cards as cards
 from server.agricola.cards import (
     compendium_card, add_goods, goods_str, prompt_choice,
 )
+from server.agricola import sub_actions
 from server.agricola.state import (
     MAX_PEOPLE, TOTAL_ROUNDS, MAJOR_IMPROVEMENTS,
     compute_pastures, pasture_capacity, plowable_cells, cell_edges,
@@ -298,25 +299,11 @@ compendium_card("K270", hooks={"rooms_built": _wet_nurse_rooms},
 
 # ── K271 Educator ─────────────────────────────────────────────────────
 def _educator_play_occ(state, player, cid, cost, ctx):
-    """Duplicate of engine._play_occupation for an out-of-turn play
-    (cards.py cannot import the engine; see B152 Junior Artist in
-    deck_b_occupations.py for the same pattern)."""
-    spec = cards.CARDS[cid]
-    player["resources"]["food"] -= cost
-    player["hand_occupations"].remove(cid)
-    inst = cards.new_instance(cid)
-    player["occupations"].append(inst)
-    player["occs_played"] += 1
-    ctx["log"].append(f"{player['name']}'s Educator plays the occupation "
-                      f"\"{spec['name']}\" ({cost} food)")
-    play_fn = spec["hooks"].get("play")
-    if play_fn:
-        play_fn(state, player, inst, {"params": {}, "log": ctx["log"],
-                                      "actor": ctx["actor"],
-                                      "extra": ctx["extra"]})
-    cards.fire(state, "occupation_played",
-              {"card_id": cid, "actor": ctx["actor"], "log": ctx["log"],
-               "extra": ctx["extra"]})
+    """Play an occupation out-of-turn, granted by another player's
+    Educator (sub_actions.play_occupation is the same transaction the
+    Lessons action spaces use)."""
+    sub_actions.play_occupation(state, player, cid, ctx["log"],
+                                cost_override={"food": cost})
 
 
 def _educator_occ_played(state, player, inst, ctx):
@@ -514,22 +501,8 @@ def _scholar_apply(state, player, inst, ctx):
         if cid not in player["hand_occupations"] or player["resources"]["food"] < 1:
             raise ValueError("Scholar: choose an affordable occupation "
                              "(params.card)")
-        player["resources"]["food"] -= 1
-        player["hand_occupations"].remove(cid)
-        spec = cards.CARDS[cid]
-        new_inst = cards.new_instance(cid)
-        player["occupations"].append(new_inst)
-        player["occs_played"] += 1
-        ctx["log"].append(f"{player['name']}'s Scholar plays the "
-                          f"occupation \"{spec['name']}\" (1 food)")
-        play_fn = spec["hooks"].get("play")
-        if play_fn:
-            play_fn(state, player, new_inst,
-                   {"params": {}, "log": ctx["log"], "actor": ctx["actor"],
-                    "extra": ctx["extra"]})
-        cards.fire(state, "occupation_played",
-                  {"card_id": cid, "actor": ctx["actor"], "log": ctx["log"],
-                   "extra": ctx["extra"]})
+        sub_actions.play_occupation(state, player, cid, ctx["log"],
+                                    cost_override={"food": 1})
     elif kind == "improvement":
         # Upgrading a Fireplace to a Cooking Hearth via the Scholar is
         # not offered here (out of scope); only fresh builds are.
@@ -537,23 +510,7 @@ def _scholar_apply(state, player, inst, ctx):
         if imp not in _scholar_buildable_improvements(state, player):
             raise ValueError("Scholar: choose an affordable improvement "
                              "(params.improvement)")
-        cost = cards.modified_cost(state, player, "improvement",
-                                   MAJOR_IMPROVEMENTS[imp]["cost"])
-        for res, amount in cost.items():
-            player["resources"][res] -= amount
-        state["available_improvements"].remove(imp)
-        player["improvements"].append(imp)
-        ctx["log"].append(f"{player['name']}'s Scholar builds the "
-                          f"{MAJOR_IMPROVEMENTS[imp]['name']}")
-        if MAJOR_IMPROVEMENTS[imp].get("well"):
-            rnd = state["round"]
-            for r in range(rnd + 1, min(TOTAL_ROUNDS, rnd + 5) + 1):
-                slot = state["round_goods"].setdefault(str(r), {}) \
-                    .setdefault(str(player["index"]), {})
-                slot["food"] = slot.get("food", 0) + 1
-        cards.fire(state, "improvement_built",
-                  {"improvement": imp, "actor": ctx["actor"], "log": ctx["log"],
-                   "extra": ctx["extra"]})
+        sub_actions.build_improvement(state, player, imp, ctx["log"])
     else:
         raise ValueError("Scholar: choose kind 'occupation' or 'improvement'")
     inst["data"]["last_round"] = state["round"]

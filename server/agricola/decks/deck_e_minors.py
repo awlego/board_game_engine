@@ -41,6 +41,7 @@ from server.agricola.cards import (
     needs_grain_field, combine, card_fields, modified_cost, fire,
     fire_player, check_prereq,
 )
+from server.agricola import sub_actions
 from server.agricola.state import (
     ANIMAL_TYPES, TOTAL_ROUNDS, NUM_CELLS, MAX_STABLES,
     MAJOR_IMPROVEMENTS, compute_pastures, plowable_cells,
@@ -619,29 +620,16 @@ compendium_card("E49", cost={"wood": 1}, points=1,
 # ── E50 Builder's Trowel ─────────────────────────────────────────────────
 # "Renovate out of turn" is offered as a card_action (available any time
 # on the owner's turn or during feeding, no action-space placement
-# needed) that replays _do_renovate's essential steps for the wood->clay
-# case specifically (mirrors _play_occupation_for_free's precedent of
-# duplicating engine-adjacent logic from within a card module).
+# needed), at the normal renovation cost -- only usable wood->clay, so
+# gated to that house type in addition to the normal cost/possibility
+# check sub_actions.can_renovate already does.
 def _e50_available(state, player, inst):
-    return player["house_type"] == "wood"
+    return player["house_type"] == "wood" and sub_actions.can_renovate(state, player)
 
 def _e50_apply(state, player, inst, ctx):
     if player["house_type"] != "wood":
-        return
-    rooms = sum(1 for c in player["cells"] if c["type"] == "room")
-    cost = modified_cost(state, player, "renovation",
-                         {"clay": rooms, "reed": 1})
-    if not all(player["resources"][r] >= a for r, a in cost.items()):
-        return
-    for r, a in cost.items():
-        player["resources"][r] -= a
-    player["house_type"] = "clay"
-    ctx["log"].append(f"{player['name']} renovates to a clay hut "
-                      "(Builder's Trowel)")
-    sub_ctx = {"free_stable_cell": None, "log": ctx["log"],
-              "actor": player["index"], "extra": {}}
-    fire_player(state, player, "renovate", sub_ctx)
-    add_goods(ctx["extra"], sub_ctx["extra"])
+        raise ValueError("Builder's Trowel only renovates a wooden hut")
+    sub_actions.renovate(state, player, ctx["log"])
 
 compendium_card(
     "E50", cost={"wood": 1},

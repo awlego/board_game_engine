@@ -16,6 +16,7 @@ from server.agricola.cards import (
     needs_occupations, combine, harvest_food, round_income, on_play_gain,
     animal_totals_of,
 )
+from server.agricola import sub_actions
 from server.agricola.state import (
     NUM_CELLS, TOTAL_ROUNDS, HARVEST_ROUNDS, FIREPLACES, MAJOR_IMPROVEMENTS,
     orthogonal_neighbors, compute_pastures, plowable_cells,
@@ -147,21 +148,6 @@ def _room_cells(player):
     return {i for i, c in enumerate(player["cells"]) if c["type"] == "room"}
 
 
-def _buildable_room_cells(player):
-    """Local replica of the engine's room-placement legality check (empty,
-    not a stable/pasture cell, orthogonally adjacent to an existing room)."""
-    pasture_cells = {i for pas in compute_pastures(player) for i in pas}
-    rooms = _room_cells(player)
-    out = []
-    for i, c in enumerate(player["cells"]):
-        if i in rooms or c["type"] != "empty" or c["stable"] \
-                or i in pasture_cells:
-            continue
-        if any(nb in rooms for nb in orthogonal_neighbors(i)):
-            out.append(i)
-    return out
-
-
 def _schedule_good(state, player, good, rounds, amount=1):
     for r in rounds:
         slot = state["round_goods"].setdefault(str(r), {}) \
@@ -206,33 +192,9 @@ compendium_card("D001", prereq=ZIGZAG_HARROW_PREREQ,
 # ── D002 Dwelling Plan ───────────────────────────────────────────────
 # Cost 1F. Immediately take a Renovation action (optional). Traveling.
 
-ROOM_COST_MATERIAL = {"wood": "wood", "clay": "clay", "stone": "stone"}
-RENOVATION_TARGET = {"wood": "clay", "clay": "stone"}
-
-
-def _inline_renovate(state, player, ctx):
-    target = RENOVATION_TARGET.get(player["house_type"])
-    if not target:
-        raise ValueError("Your house is already stone")
-    rooms = len(_room_cells(player))
-    cost = cards.modified_cost(state, player, "renovation",
-                               {target: rooms, "reed": 1})
-    for res, amt in cost.items():
-        if player["resources"][res] < amt:
-            raise ValueError(f"Not enough {res} to renovate")
-    for res, amt in cost.items():
-        player["resources"][res] -= amt
-    player["house_type"] = target
-    ctx["log"].append(f"{player['name']} renovates to a {target} house")
-    inner = {"free_stable_cell": None, "log": ctx["log"],
-             "actor": player["index"], "extra": {}}
-    cards.fire_player(state, player, "renovate", inner)
-    add_goods(ctx["extra"], inner["extra"])
-
-
 def _dwelling_plan_play(state, player, inst, ctx):
     if (ctx.get("params") or {}).get("renovate"):
-        _inline_renovate(state, player, ctx)
+        sub_actions.renovate(state, player, ctx["log"])
 
 
 compendium_card("D002", hooks={"play": _dwelling_plan_play})
@@ -245,28 +207,13 @@ def _furrows_play(state, player, inst, ctx):
     params = ctx.get("params") or {}
     crop = params.get("crop")
     if crop is None:
-        return
-    if crop not in ("grain", "vegetable"):
-        raise ValueError("Furrows: crop must be grain or vegetable")
-    if player["resources"][crop] < 1:
-        raise ValueError(f"Furrows: not enough {crop}")
+        return  # optional: "you CAN immediately sow"
+    item = {"crop": crop}
     if "card" in params:
-        cid = params["card"]
-        target = next((i for i in cards.card_fields(player)
-                       if i["id"] == cid), None)
-        if target is None or target["crops"]:
-            raise ValueError("Furrows: invalid card field")
-        if crop not in cards.CARDS[cid]["field"]["crops"]:
-            raise ValueError(f"Furrows: that field can't grow {crop}")
-        target["crops"] = {"type": crop, "count": 3 if crop == "grain" else 2}
+        item["card"] = params["card"]
     else:
-        cell = params.get("cell")
-        if not isinstance(cell, int) or cell not in _empty_field_cells(player):
-            raise ValueError("Furrows: choose an empty field (params.cell)")
-        player["cells"][cell]["crops"] = {
-            "type": crop, "count": 3 if crop == "grain" else 2}
-    player["resources"][crop] -= 1
-    ctx["log"].append(f"{player['name']} sows a field (Furrows)")
+        item["cell"] = params.get("cell")
+    sub_actions.sow(state, player, [item], ctx["log"])
 
 
 compendium_card("D003", hooks={"play": _furrows_play})
@@ -409,26 +356,14 @@ def _hammer_crusher_renovate(state, player, inst, ctx):
 
 def _hammer_crusher_available(state, player, inst):
     return bool(inst["data"].get("pending_rooms")) \
-        and bool(_buildable_room_cells(player))
+        and sub_actions.can_build_rooms(state, player)
 
 
 def _hammer_crusher_build(state, player, inst, ctx):
     cells = (ctx.get("params") or {}).get("cells") or []
     if not cells:
         raise ValueError("Hammer Crusher: choose room cells (params.cells)")
-    built = []
-    for cell in cells:
-        if cell in built or cell not in _buildable_room_cells(player):
-            raise ValueError("Invalid room cell")
-        cost = cards.modified_cost(
-            state, player, "room", {player["house_type"]: 5, "reed": 2})
-        for res, amt in cost.items():
-            if player["resources"][res] < amt:
-                raise ValueError(f"Not enough {res}")
-        for res, amt in cost.items():
-            player["resources"][res] -= amt
-        player["cells"][cell]["type"] = "room"
-        built.append(cell)
+    built = sub_actions.build_rooms(state, player, cells, ctx["log"])
     inst["data"]["pending_rooms"] = False
     ctx["log"].append(f"{player['name']} builds {len(built)} room(s) (Hammer Crusher)")
 

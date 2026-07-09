@@ -21,24 +21,26 @@ from copy import deepcopy
 
 from server.game_engine import GameEngine, ActionResult
 from server.agricola.state import (
-    ANIMAL_TYPES, MAX_PEOPLE, MAX_STABLES, MAX_FENCES,
+    ANIMAL_TYPES, MAX_PEOPLE, MAX_FENCES,
     NUM_CELLS, TOTAL_ROUNDS, HARVEST_ROUNDS,
     PERMANENT_SPACES, STAGE_CARDS, MAJOR_IMPROVEMENTS,
-    FIREPLACES, COOKING_HEARTHS,
     stage_of_round, build_stage_deck, create_player, create_action_spaces,
-    orthogonal_neighbors, compute_pastures, pasture_capacity,
-    validate_fence_layout, validate_animal_placement, animal_counts,
+    compute_pastures, pasture_capacity,
+    validate_animal_placement, animal_counts,
     plowable_cells,
 )
 from server.agricola import cards
+from server.agricola import sub_actions
 from server.agricola.scoring import final_scores
 
 # Register all compendium deck modules at import time so restored
 # rooms (persistence) can resolve card specs without a fresh deal.
 cards.load_decks()
 
-ROOM_COST_MATERIAL = {"wood": "wood", "clay": "clay", "stone": "stone"}
-RENOVATION_TARGET = {"wood": "clay", "clay": "stone"}
+# Kept as aliases: a few tests/decks referenced these engine-local names
+# before the build/renovate transactions moved to sub_actions.py.
+ROOM_COST_MATERIAL = sub_actions.ROOM_COST_MATERIAL
+RENOVATION_TARGET = sub_actions.RENOVATION_TARGET
 
 # Spaces that allow playing a minor improvement "afterward".
 MINOR_AFTER_SPACES = ("meeting_place", "basic_wish")
@@ -273,24 +275,25 @@ class AgricolaEngine(GameEngine):
         occ = [space["occupied_by"]] if space["occupied_by"] is not None else []
         return occ + space.get("extra_occupants", [])
 
+    # _pay/_can_afford/_rooms/_stables/_pasture_cells and the
+    # build/renovate/improvement/sow/occupation/minor transactions below
+    # are thin wrappers: the canonical implementation lives in
+    # sub_actions.py so card hooks/card_actions can invoke the exact same
+    # code (see that module's docstring).
     def _pay(self, player, cost):
-        for res, amount in cost.items():
-            if player["resources"][res] < amount:
-                raise ValueError(f"Not enough {res}")
-        for res, amount in cost.items():
-            player["resources"][res] -= amount
+        sub_actions.pay(player, cost)
 
     def _can_afford(self, player, cost):
-        return all(player["resources"][r] >= a for r, a in cost.items())
+        return sub_actions.can_afford(player, cost)
 
     def _rooms(self, player):
-        return sum(1 for c in player["cells"] if c["type"] == "room")
+        return sub_actions.rooms(player)
 
     def _stables(self, player):
-        return sum(1 for c in player["cells"] if c["stable"])
+        return sub_actions.stables(player)
 
     def _pasture_cells(self, player):
-        return {i for p in compute_pastures(player) for i in p}
+        return sub_actions.pasture_cells(player)
 
     def _food_needed(self, state, player):
         adult_cost = 3 if state["player_count"] == 1 else 2
@@ -331,16 +334,7 @@ class AgricolaEngine(GameEngine):
         self._apply_extras(state, actor_player, ctx["extra"], log)
 
     def _apply_extras(self, state, player, extra, log):
-        animals = {}
-        for good, amount in list(extra.items()):
-            if amount <= 0:
-                continue
-            if good in ANIMAL_TYPES:
-                animals[good] = animals.get(good, 0) + amount
-            else:
-                player["resources"][good] += amount
-        if animals:
-            self._gain_animals(state, player, animals, log)
+        sub_actions.apply_extras(state, player, extra, log)
 
     def _fire_any(self, state, event, actor_player, fields, log):
         """Broadcast the "<event>_any" twin of an owner-only event (fired
@@ -349,10 +343,7 @@ class AgricolaEngine(GameEngine):
         react. ctx is `fields` plus the usual actor/log/extra; extras
         (like _fire) only reach the acting player -- a card belonging to
         someone else must use cards.grant_goods instead."""
-        ctx = {"actor": actor_player["index"], "log": log, "extra": {}}
-        ctx.update(fields)
-        cards.fire(state, event + "_any", ctx)
-        self._apply_extras(state, actor_player, ctx["extra"], log)
+        sub_actions.fire_any(state, event, actor_player, fields, log)
 
     def _fire_converted(self, state, p, give, get, via, log):
         """Fire `converted`: goods were converted to other goods outside
@@ -617,24 +608,10 @@ class AgricolaEngine(GameEngine):
         return actions
 
     def _occupation_cost(self, state, player, space_id):
-        if space_id == "lessons":
-            base = 0 if player["occs_played"] == 0 else 1
-        elif space_id == "lessons_b":
-            if state["player_count"] >= 4:
-                base = 1 if player["occs_played"] < 2 else 2
-            else:
-                base = 2
-        else:
-            base = 1
-        return max(0, base + cards.occ_cost_delta(player))
+        return sub_actions.lessons_occupation_cost(state, player, space_id)
 
     def _minor_playable(self, state, player, cid):
-        spec = cards.CARDS.get(cid)
-        if not spec or spec["type"] != "minor":
-            return False
-        if not cards.check_prereq(state, player, cid):
-            return False
-        return self._can_afford(player, spec["cost"])
+        return sub_actions.can_play_minor(state, player, cid)
 
     def _any_minor_playable(self, state, player):
         return any(self._minor_playable(state, player, cid)
@@ -667,7 +644,7 @@ class AgricolaEngine(GameEngine):
         if sid == "farm_expansion":
             room_ok = (self._can_afford(p, self._room_cost(state, p))
                        and self._buildable_room_cells(p))
-            return bool(room_ok) or self._stable_possible(p)
+            return bool(room_ok) or self._stable_possible(state, p)
         if sid == "fencing":
             # From scratch, the smallest pasture needs 4 fences
             # (cost modifiers like the Hedge Keeper can make them free).
@@ -846,16 +823,8 @@ class AgricolaEngine(GameEngine):
             else:
                 raise ValueError("Build a major improvement or play a minor one")
         elif sid in ("basic_wish", "urgent_wish"):
-            if p["people_total"] >= MAX_PEOPLE:
-                raise ValueError("You already have 5 people")
-            if sid == "basic_wish" and \
-                    self._rooms(p) + cards.extra_rooms(p) <= p["people_total"]:
-                raise ValueError("You need more room than people")
-            p["people_total"] += 1
-            p["people_placed"] += 1  # the newborn does not act this round
-            p["newborns"] += 1
-            log.append(f"{p['name']}'s family grows by one")
-            self._fire(state, "family_growth", p, {}, log)
+            sub_actions.family_growth(state, p, log,
+                                      require_room=(sid == "basic_wish"))
             if sid == "basic_wish" and action.get("minor"):
                 self._play_minor(state, p, action["minor"], log)
         elif sid == "house_redevelopment":
@@ -896,63 +865,17 @@ class AgricolaEngine(GameEngine):
 
     def _play_occupation(self, state, p, space_id, action, log):
         cid = action.get("card")
-        if cid not in p["hand_occupations"]:
-            raise ValueError("That occupation is not in your hand")
-        spec = cards.CARDS[cid]
-        if not cards.check_prereq(state, p, cid):
-            raise ValueError(
-                f"Prerequisite not met: {spec['prereq'][1]}")
         cost = self._occupation_cost(state, p, space_id)
-        self._pay(p, {"food": cost})
-        p["hand_occupations"].remove(cid)
-        inst = cards.new_instance(cid)
-        p["occupations"].append(inst)
-        p["occs_played"] += 1
-        log.append(f"{p['name']} plays the occupation "
-                   f"\"{spec['name']}\" ({cost} food)")
-
-        play_fn = spec["hooks"].get("play")
-        if play_fn:
-            ctx = {"params": action.get("params") or {}, "log": log,
-                   "actor": p["index"], "extra": {}}
-            play_fn(state, p, inst, ctx)
-            self._apply_extras(state, p, ctx["extra"], log)
-
-        self._fire(state, "occupation_played", p,
-                   {"card_id": cid}, log)
+        sub_actions.play_occupation(state, p, cid, log,
+                                    params=action.get("params"),
+                                    cost_override={"food": cost})
 
     def _play_minor(self, state, p, minor, log):
         if not isinstance(minor, dict):
             raise ValueError("Invalid minor improvement action")
         cid = minor.get("card")
-        if cid not in p["hand_minors"]:
-            raise ValueError("That minor improvement is not in your hand")
-        spec = cards.CARDS[cid]
-        if not cards.check_prereq(state, p, cid):
-            raise ValueError(
-                f"Prerequisite not met: {spec['prereq'][1]}")
-        self._pay(p, spec["cost"])
-        p["hand_minors"].remove(cid)
-        inst = cards.new_instance(cid)
-        log.append(f"{p['name']} plays the minor improvement \"{spec['name']}\"")
-
-        play_fn = spec["hooks"].get("play")
-        if play_fn:
-            ctx = {"params": minor.get("params") or {}, "log": log,
-                   "actor": p["index"], "extra": {}}
-            play_fn(state, p, inst, ctx)
-            self._apply_extras(state, p, ctx["extra"], log)
-
-        if spec["traveling"]:
-            if state["player_count"] > 1:
-                left = state["players"][(p["index"] + 1) % state["player_count"]]
-                left["hand_minors"].append(cid)
-                log.append(f"\"{spec['name']}\" travels to {left['name']}'s hand")
-            else:
-                log.append(f"\"{spec['name']}\" is removed from play (solo)")
-        else:
-            p["minors"].append(inst)
-        self._fire(state, "minor_played", p, {"card_id": cid}, log)
+        sub_actions.play_minor(state, p, cid, log,
+                               params=minor.get("params"))
 
     # ── Farm development ─────────────────────────────────────────────
 
@@ -967,171 +890,42 @@ class AgricolaEngine(GameEngine):
         self._fire_any(state, "plow", p, {"cell": cell}, log)
 
     def _room_cost(self, state, p):
-        material = ROOM_COST_MATERIAL[p["house_type"]]
-        return cards.modified_cost(state, p, "room",
-                                   {material: 5, "reed": 2})
+        return sub_actions.room_cost(state, p)
 
     def _buildable_room_cells(self, p, extra_rooms=()):
-        pasture_cells = self._pasture_cells(p)
-        rooms = {i for i, c in enumerate(p["cells"]) if c["type"] == "room"}
-        rooms |= set(extra_rooms)
-        eligible = []
-        for i, c in enumerate(p["cells"]):
-            if i in rooms or c["type"] != "empty" or c["stable"] or i in pasture_cells:
-                continue
-            if any(nb in rooms for nb in orthogonal_neighbors(i)):
-                eligible.append(i)
-        return eligible
+        return sub_actions.buildable_room_cells(p, extra_rooms)
 
     def _do_build_rooms(self, state, p, cells, log):
-        cost = self._room_cost(state, p)
-        built = []
-        for cell in cells:
-            if not isinstance(cell, int):
-                raise ValueError("Invalid room space")
-            if cell not in self._buildable_room_cells(p, built):
-                raise ValueError("Rooms must go on empty spaces adjacent to your house")
-            self._pay(p, cost)
-            p["cells"][cell]["type"] = "room"
-            built.append(cell)
-        log.append(f"{p['name']} builds {len(built)} {p['house_type']} room(s)")
-        self._fire(state, "rooms_built", p, {"cells": built}, log,
-                   to_all=False)
-        self._fire_any(state, "rooms_built", p, {"cells": built}, log)
+        sub_actions.build_rooms(state, p, cells, log)
 
-    def _stable_possible(self, p):
-        if self._stables(p) >= MAX_STABLES or p["resources"]["wood"] < 2:
-            return False
-        return any(c["type"] == "empty" and not c["stable"] for c in p["cells"])
+    def _stable_possible(self, state, p):
+        return sub_actions.stable_possible(state, p)
 
     def _do_build_stables(self, state, p, cells, log):
-        if len(cells) != len(set(cells)):
-            raise ValueError("Duplicate stable spaces")
-        for cell in cells:
-            if not isinstance(cell, int) or not (0 <= cell < NUM_CELLS):
-                raise ValueError("Invalid stable space")
-            if self._stables(p) >= MAX_STABLES:
-                raise ValueError("You only have 4 stables")
-            c = p["cells"][cell]
-            if c["type"] != "empty" or c["stable"]:
-                raise ValueError("Stables need an empty space without a tile")
-            self._pay(p, {"wood": 2})
-            c["stable"] = True
-        log.append(f"{p['name']} builds {len(cells)} stable(s)")
-        self._fire(state, "stable_built", p, {"cells": list(cells)}, log,
-                   to_all=False)
-        self._fire_any(state, "stable_built", p, {"cells": list(cells)}, log)
+        sub_actions.build_stables(state, p, cells, log)
 
     def _do_build_fences(self, state, p, new_fences, log):
-        if not new_fences or not isinstance(new_fences, list):
-            raise ValueError("Choose fences to build")
-        if len(new_fences) != len(set(new_fences)):
-            raise ValueError("Duplicate fences")
-        for e in new_fences:
-            if e in p["fences"]:
-                raise ValueError("Fence already built there")
-        old_pastures = {tuple(pa) for pa in compute_pastures(p)}
-        layout = p["fences"] + list(new_fences)
-        ok, err, _pastures = validate_fence_layout(p, layout)
-        if not ok:
-            raise ValueError(err)
-        cost = cards.modified_cost(state, p, "fences",
-                                   {"wood": len(new_fences)},
-                                   {"count": len(new_fences)})
-        self._pay(p, cost)
-        p["fences"] = sorted(layout)
-        log.append(f"{p['name']} builds {len(new_fences)} fence(s)")
-
-        new_pastures = [pa for pa in compute_pastures(p)
-                        if tuple(pa) not in old_pastures]
-        self._fire(state, "fences_built", p,
-                   {"new_pastures": new_pastures}, log)
-
-        # Subdividing can strand animals; force re-accommodation if so.
-        ok, _err = self._validate_animals(p)
-        if not ok and not any(pr["type"] == "accommodate"
-                              and pr["player"] == p["index"]
-                              for pr in state["prompts"]):
-            state["prompts"].append(
-                {"type": "accommodate", "player": p["index"], "gained": {}})
-            log.append(f"{p['name']} must rearrange their animals")
+        sub_actions.build_fences(state, p, new_fences, log)
 
     def _renovation_possible(self, state, p):
-        target = RENOVATION_TARGET.get(p["house_type"])
-        if not target:
-            return False
-        cost = cards.modified_cost(
-            state, p, "renovation", {target: self._rooms(p), "reed": 1})
-        return self._can_afford(p, cost)
+        return sub_actions.renovation_possible(state, p)
 
     def _do_renovate(self, state, p, action, log):
-        target = RENOVATION_TARGET.get(p["house_type"])
-        if not target:
-            raise ValueError("Your house is already stone")
-        cost = cards.modified_cost(
-            state, p, "renovation", {target: self._rooms(p), "reed": 1})
-        self._pay(p, cost)
-        p["house_type"] = target
-        log.append(f"{p['name']} renovates to a {target} house")
-        ctx = {"free_stable_cell": action.get("stable"), "log": log,
-               "actor": p["index"], "extra": {}}
-        cards.fire_player(state, p, "renovate", ctx)
-        self._apply_extras(state, p, ctx["extra"], log)
-        self._fire_any(state, "renovate",
-                       p, {"free_stable_cell": action.get("stable")}, log)
+        sub_actions.renovate(state, p, log,
+                             free_stable_cell=action.get("stable"))
 
     # ── Improvements, baking, sowing ─────────────────────────────────
 
     def _buildable_improvements(self, state, p):
         """Major improvement ids the player could get now (incl. upgrades)."""
-        out = []
-        owns_fireplace = any(i in FIREPLACES for i in p["improvements"])
-        for imp in state["available_improvements"]:
-            spec = MAJOR_IMPROVEMENTS[imp]
-            cost = cards.modified_cost(state, p, "improvement", spec["cost"])
-            if self._can_afford(p, cost):
-                out.append(imp)
-            elif imp in COOKING_HEARTHS and owns_fireplace:
-                out.append(imp)  # via fireplace upgrade
-        return out
+        return sub_actions.buildable_improvements(state, p)
 
     def _do_improvement(self, state, p, action, log):
         imp = action.get("improvement")
-        if imp not in MAJOR_IMPROVEMENTS:
-            raise ValueError("Unknown improvement")
-        if imp not in state["available_improvements"]:
-            raise ValueError("That improvement is taken")
-        spec = MAJOR_IMPROVEMENTS[imp]
-
-        if action.get("upgrade"):
-            if imp not in COOKING_HEARTHS:
-                raise ValueError("Only Cooking Hearths can be upgrades")
-            fireplace = next((i for i in p["improvements"] if i in FIREPLACES), None)
-            if fireplace is None:
-                raise ValueError("You need a Fireplace to upgrade")
-            p["improvements"].remove(fireplace)
-            state["available_improvements"].append(fireplace)
-            state["available_improvements"].sort()
-            log.append(f"{p['name']} upgrades their Fireplace to a {spec['name']}")
-        else:
-            cost = cards.modified_cost(state, p, "improvement", spec["cost"])
-            self._pay(p, cost)
-            log.append(f"{p['name']} builds the {spec['name']}")
-
-        state["available_improvements"].remove(imp)
-        p["improvements"].append(imp)
-
-        if spec.get("well"):
-            rnd = state["round"]
-            for r in range(rnd + 1, min(TOTAL_ROUNDS, rnd + 5) + 1):
-                slot = state["round_goods"].setdefault(str(r), {}) \
-                    .setdefault(str(p["index"]), {})
-                slot["food"] = slot.get("food", 0) + 1
-            log.append("The Well places food on the next round spaces")
-
-        self._fire(state, "improvement_built", p, {"improvement": imp}, log)
-
-        if spec.get("bake_on_build") and action.get("bake"):
+        spec = MAJOR_IMPROVEMENTS.get(imp)
+        sub_actions.build_improvement(state, p, imp, log,
+                                      upgrade=bool(action.get("upgrade")))
+        if spec and spec.get("bake_on_build") and action.get("bake"):
             self._do_bake(state, p, action["bake"], log)
 
     def _bake_spec_of(self, p, key):
@@ -1183,80 +977,20 @@ class AgricolaEngine(GameEngine):
 
     def _empty_fields(self, p):
         """Sowable targets: field-tile cells and empty card fields."""
-        cells = [i for i, c in enumerate(p["cells"])
-                 if c["type"] == "field" and not c["crops"]]
-        card_targets = [i for i in cards.card_fields(p) if not i["crops"]]
-        return cells, card_targets
+        return sub_actions.empty_fields(p)
 
     def _can_sow(self, p):
-        has_crop = p["resources"]["grain"] > 0 or p["resources"]["vegetable"] > 0
-        cells, card_targets = self._empty_fields(p)
-        return has_crop and bool(cells or card_targets)
+        return sub_actions.can_sow(p)
 
     def _do_sow(self, state, p, sow, log):
-        if not isinstance(sow, list) or not sow:
-            raise ValueError("Choose fields to sow")
-        seen_cells = set()
-        seen_cards = set()
-        sown = []
-        counts = {"grain": 0, "vegetable": 0}
-        for item in sow:
-            crop = item.get("crop")
-            if crop not in ("grain", "vegetable"):
-                raise ValueError("Sow grain or vegetables")
-            if p["resources"][crop] < 1:
-                raise ValueError(f"Not enough {crop}")
-            if "card" in item:
-                cid = item["card"]
-                inst = next((i for i in cards.card_fields(p)
-                             if i["id"] == cid), None)
-                if inst is None or cid in seen_cards:
-                    raise ValueError("Invalid card field")
-                allowed = cards.CARDS[cid]["field"]["crops"]
-                if crop not in allowed:
-                    raise ValueError(
-                        f"{cards.CARDS[cid]['name']} can only grow "
-                        + "/".join(allowed))
-                if inst["crops"]:
-                    raise ValueError("That card field is already planted")
-                seen_cards.add(cid)
-                inst["crops"] = {"type": crop,
-                                 "count": 3 if crop == "grain" else 2}
-                sown.append((inst, crop))
-            else:
-                cell = item.get("cell")
-                if not isinstance(cell, int) or not (0 <= cell < NUM_CELLS) \
-                        or cell in seen_cells:
-                    raise ValueError("Invalid field")
-                seen_cells.add(cell)
-                c = p["cells"][cell]
-                if c["type"] != "field" or c["crops"]:
-                    raise ValueError("You can only sow empty fields")
-                c["crops"] = {"type": crop,
-                              "count": 3 if crop == "grain" else 2}
-                sown.append((cell, crop))
-            p["resources"][crop] -= 1
-            counts[crop] += 1
-        parts = [f"{v} {k} field(s)" for k, v in counts.items() if v]
-        log.append(f"{p['name']} sows {', '.join(parts)}")
-        ctx = {"sown": sown, "log": log, "actor": p["index"], "extra": {}}
-        cards.fire_player(state, p, "sow", ctx)
-        self._apply_extras(state, p, ctx["extra"], log)
-        self._fire_any(state, "sow", p, {"sown": sown}, log)
+        sub_actions.sow(state, p, sow, log)
 
     # ── Animal husbandry ─────────────────────────────────────────────
 
     def _gain_animals(self, state, p, gained, log):
         """Gained animals must be accommodated before play continues.
         Merges into an existing pending prompt for the same player."""
-        for pr in state["prompts"]:
-            if pr["type"] == "accommodate" and pr["player"] == p["index"]:
-                for a, n in gained.items():
-                    pr["gained"][a] = pr["gained"].get(a, 0) + n
-                return
-        state["prompts"].append(
-            {"type": "accommodate", "player": p["index"],
-             "gained": dict(gained)})
+        sub_actions.gain_animals(state, p, gained, log)
 
     def _apply_accommodate(self, state, pidx, action):
         pending = self._prompt(state)

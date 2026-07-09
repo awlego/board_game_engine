@@ -28,10 +28,10 @@ from server.agricola.cards import (
     space_bonus, take_bonus, schedule_on_play, harvest_food,
 )
 import server.agricola.cards as cards
+from server.agricola import sub_actions
 from server.agricola.state import (
     ANIMAL_TYPES, TOTAL_ROUNDS, BUILDING_RESOURCES, MAX_STABLES,
-    MAJOR_IMPROVEMENTS, compute_pastures, plowable_cells,
-    orthogonal_neighbors, table_score,
+    MAJOR_IMPROVEMENTS, compute_pastures, plowable_cells, table_score,
 )
 
 UNIMPLEMENTED = {
@@ -140,22 +140,6 @@ def _remove_animal(player, animal_type, count=1):
     return remaining == 0
 
 
-def _buildable_room_cells(player):
-    """Local replica of the engine's room-placement legality check (empty,
-    not a stable/pasture cell, orthogonally adjacent to an existing room);
-    cards.py cannot import engine.py, which imports cards.py."""
-    pasture_cells = {i for pa in compute_pastures(player) for i in pa}
-    rooms = {i for i, c in enumerate(player["cells"]) if c["type"] == "room"}
-    out = []
-    for i, c in enumerate(player["cells"]):
-        if i in rooms or c["type"] != "empty" or c["stable"] \
-                or i in pasture_cells:
-            continue
-        if any(nb in rooms for nb in orthogonal_neighbors(i)):
-            out.append(i)
-    return out
-
-
 def _empty_field_cells(player):
     return [i for i, c in enumerate(player["cells"])
             if c["type"] == "field" and not c["crops"]]
@@ -200,15 +184,17 @@ def _free_room_available(min_rooms, house_type=None):
         if house_type and player["house_type"] != house_type:
             return False
         rooms = sum(1 for c in player["cells"] if c["type"] == "room")
-        return rooms >= min_rooms and bool(_buildable_room_cells(player))
+        return rooms >= min_rooms and sub_actions.can_build_rooms(
+            state, player, cost_override="free")
     return fn
 
 
 def _free_room_apply(state, player, inst, ctx):
     cell = (ctx.get("params") or {}).get("cell")
-    if not isinstance(cell, int) or cell not in _buildable_room_cells(player):
+    if not isinstance(cell, int):
         raise ValueError("choose a valid free room cell (params.cell)")
-    player["cells"][cell]["type"] = "room"
+    sub_actions.build_rooms(state, player, [cell], ctx["log"],
+                            cost_override="free")
     inst["data"]["used"] = True
     ctx["log"].append(f"{player['name']}'s {cards.spec(inst)['name']} "
                       "builds a free room")
@@ -532,10 +518,11 @@ def _hut_builder_round_start(state, player, inst, ctx):
     if state["round"] != 11 or not inst["data"].get("eligible") \
             or inst["data"].get("used") or player["house_type"] == "stone":
         return
-    cells = _buildable_room_cells(player)
+    cells = sub_actions.buildable_room_cells(player)
     if not cells:
         return
-    player["cells"][cells[0]]["type"] = "room"
+    sub_actions.build_rooms(state, player, [cells[0]], ctx["log"],
+                            cost_override="free")
     inst["data"]["used"] = True
     ctx["log"].append(f"{player['name']}'s Hut Builder adds a free room")
 

@@ -5,7 +5,7 @@ import random
 import pytest
 
 from server.agricola.engine import AgricolaEngine
-from server.agricola import cards
+from server.agricola import cards, sub_actions
 from server.agricola.state import (
     ANIMAL_TYPES, HARVEST_ROUNDS, MAJOR_IMPROVEMENTS, STAGE_CARDS,
     animal_counts, cell_edges, compute_pastures, pasture_capacity,
@@ -2061,3 +2061,262 @@ def test_random_full_game_compendium_decks(engine, n_players, seed):
 
     assert s["round"] == 14
     assert s["scores"] is not None
+
+
+# ── sub_actions.py: card-facing build/play transactions ──────────────
+#
+# These cover the "bonus build/play sub-action" shape (~25 previously
+# UNIMPLEMENTED compendium cards): a card hook or card_action invokes
+# the SAME transaction implementation the normal action-space dispatch
+# uses (build rooms/stables/fences, renovate, build a major improvement,
+# play a minor improvement, sow, play an occupation), at full price, a
+# flat discount, or free. See server/agricola/sub_actions.py.
+
+def test_sub_action_build_rooms_free_from_hook(engine, temp_card):
+    """A play hook building a free room via sub_actions.build_rooms,
+    with the target cell(s) supplied through the play params channel."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    cid = "test_free_room"
+    temp_card(cid, "Test Free Room", "minor", "test", hooks={
+        "play": lambda state, player, inst, ctx: sub_actions.build_rooms(
+            state, player, (ctx.get("params") or {}).get("cells", []),
+            ctx["log"], cost_override="free"),
+    })
+    give_card(s, first, cid)
+    cell = sub_actions.buildable_room_cells(p)[0]
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": cid, "params": {"cells": [cell]}}})
+    p = s["players"][first]
+    assert p["cells"][cell]["type"] == "room"
+    # Free: no building resources spent.
+    assert p["resources"][p["house_type"]] == 0
+    assert p["resources"]["reed"] == 0
+
+
+def test_sub_action_build_stables_discounted_from_hook(engine, temp_card):
+    """A play hook building a stable at a flat discount (1 wood instead
+    of the normal 2)."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    cid = "test_cheap_stable"
+    temp_card(cid, "Test Cheap Stable", "minor", "test", hooks={
+        "play": lambda state, player, inst, ctx: sub_actions.build_stables(
+            state, player, (ctx.get("params") or {}).get("cells", []),
+            ctx["log"], cost_override={"wood": 1}),
+    })
+    give_card(s, first, cid)
+    give(s, first, wood=1)
+    cell = next(i for i, c in enumerate(p["cells"])
+               if c["type"] == "empty" and not c["stable"])
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": cid, "params": {"cells": [cell]}}})
+    p = s["players"][first]
+    assert p["cells"][cell]["stable"] is True
+    assert p["resources"]["wood"] == 0
+
+
+def test_sub_action_build_fences_normal_cost_from_hook(engine, temp_card):
+    """A play hook building fences at the normal (modified_cost-folded)
+    cost -- the fence edge set is an open-ended target, so it MUST
+    arrive via the params channel."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    cid = "test_bonus_fences"
+    temp_card(cid, "Test Bonus Fences", "minor", "test", hooks={
+        "play": lambda state, player, inst, ctx: sub_actions.build_fences(
+            state, player, (ctx.get("params") or {}).get("fences", []),
+            ctx["log"]),
+    })
+    give_card(s, first, cid)
+    give(s, first, wood=4)
+    fences = cell_edges(4)
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": cid, "params": {"fences": fences}}})
+    p = s["players"][first]
+    assert set(fences) <= set(p["fences"])
+    assert p["resources"]["wood"] == 0
+
+
+def test_sub_action_renovate_free_from_hook(engine, temp_card):
+    """A play hook renovating for free -- proves the same transaction
+    engine._do_renovate uses is reachable from a card hook."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    cid = "test_free_renovate"
+    temp_card(cid, "Test Free Renovate", "minor", "test", hooks={
+        "play": lambda state, player, inst, ctx: sub_actions.renovate(
+            state, player, ctx["log"], cost_override="free"),
+    })
+    give_card(s, first, cid)
+    assert p["house_type"] == "wood"
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": cid}})
+    p = s["players"][first]
+    assert p["house_type"] == "clay"
+    assert p["resources"]["clay"] == 0
+    assert p["resources"]["reed"] == 0
+
+
+def test_sub_action_build_improvement_from_hook(engine, temp_card):
+    """A play hook building a major improvement at normal cost."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    cid = "test_bonus_improvement"
+    temp_card(cid, "Test Bonus Improvement", "minor", "test", hooks={
+        "play": lambda state, player, inst, ctx: sub_actions.build_improvement(
+            state, player, (ctx.get("params") or {}).get("improvement"),
+            ctx["log"]),
+    })
+    give_card(s, first, cid)
+    give(s, first, clay=2)
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": cid,
+                                   "params": {"improvement": "fireplace_2"}}})
+    p = s["players"][first]
+    assert "fireplace_2" in p["improvements"]
+    assert p["resources"]["clay"] == 0
+
+
+def test_sub_action_play_minor_free_from_hook(engine, temp_card):
+    """An occupation's play hook playing ANOTHER card (a minor
+    improvement) from hand for free -- the Craft Teacher/Scholar shape,
+    generalized as a one-liner via sub_actions.play_minor."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    target_cid = "test_minor_target"
+    temp_card(target_cid, "Test Minor Target", "minor", "test", cost={"wood": 3})
+    source_cid = "test_free_minor_source"
+    temp_card(source_cid, "Test Free Minor Source", "occupation", "test", hooks={
+        "play": lambda state, player, inst, ctx: sub_actions.play_minor(
+            state, player, (ctx.get("params") or {}).get("card"), ctx["log"],
+            cost_override="free"),
+    })
+    give_card(s, first, target_cid)
+    give_card(s, first, source_cid)
+    s = place(engine, s, {"kind": "place", "space": "lessons",
+                          "card": source_cid,
+                          "params": {"card": target_cid}})
+    p = s["players"][first]
+    assert any(i["id"] == target_cid for i in p["minors"])
+    assert target_cid not in p["hand_minors"]
+    assert p["resources"]["wood"] == 0  # free: the 3-wood cost was skipped
+
+
+def test_sub_action_sow_from_hook(engine, temp_card):
+    """A play hook sowing a field, using sub_actions.sow (fires the same
+    `sow`/`sow_any` events _do_sow does)."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    p["cells"][0]["type"] = "field"
+    cid = "test_bonus_sow"
+    temp_card(cid, "Test Bonus Sow", "minor", "test", hooks={
+        "play": lambda state, player, inst, ctx: sub_actions.sow(
+            state, player, (ctx.get("params") or {}).get("sow", []), ctx["log"]),
+    })
+    give_card(s, first, cid)
+    give(s, first, grain=1)
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": cid,
+                                   "params": {"sow": [{"cell": 0, "crop": "grain"}]}}})
+    p = s["players"][first]
+    assert p["cells"][0]["crops"] == {"type": "grain", "count": 3}
+    assert p["resources"]["grain"] == 0
+
+
+def test_sub_action_play_occupation_free_from_hook(engine, temp_card):
+    """A play hook playing an occupation from hand for free (the
+    Craft Teacher shape): sub_actions.play_occupation is the same
+    transaction the Lessons action spaces use."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    cid = "test_free_occ_source"
+    temp_card(cid, "Test Free Occ Source", "minor", "test", hooks={
+        "play": lambda state, player, inst, ctx: sub_actions.play_occupation(
+            state, player, (ctx.get("params") or {}).get("card"), ctx["log"],
+            cost_override="free"),
+    })
+    give_card(s, first, cid)
+    give_card(s, first, "occ_woodcutter")
+    food_before = p["resources"]["food"]
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": cid,
+                                   "params": {"card": "occ_woodcutter"}}})
+    p = s["players"][first]
+    assert any(i["id"] == "occ_woodcutter" for i in p["occupations"])
+    assert "occ_woodcutter" not in p["hand_occupations"]
+    assert p["resources"]["food"] == food_before  # free: no food spent
+
+
+def test_sub_action_illegal_target_raises_and_rolls_back(engine, temp_card):
+    """An illegal target raises ValueError from inside the transaction;
+    since apply_action deepcopies before mutating, the caller's state
+    is left untouched (no partial application)."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    cid = "test_bad_room_target"
+    temp_card(cid, "Test Bad Room Target", "minor", "test", hooks={
+        "play": lambda state, player, inst, ctx: sub_actions.build_rooms(
+            state, player, (ctx.get("params") or {}).get("cells", []),
+            ctx["log"], cost_override="free"),
+    })
+    give_card(s, first, cid)
+    resources_before = dict(p["resources"])
+    cells_before = [dict(c) for c in p["cells"]]
+    # Cell 4 is not adjacent to any existing room -- illegal target.
+    with pytest.raises(ValueError):
+        engine.apply_action(s, p["player_id"], {
+            "kind": "place", "space": "meeting_place",
+            "minor": {"card": cid, "params": {"cells": [4]}}})
+    # The pre-call state (still referenced by `s`/`p`) is unaffected.
+    assert p["resources"] == resources_before
+    assert p["cells"] == cells_before
+    assert cid in p["hand_minors"]
+
+
+def test_sub_action_card_action_wraps_build_rooms(engine, temp_card):
+    """A card_action wrapping sub_actions.build_rooms: `available`
+    reflects can_build_rooms without mutating anything, and get_valid_actions
+    lists it as a card_action alongside the normal placement options."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    cid = "test_room_card_action"
+
+    def available(state, player, inst):
+        return not inst["data"].get("used") and \
+            sub_actions.can_build_rooms(state, player, cost_override="free")
+
+    def apply(state, player, inst, ctx):
+        cell = (ctx.get("params") or {}).get("cell")
+        sub_actions.build_rooms(state, player, [cell], ctx["log"],
+                                cost_override="free")
+        inst["data"]["used"] = True
+
+    temp_card(cid, "Test Room Card Action", "minor", "test",
+              card_action={"available": available, "apply": apply,
+                          "description": "Build a free room"})
+    inst = put_in_play(s, first, cid)
+
+    assert cards.CARDS[cid]["card_action"]["available"](s, p, inst)
+    kinds = [a["kind"] for a in engine.get_valid_actions(s, p["player_id"])]
+    assert "card_action" in kinds
+
+    cell = sub_actions.buildable_room_cells(p)[0]
+    pid = p["player_id"]
+    s = engine.apply_action(s, pid, {
+        "kind": "card_action", "card": cid, "params": {"cell": cell}}).new_state
+    p = s["players"][first]
+    assert p["cells"][cell]["type"] == "room"
+
+    inst = next(i for i in p["minors"] if i["id"] == cid)
+    assert not cards.CARDS[cid]["card_action"]["available"](s, p, inst)

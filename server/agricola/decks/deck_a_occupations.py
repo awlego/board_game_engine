@@ -17,6 +17,7 @@ from server.agricola.state import (
     ANIMAL_TYPES, TOTAL_ROUNDS, NUM_CELLS, MAX_PEOPLE, MAJOR_IMPROVEMENTS,
     FIREPLACES, compute_pastures, pasture_capacity, plowable_cells,
 )
+from server.agricola import sub_actions
 
 UNIMPLEMENTED = {
     "A085": "extra room capacity depends on live farmyard adjacency (field "
@@ -472,23 +473,10 @@ def _craft_teacher_apply(state, player, inst, ctx):
     cid = (ctx.get("params") or {}).get("card")
     if cid not in player["hand_occupations"]:
         raise ValueError("Craft Teacher: choose an occupation in hand (params.card)")
-    player["hand_occupations"].remove(cid)
-    occ_inst = new_instance(cid)
-    player["occupations"].append(occ_inst)
-    player["occs_played"] += 1
+    sub_actions.play_occupation(state, player, cid, ctx["log"],
+                                cost_override="free")
     inst["data"]["credits"] -= 1
-    play_fn = spec(cid)["hooks"].get("play")
-    if play_fn:
-        sub_ctx = {"params": {}, "log": ctx["log"], "actor": player["index"],
-                   "extra": {}}
-        play_fn(state, player, occ_inst, sub_ctx)
-        add_goods(ctx["extra"], sub_ctx["extra"])
-    ctx["log"].append(f"{player['name']}'s Craft Teacher plays "
-                      f"{spec(cid)['name']} for free")
-    occ_ctx = {"card_id": cid, "actor": player["index"], "log": ctx["log"],
-               "extra": {}}
-    fire(state, "occupation_played", occ_ctx)
-    add_goods(ctx["extra"], occ_ctx["extra"])
+    ctx["log"].append(f"{player['name']}'s Craft Teacher grants this play")
 
 compendium_card("A131",
     hooks={"improvement_built": _craft_teacher_improvement_built},

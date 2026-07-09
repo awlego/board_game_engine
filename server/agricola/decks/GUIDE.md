@@ -247,6 +247,130 @@ Spaces not yet revealed cannot be targeted.
 `starting_player`. Board helpers in `server.agricola.state`
 (`compute_pastures`, `plowable_cells`, `animal_counts`, ...).
 
+## Bonus build/play sub-actions (`server.agricola.sub_actions`)
+
+"Immediately build a room / up to 2 stables / fences / a minor or major
+improvement / sow / play an occupation, possibly at a discount or free" is
+a common shape (~25 compendium cards). Each of those transactions has real
+rules behind it (cell adjacency, house-type-dependent cost, `available_
+improvements`/`occs_played` bookkeeping, ...), so **don't reimplement it
+in a deck module** — `sub_actions.py` is the single implementation, shared
+with `engine.py`'s own action-space dispatch:
+
+```python
+from server.agricola import sub_actions
+```
+
+| transaction | function | cost-aware `can_*`/`*_possible` check |
+|---|---|---|
+| build rooms | `build_rooms(state, player, cells, log, cost_override=None)` | `can_build_rooms(state, player, cost_override=None)` |
+| build stables | `build_stables(state, player, cells, log, cost_override=None)` | `can_build_stables(state, player, cost_override=None)` (alias of `stable_possible`) |
+| build fences | `build_fences(state, player, new_fences, log, cost_override=None)` | `can_build_fences(state, player, cost_override=None)` |
+| renovate | `renovate(state, player, log, free_stable_cell=None, cost_override=None)` | `can_renovate(state, player, cost_override=None)` (alias of `renovation_possible`) |
+| build a major improvement | `build_improvement(state, player, imp, log, upgrade=False, cost_override=None)` | `can_build_improvement(state, player, imp=None, cost_override=None)` |
+| play a minor improvement | `play_minor(state, player, cid, log, params=None, cost_override=None)` | `can_play_minor(state, player, cid, cost_override=None)` |
+| play an occupation | `play_occupation(state, player, cid, log, params=None, cost_override=None)` | `can_play_occupation(state, player, cid, cost_override=None)` |
+| sow | `sow(state, player, sow_items, log)` (no cost concept -- consumes the sower's own crop, same as the normal action) | `can_sow(player)` |
+| family growth (no room/urgent-wish flavor) | `family_growth(state, player, log, require_room=True)` | `can_family_growth(player, require_room=True)` |
+
+Every transaction function **raises `ValueError` on an illegal target**
+(bad cell, occupied space, invalid fence layout, unmet prereq, unaffordable
+cost, ...) instead of silently doing nothing — safe to call from any hook,
+because the engine deep-copies `state` before applying an action, so a
+raised error rolls the whole action back. `can_*`/`*_possible` predicates
+never mutate anything (they mirror the "is this space usable in principle"
+granularity `_space_usable` already uses for the normal action spaces --
+they check that *some* legal target/afford exists, not a specific one) so
+they're safe to call from `get_valid_actions`-adjacent code every poll.
+
+**Cost**, for every transaction that has one, is `cost_override=None|dict|
+"free"`:
+- `None` (default) — the normal cost, run through `cards.modified_cost`
+  exactly like the matching action space (a Stonecutter/Carpenter/Hedge
+  Keeper-style discount still applies).
+- a goods dict — an exact cost to charge instead of the computed one
+  (compute your own flat discount, e.g. `{"wood": 1}` for "1 less wood",
+  and pass it — no boolean flags).
+- `"free"` — skip payment entirely.
+
+**Input channel, by target shape:**
+- **Open-ended targets** (a set of fence edges, a multi-cell room layout,
+  which major improvement, which occupation/minor in hand) MUST arrive via
+  a `params` dict — either a card's own `play` hook (`ctx["params"]`, for
+  an immediate on-play bonus) or a `card_action` (`ctx["params"]`, for an
+  activated ability on the owner's later work turn). There is no prompt
+  shape for "pick a set of fence edges".
+- **Small enumerable choices** ("which of these 3 spaces", "wood or clay")
+  can use `prompt_choice` instead, listing the options and reading
+  `ctx["index"]` in `resolve_choice`.
+- A "reactively grant a bonus, redeemed later" card (Educator/Scholar's
+  shape) banks a credit in `inst["data"]` from whatever hook triggers it,
+  then exposes a `card_action` that spends the credit via one of the
+  functions above.
+
+**Example — a card hook building a free room** (`play` hook, target via
+params):
+```python
+def _my_card_play(state, player, inst, ctx):
+    cells = (ctx.get("params") or {}).get("cells") or []
+    sub_actions.build_rooms(state, player, cells, ctx["log"], cost_override="free")
+
+card("my_card", "My Card", "minor", cost={}, text="...",
+     hooks={"play": _my_card_play})
+# Client sends: {"kind": "place", "space": "meeting_place",
+#                "minor": {"card": "my_card", "params": {"cells": [7]}}}
+```
+
+**Example — a discounted stable via `card_action`** (activated ability,
+available on the owner's own work turn):
+```python
+def _my_axe_available(state, player, inst):
+    return sub_actions.can_build_stables(state, player, cost_override={"wood": 1})
+
+def _my_axe_apply(state, player, inst, ctx):
+    cell = (ctx.get("params") or {}).get("cell")
+    sub_actions.build_stables(state, player, [cell], ctx["log"],
+                              cost_override={"wood": 1})
+
+card("my_axe", "My Axe", "minor", cost={}, text="...",
+     card_action={"available": _my_axe_available, "apply": _my_axe_apply,
+                 "description": "Build 1 stable for 1 wood"})
+```
+
+**Example — banked credit + `card_action`, redeemed as a free occupation
+play** (the Craft Teacher/Scholar/Educator shape -- see those cards in
+`deck_a_occupations.py`/`deck_k_occupations.py` for the full versions):
+```python
+def _my_trigger_hook(state, player, inst, ctx):
+    inst["data"]["credits"] = inst["data"].get("credits", 0) + 1
+
+def _my_bonus_available(state, player, inst):
+    return inst["data"].get("credits", 0) > 0 and bool(player["hand_occupations"])
+
+def _my_bonus_apply(state, player, inst, ctx):
+    cid = (ctx.get("params") or {}).get("card")
+    if cid not in player["hand_occupations"]:
+        raise ValueError("choose an occupation in hand (params.card)")
+    sub_actions.play_occupation(state, player, cid, ctx["log"], cost_override="free")
+    inst["data"]["credits"] -= 1
+```
+
+**Example — playing a minor improvement from a `prompt_choice`** (small
+enumerable set: which affordable minor in hand):
+```python
+def _my_prompt_hook(state, player, inst, ctx):
+    playable = [cid for cid in player["hand_minors"]
+               if sub_actions.can_play_minor(state, player, cid)]
+    if playable:
+        prompt_choice(state, player, inst["id"], "Play a minor for free?",
+                     [cards.CARDS[cid]["name"] for cid in playable],
+                     data={"cids": playable})
+
+def _my_resolve_choice(state, player, inst, ctx):
+    cid = ctx["data"]["cids"][ctx["index"]]
+    sub_actions.play_minor(state, player, cid, ctx["log"], cost_override="free")
+```
+
 ## Not supported (mark UNIMPLEMENTED, cite the mechanic)
 
 - Affecting other players' hands, people, or farms directly (guest
