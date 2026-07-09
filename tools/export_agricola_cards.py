@@ -49,10 +49,15 @@ def build_catalog():
     for code, db in compendium().items():
         if code in catalog:
             continue
+        reason = unimplemented.get(code)
+        if reason is None and db["type"] == "major":
+            # Deck A majors are the 10 built-in major improvements,
+            # listed under both original and revised numbering.
+            reason = "available as the built-in major improvement"
         catalog[code] = {
             "name": db["name"], "type": db["type"], "deck": db["deck"],
             "text": db["text"], "implemented": False,
-            "reason": unimplemented.get(code, "not yet implemented"),
+            "reason": reason or "not yet implemented",
         }
     return catalog
 

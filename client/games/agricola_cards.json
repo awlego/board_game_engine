@@ -657,7 +657,7 @@
   "deck": "A",
   "implemented": false,
   "name": "Basketmaker's Workshop",
-  "reason": "not yet implemented",
+  "reason": "available as the built-in major improvement",
   "text": "In each harvest, you can use the Basketmaker's Workshop to convert exactly 1 reed to 3 food. At the end of the game, you receive 1/2/3 bonus points for 2/4/5 reed.",
   "type": "major"
  },
@@ -753,7 +753,7 @@
   "deck": "A",
   "implemented": false,
   "name": "Fireplace",
-  "reason": "not yet implemented",
+  "reason": "available as the built-in major improvement",
   "text": "",
   "type": "major"
  },
@@ -872,7 +872,7 @@
   "deck": "A",
   "implemented": false,
   "name": "Cooking Hearth",
-  "reason": "not yet implemented",
+  "reason": "available as the built-in major improvement",
   "text": "",
   "type": "major"
  },
@@ -939,7 +939,7 @@
   "deck": "A",
   "implemented": false,
   "name": "Well",
-  "reason": "not yet implemented",
+  "reason": "available as the built-in major improvement",
   "text": "",
   "type": "major"
  },
@@ -1014,7 +1014,7 @@
   "deck": "A",
   "implemented": false,
   "name": "Clay Oven",
-  "reason": "not yet implemented",
+  "reason": "available as the built-in major improvement",
   "text": "",
   "type": "major"
  },
@@ -1072,7 +1072,7 @@
   "deck": "A",
   "implemented": false,
   "name": "Stone Oven",
-  "reason": "not yet implemented",
+  "reason": "available as the built-in major improvement",
   "text": "",
   "type": "major"
  },
@@ -1080,7 +1080,7 @@
   "deck": "A",
   "implemented": false,
   "name": "Joinery",
-  "reason": "not yet implemented",
+  "reason": "available as the built-in major improvement",
   "text": "",
   "type": "major"
  },
@@ -1088,7 +1088,7 @@
   "deck": "A",
   "implemented": false,
   "name": "Pottery",
-  "reason": "not yet implemented",
+  "reason": "available as the built-in major improvement",
   "text": "",
   "type": "major"
  },
@@ -1096,7 +1096,7 @@
   "deck": "A",
   "implemented": false,
   "name": "Basketmaker's Workshop",
-  "reason": "not yet implemented",
+  "reason": "available as the built-in major improvement",
   "text": "If you have both copies of a guild, each harvest, you can turn 2 resources into food. to 6 bonus points (but not double-count resources.) During scoring, you may earn up",
   "type": "major"
  },
@@ -1104,7 +1104,7 @@
   "deck": "A",
   "implemented": false,
   "name": "Well",
-  "reason": "not yet implemented",
+  "reason": "available as the built-in major improvement",
   "text": "Place 1 food from the general supply on each of the next 5 round spaces. At the start of these rounds, you receive the food.",
   "type": "major"
  },
@@ -1112,7 +1112,7 @@
   "deck": "A",
   "implemented": false,
   "name": "Clay Oven",
-  "reason": "not yet implemented",
+  "reason": "available as the built-in major improvement",
   "text": "Whenever you use a bread baking action, you can turn exactly 1 grain into 5 food. When you take this card, you can also bake bread immediately.",
   "type": "major"
  },
@@ -1120,7 +1120,7 @@
   "deck": "A",
   "implemented": false,
   "name": "Stone Oven",
-  "reason": "not yet implemented",
+  "reason": "available as the built-in major improvement",
   "text": "Whenever youuse a bread baking action, you can turn up to 2 grain into 4 food each. When you take this card, you can bake bread immediately.",
   "type": "major"
  },
@@ -1128,7 +1128,7 @@
   "deck": "A",
   "implemented": false,
   "name": "Joinery",
-  "reason": "not yet implemented",
+  "reason": "available as the built-in major improvement",
   "text": "In each harvest, you can use the Joinery to convert exactly 1 wood to 2 food. At the end of the game, you receive 1/2/3 bonus points for 3/5/7 wood.",
   "type": "major"
  },
@@ -1136,7 +1136,7 @@
   "deck": "A",
   "implemented": false,
   "name": "Pottery",
-  "reason": "not yet implemented",
+  "reason": "available as the built-in major improvement",
   "text": "In each harvest, you can use the Pottery to convert exactly 1 clay to 2 food. At the end of the game, you receive 1/2/3 bonus points for 3/5/7 clay.",
   "type": "major"
  },
@@ -9348,7 +9348,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Peat-charcoal Kiln",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Cut Peat\" special action, you receive 1 additional fuel. If you have at least one horse at the time, you receive another 1 fuel. In the final harvest, you can exchange 3 fuel for 1 bonus point, or 5 fuel for 2 bonus points.",
   "type": "major"
  },
@@ -9356,7 +9356,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Forester's Lodge",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Fell Trees\" special action, you receive 1 additional wood. If you have at least one horse at the time, you receive another 1 wood. At the end of the game, you receive 1 bonus point for each forest in your farmyard.",
   "type": "major"
  },
@@ -9364,7 +9364,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Riding Stables",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Place 1 food on the round space for each remaining round. At the start of these rounds, you receive the food, as long as you have at least 2 horses.",
   "type": "major"
  },
@@ -9372,7 +9372,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Museum of the Moors",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "The following major improvements are cheaper for you: Well A10 , by 1 stone; Joinery A7 , by 1 wood; Pottery A8 , by 1 clay; Basketmaker's Workshop A9 , by 1 reed; Clay Oven A5 , by 1 clay; Stone Oven A6 , by 1 stone; Forester's Lodge M002 , by 1 clay.",
   "type": "major"
  },
@@ -9380,7 +9380,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Furnace",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive 2 fuel. When heating, you heat one room fewer than you have.",
   "type": "major"
  },
@@ -9388,7 +9388,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Heating Stove",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Regardless of its size, you need at most 1 fuel to heat your entire home.",
   "type": "major"
  },
@@ -9396,7 +9396,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Village Church",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive 2 food. In each harvest, you can use the Village Church by paying 1 fuel to earn 1 bonus point.",
   "type": "major"
  },
@@ -9404,7 +9404,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Furniture Stall",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "At any time, you can exchange wood for clay. Return the wood to the supply and take the same number of clay.",
   "type": "major"
  },
@@ -9412,7 +9412,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Ceramics Stall",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "At any time, you can exchange clay for wood. Return the clay to the supply and take the same number of wood.",
   "type": "major"
  },
@@ -9420,7 +9420,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Basket Stall",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "At any time, you can exchange reed for other building resources. Return the reed to the supply and take the same number of other building resources of your choice.",
   "type": "major"
  },
@@ -9428,7 +9428,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Fallow Fields",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Place 2 food from the general supply on each of up to 3 empty fields. You cannot harvest the food. You receive it when you sow in the fields.",
   "type": "minor"
  },
@@ -9436,7 +9436,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Peat Burn-off",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive 1 fuel. In addition you can (optionally) immediately exchange 1 moor tile for a field tile. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -9444,7 +9444,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Cattle Collar",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Plough Field\" action or the \"Slash and Burn\" special action, you can immediately place 1 additional field tile on an empty farmyard space. To do this, you must have at least 1 cattle in your farm.",
   "type": "minor"
  },
@@ -9452,7 +9452,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Surveyor's Map",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Place a field tile on the space for round 11, a moor tile on round 12, and a forest tile on round 13. At the start of the rounds, you must either place the tile on an empty space in your farm or return it to the supply.",
   "type": "minor"
  },
@@ -9460,7 +9460,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Sowing Machine",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use a special action, you may immediately take a \"Sow\" action as long as you have at least 2 horses.",
   "type": "minor"
  },
@@ -9468,7 +9468,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Peat Fertilizer",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Cut Peat\" special action, you can immediately take a \"Sow\" action.",
   "type": "minor"
  },
@@ -9476,7 +9476,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Peat Ash Fertilizer",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Cut Peat\" special action, you can place 1 additional grain on all fields and farmyard spaces where grain is growing. In addition, you can place 1 additional vegetable on all fields and farmyard spaces where vegetables are planted.",
   "type": "minor"
  },
@@ -9484,7 +9484,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Nosebag",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Take 1 Grain\" action, you also receive 1 horse.",
   "type": "minor"
  },
@@ -9492,7 +9492,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Ploughhorse Market",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use a person to take a \"Plough fields\" action, you can buy 1 horse for 1 food immediately afterwards.",
   "type": "minor"
  },
@@ -9500,7 +9500,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Large Livestock Market",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You can immediately exchange 2 sheep for 1 cattle and 1 horse. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -9508,7 +9508,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Special Pasture",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Immediately fence 1 empty farmyard space (or a farmyard space with a stable) with 4 fences. You need not pay wood for these. The fenced space may not border your existing pastures.",
   "type": "minor"
  },
@@ -9516,7 +9516,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Home Wood",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "With this improvement, you can keep 1 animal (except a sheep) on each of your forest tiles.",
   "type": "minor"
  },
@@ -9524,7 +9524,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Horse Trough",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You can keep up to 2 horses in an unused farmyard space adjacent to your home.",
   "type": "minor"
  },
@@ -9532,7 +9532,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Open Grill",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "At any time, you may convert goods to food as follows: vegetable \u2192 2 food; sheep \u2192 2 food; wild boar \u2192 3 food; cattle \u2192 3 food; horse \u2192 2 food. Whenever you use a bread baking action, you may convert: grain \u2192 2 food.",
   "type": "minor"
  },
@@ -9540,7 +9540,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Pot Roast Recipe",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You can use the Fireplace A1/A2 or Cooking Hearth A3/A4 major improvements to convert horses to food. You receive 2 food for each horse.",
   "type": "minor"
  },
@@ -9548,7 +9548,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Grain Distillery",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "In the feeding phase of each harvest, you can convert exactly 1 fuel and 1 grain to 5 food. In the final harvest, you can convert any number of pairs of 1 fuel and 1 grain from your supply to 1 bonus point per pair.",
   "type": "minor"
  },
@@ -9556,7 +9556,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Forest Kindergarten",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you take any \"family growth\" action, you receive 1 food for each of your farmyard spaces that contains a forest tile.",
   "type": "minor"
  },
@@ -9564,7 +9564,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Pheromones",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive 1 food. In addition, each player who has at least one stable or pasture receives 2 food.",
   "type": "minor"
  },
@@ -9572,7 +9572,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Malthouse",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Cut Peat\" special action, you can also convert 1 grain to 4 food.",
   "type": "minor"
  },
@@ -9580,7 +9580,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Chimney Hood",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive as much food as you would receive from one of your baking improvements if you baked 1 grain into bread. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -9588,7 +9588,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Village Hall",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "In each round where you finish the work phase without a special action card in front of you, you receive 1 food during the returning home phase,",
   "type": "minor"
  },
@@ -9596,7 +9596,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Healing Clay",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive 1 food. Whenever you take the \"Infirmary\" action with a person who is marked with a bed token, you receive 1 additional food.",
   "type": "minor"
  },
@@ -9604,7 +9604,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Arid Field",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Cut Peat\" special action, place 1 fuel and 1 food from the general supply on the emptied farmyard space. You receive the token once the space is no longer empty.",
   "type": "minor"
  },
@@ -9612,7 +9612,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Birthing House",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use any \"family growth\" action, you receive 1 bonus point as well as 1 fuel and 1 food.",
   "type": "minor"
  },
@@ -9620,7 +9620,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Barge",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Place, alternately, 1 fuel or 1 food on each remaining round space, beginning with 1 fuel. At the start of each round, you receive the token.",
   "type": "minor"
  },
@@ -9628,7 +9628,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Peat Barge",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Fishing\" action, you also receive 2 fuel.",
   "type": "minor"
  },
@@ -9636,7 +9636,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Peat Sled",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Add your choice of 2, 4, 7, or 10 to the current round number. On the corresponding round space, place 3, 4, 5, or 6 fuel (depending on which number you added). At the start of that round, you receive the fuel.",
   "type": "minor"
  },
@@ -9644,7 +9644,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Peat Iron",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you have at least 2 moor tiles in your farmyard at the start of a harvest, you receive 1 fuel.",
   "type": "minor"
  },
@@ -9652,7 +9652,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Spinning Mill",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "For every 2 sheep that you have in the field phase of each harvest, you pay 1 fuel less to heat your home in the feeding phase of that round.",
   "type": "minor"
  },
@@ -9660,7 +9660,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Built-in Oven",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You no longer need to pay any heating costs.",
   "type": "minor"
  },
@@ -9668,7 +9668,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Coal Seam",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive 1 fuel. Whenever you use the \"Hiring Fair\" special action or the \"Day Labourer\" action space, you also receive 1 fuel.",
   "type": "minor"
  },
@@ -9676,7 +9676,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Oven Damper",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive 3 fuel. The Clay Oven A5 , Stone Oven A6 , Furnace M007 and Heating Stove M008 major improvements and the Built-in Oven M044 minor improvement are each worth 1 additional bonus point to you.",
   "type": "minor"
  },
@@ -9684,7 +9684,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Draughthorses",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you take exactly 3 wood from an action space, you can pay 1 food to receive 1 additional wood. Whenever you take 4 or more wood from an action space, you can pay 1 food to receive 2 additional wood. To do either of these, you must have at least 1 horse.",
   "type": "minor"
  },
@@ -9692,7 +9692,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Forest Path",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive 3 wood. Once this card has been passed, the player who has it at the end of the game receives -1 point. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -9700,7 +9700,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Moor Birch Tree",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Cut Peat\" special action, you also receive 2 wood.",
   "type": "minor"
  },
@@ -9708,7 +9708,7 @@
   "deck": "M",
   "implemented": false,
   "name": "River Clay",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Fishing\" action space, you also receive 2 clay.",
   "type": "minor"
  },
@@ -9716,7 +9716,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Willow Bank",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Fell Trees\" special action, you also receive 1 reed.",
   "type": "minor"
  },
@@ -9724,7 +9724,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Stone Quarry",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Place 5 stone on this card. Whenever you use the \"Hiring Fair\" special action, you also receive 1 stone from this card.",
   "type": "minor"
  },
@@ -9732,7 +9732,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Hardware Store",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Place 3 usage counters on this card. At any time, you can return one usage counter to the supply and take 1 of each building resource that you have none of.",
   "type": "minor"
  },
@@ -9740,7 +9740,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Basic Supplies",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Immediately take goods and tokens from the general supply until you have at least 1 fuel, 1 food, 1 wood, 1 clay, 1 reed, 1 stone, and 1 grain in your personal supply. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -9748,7 +9748,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Advance Payment",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive 1 fuel, 1 food, 1 wood, 1 clay, 1 reed, 1 stone, 1 sheep, and 1 grain.",
   "type": "minor"
  },
@@ -9756,7 +9756,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Peat Moss",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You require 2 less wood to build wooden hut rooms.",
   "type": "minor"
  },
@@ -9764,7 +9764,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Farmhands' Quarters",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you acquire a major improvement, you can save 1 building resource of your choice by paying 1 fuel instead. Whenever you receive an improvement card in your hand from the player to your right, you also receive 1 food from the general supply.",
   "type": "minor"
  },
@@ -9772,7 +9772,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Living History Museum",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "The following major improvements are cheaper for you: Village Church M009 , by 1 stone; Furniture Stall M010 , by 1 wood; Ceramics Stall M011 , by 1 clay; Basket Stall M012 , by 1 reed; Furnace M007 , by 1 clay; Heating Stove M008 , by 1 stone; Riding Stables M003 , by 1 wood.",
   "type": "minor"
  },
@@ -9780,7 +9780,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Register of Craftsmen",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Immediately acquire the Joinery A7 , Pottery A8 , or Basketmaker's Workshop A9 , without placing a person. You pay 1 stone less for it. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -9788,7 +9788,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Tinker",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "If you have at least one of the Joinery A7 , Pottery A8 , or Basketmaker's Workshop A9 major improvements, you immediately receive 1 wood, 1 clay, 1 reed, and 1 stone. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -9796,7 +9796,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Workbench",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You receive 3 wood, 2 clay, and 1 reed in the field phase of each of the last 2 harvests.",
   "type": "minor"
  },
@@ -9804,7 +9804,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Taps",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You can take an available special action card even after you have already placed all your person markers, when it would be your turn again. Then the work phase is over for you.",
   "type": "minor"
  },
@@ -9812,7 +9812,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Tool Shed",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you take the special action card with \"Slash and Burn\" and \"Cut Peat\", and take one of these special actions, you can take both of these special actions (in whichever order you choose).",
   "type": "minor"
  },
@@ -9820,7 +9820,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Farm Extension",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "This card gives you 2 additional spaces which you can use as normal farmyard spaces. Place it beside your farmyard. Each of the new spaces must border an existing farmyard space. This expands your famyard by 2 spaces.",
   "type": "minor"
  },
@@ -9828,7 +9828,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Thicket",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Choose up to 2 forest tiles, and place 1 additional forest tile on top of each of them. You can remove 1 tile with the \"Fell Trees\" special action-you cannot use the \"Slash and Burn\" action on spaces with 2 forest tiles.",
   "type": "minor"
  },
@@ -9836,7 +9836,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Swamp",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Place 1 moor tile on the space for round 12. At the start of this round, you can take the tile and place it on an empty space in your farmyard.",
   "type": "minor"
  },
@@ -9844,7 +9844,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Clear Felling",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive 2 wood. You can immediately turn over up to 2 forest tiles to show the moor side, as long as there is nothing except the forest tile on those spaces. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -9852,7 +9852,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Reforestation",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Immediately place 1 forest tile on an empty space in your farmyard. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -9860,7 +9860,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Bog Body",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "The owner of the Museum of the Moors M006 and the owner of the Living History Museum M058 each receive 1 bonus point at the end of the game.",
   "type": "minor"
  },
@@ -9868,7 +9868,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Administration",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive 2 food. In the last harvest, for each major improvement that you have, you can exchange 1 food for 1 bonus point.",
   "type": "minor"
  },
@@ -9876,7 +9876,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Leather Saddle",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you have at least 3 horses, you receive 1 bonus point for each cattle that you convert to food.",
   "type": "minor"
  },
@@ -9884,7 +9884,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Wedding Coach",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You can immediately carry out a \"family growth even without space in your home\" action, but you do not place a person to take this action. Place the offspring on this card until the returning home phase.",
   "type": "minor"
  },
@@ -9892,7 +9892,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Forest Hut",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Immediately place 1 guest marker on one of your forest tiles. You will receive the guest marker when you use a special action to clear that forest tile. Then, in that same round, you can place the guest marker as you would a person. At the end of that round, return the guest marker to the supply.",
   "type": "minor"
  },
@@ -9900,7 +9900,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Farm Cart",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you take at least 5 wood, 4 clay, 3 reeds, or 2 stone from an action space, you also receive 1 grain.",
   "type": "minor"
  },
@@ -9908,7 +9908,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Moor Fire",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Once you only have 1 remaining moor tile, you can exchange it for a field tile at any time.",
   "type": "minor"
  },
@@ -9916,7 +9916,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Deep Plough",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Immediately place 1 moor tile on an empty space in your farmyard. Whenever you use a person to take the \"Plough fields\" action, you can also exchange one moor tile for 1 field tile.",
   "type": "minor"
  },
@@ -9924,7 +9924,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Wild Fields",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You can immediately place up to 2 field tiles on empty spaces in your farmyard-on the condition that neither tile borders any other field at the time when it is placed.",
   "type": "minor"
  },
@@ -9932,7 +9932,7 @@
   "deck": "M",
   "implemented": false,
   "name": "No-Till Farming",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You can plant grain or vegetables on up to 2 empty farmyard spaces. These spaces do not count as fields when scoring, but as empty spaces.",
   "type": "minor"
  },
@@ -9940,7 +9940,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Nature's Fertilizer",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Slash and Burn\" special action, you immediately receive a \"Sow\" action for that field only. This also applies if you turn 1 moor tile into a field using the Moor Fire M075 or Peat Burn-off M016 minor improvement.",
   "type": "minor"
  },
@@ -9948,7 +9948,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Peat Hut",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "This card serves as a room for one of your people. It must be heated with 1 fuel during the feeding phase of each harvest. You can use renovate action to discard this card and add 1 room to your wooden hut.",
   "type": "minor"
  },
@@ -9956,7 +9956,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Flatboat",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Place, alternately, 1 fuel or 1 horse on each of the next 7 remaining round spaces, beginning with 1 fuel. At the start of each round, you receive the fuel or the horse.",
   "type": "minor"
  },
@@ -9964,7 +9964,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Livestock Market",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You can immediately exchange up to 3 animals for the next most valuable animal. You must swap them al at the same time, and you can only take the new animals if you have room for all of them on your farm. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -9972,7 +9972,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Cattle Stall",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Add 2, 4, 6, 8 to the current round. Place 1 animal on each corresponding round space. You choose which animal goes on which space, but all the animals must be different. At the start of these rounds, you can buy the animal for 1 food.",
   "type": "minor"
  },
@@ -9980,7 +9980,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Night Pasture",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You can keep 3 animals of your choice on this card, and other players can keep 1. All the animals on this card count as yours when animals breed. You are always the last to play during the breeding phase.",
   "type": "minor"
  },
@@ -9988,7 +9988,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Nature Reserve",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Immediately fence 1 farmyard space which contains a forest or moor tile. You do not pay any wood for these fences. Once there are no tiles left on the space, it becomes a pasture.",
   "type": "minor"
  },
@@ -9996,7 +9996,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Building Plan",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you build 2 rooms at once with the \"Build rooms\" action, you can immediately build 2 stables from your personal supply.",
   "type": "minor"
  },
@@ -10004,7 +10004,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Horse Butcher",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "At any time, you may convert animals to food as follows: sheep \u2192 1 food; wild boar \u2192 2 food; cattle \u2192 3 food; horse \u2192 2 food; 2 horses \u2192 5 food.",
   "type": "minor"
  },
@@ -10012,7 +10012,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Butcher's Block",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "This card cannot be played in a round that is followed by a harvest. All other players must and you may immediately convert one animal of their (your) choice to food. Sheep provide 1 food, wild boar 2 food, cattle 3 food.",
   "type": "minor"
  },
@@ -10020,7 +10020,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Fire Brigade",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive 2 food. If you still have forest tiles on at least 2 farm yard spaces, you get bonus points: 1 fewer point than you have forests, with a maximum of 4 points.",
   "type": "minor"
  },
@@ -10028,7 +10028,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Wild Harvest",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive 1 food. At the start of each harvest, shuffle all the start cards and draw 1. The start cards are numbered from 1 to 9. If the number on the card is equal to or less than the number of forest tiles in your farmyard, you receive 1 food.",
   "type": "minor"
  },
@@ -10036,7 +10036,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Fish Smokehouse",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Fishing\" action space, you can pay 1 fuel to receive an additional 3 food.",
   "type": "minor"
  },
@@ -10044,7 +10044,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Loan",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "At the start of each harvest, shuffle all the start cards and draw 1. The start cards are numbered from 1 to 9. If the number on the card is equal to or less than the amount of clay you have in your supply, the 2 food that you paid are returned to you with interest: you receive 6 food but must pass this improvement to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -10052,7 +10052,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Fallow Land",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Fell Trees\" or \"Cut Peat\" special actions to clear a space in your farmyard, place 1 Food on the space. You receive the food when the space is no longer empty.",
   "type": "minor"
  },
@@ -10060,7 +10060,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Hay Wagon",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Immediately after you take 3 wood, 3 clay, 2 reed, or 2 stone from an action space, you can take a \"Build room(s)\" or \"Renovate\" action without placing a person.",
   "type": "minor"
  },
@@ -10068,7 +10068,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Peat Bath",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Infirmary\" action space with a person, count how many moor tiles are in your farmyard. Place 1 food on the next remaining round space(s) up to that number. At the beginning of those rounds, you receive the food.",
   "type": "minor"
  },
@@ -10076,7 +10076,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Edge of the Forest",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "For each border between a forest tile and a field in your farmyard, you receive 1 food. For each border between a forest tile and a moor tile in your farmyard, you receive 1 fuel. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -10084,7 +10084,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Ecological Niche",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "If there is at least one type of animal that only you own, you receive 2 food. If you are the only player who has planted grain, you receive 1 food. If you are the only player who has planted vegetables, you receive 1 food. You receive 1 fuel is you have more forest tiles than any other player and 1 fuel if you have more moor tiles than any other player. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -10092,7 +10092,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Winter Storehouse",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Place 3 usage counters on this card. At any time (even while you are taking an action) you can return 1 usage counter and take fuel and food from the supply until you have at least 2 fuel and 2 food.",
   "type": "minor"
  },
@@ -10100,7 +10100,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Lawn Turf",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "If you have at least 3 unused spaces on your farmyard, you immediately receive 1 fuel for each unused space except the first 2, up to a maximum of 5 fuel. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -10108,7 +10108,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Firewood",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive 1 fuel. Whenever you convert at least 1 wood to fuel during a harvest to heat your home, you need a total of 1 fuel fewer.",
   "type": "minor"
  },
@@ -10116,7 +10116,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Peat Pellets",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive 1 fuel for each remaining moor tile in your farmyard. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -10124,7 +10124,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Fuel Storage",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Add 1, 5, and 9 to the current round. Place 1 wood on each corresponding round space. Add 3, 7, and 11 to the current round. Place 1 fuel on each corresponding round space. At the start of each round, you receive the wood or fuel.",
   "type": "minor"
  },
@@ -10132,7 +10132,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Bog Pony",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "At any time, you can lie one of your horses that is standing up on its side and take 2 fuel. This horse does not count during the breeding phase of the harvest. At the end of the game, it is worth only half a point, but it can (like other horses) be converted into food with an appropriate improvement.",
   "type": "minor"
  },
@@ -10140,7 +10140,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Drying Field",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Cut Peat\" special action, add 3 to the current round. Place 2 fuel on the corresponding round space. At the start of the round, you receive the fuel.",
   "type": "minor"
  },
@@ -10148,7 +10148,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Peat-cutting Expedition",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Immediately take as many moor tiles from your farmyard as you wish. For each moor tile that you remove, you receive 1 bonus point and 2 fuel. If you have at least 2 horses, you receive 1 additional fuel for each horse except the first one, up to a maximum of 4 additional fuel. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -10156,7 +10156,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Riverside Woods",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Fishing\" action space, you receive 1 additional wood for each of your farmyard spaces with a forest tile, up to a maximum of 3 wood.",
   "type": "minor"
  },
@@ -10164,7 +10164,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Timber Mill",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Fell Trees\" special action or take at least 4 wood from an action space, you receive 1 additional wood. If you pay 1 fuel, you receive 1 more additional wood.",
   "type": "minor"
  },
@@ -10172,7 +10172,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Oak Bark",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive 2 wood. Whenever you convert cattle, wild boar, or horses to food, you receive 1 additional wood for each of these animals that you convert.",
   "type": "minor"
  },
@@ -10180,7 +10180,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Loam",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you have placed all except one of your people during the work phase and you use the \"Hiring Fair\" special action, you receive 1 additional clay.",
   "type": "minor"
  },
@@ -10188,7 +10188,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Alder Swamp",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use a \"Fell Trees\" special action, you also receive your choice of 1 reed or 1 wood.",
   "type": "minor"
  },
@@ -10196,7 +10196,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Stone Wagon",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Day Labourer\" action, you also receive 1 stone.",
   "type": "minor"
  },
@@ -10204,7 +10204,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Wheelbarrow",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you take at least 4 of the same building resources from an action space, you also receive 1 fuel. Whenever you \"Cut Peat\", you also receive 1 building resource of your choice.",
   "type": "minor"
  },
@@ -10212,7 +10212,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Peat Boat",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "At any time, you can exchange fuel for goods as follows: 3 fuel \u2192 2 wood or 2 clay; 4 fuel \u2192 2 reed or 2 stone; 2 fuel \u2192 1 grain; 3 fuel \u2192 1 vegetable.",
   "type": "minor"
  },
@@ -10220,7 +10220,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Household Inventory",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "If you have 5/6/7/8/9/10 empty farmyard spaces, you receive the first 1/2/3/4/5/6 goods from the following list (in order): 1 reed, 1 grain, 1 cattle, 1 stone, 1 vegetable, 1 horse. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -10228,7 +10228,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Village Shop",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Place 3 usage counters on this card. At any time, you can remove them to receive 1 other good or marker. The offer changes each round: 2: food, 3: grain, 4: fuel, 5: wood, 6: clay, 7: sheep, 8: reed, 9: wild boar, 10: stone, 11: cattle, 12: horse, 13: vegetable, 14: guest marker.",
   "type": "minor"
  },
@@ -10236,7 +10236,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Hearth Brush",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "If the Stone Oven A6 has not yet been built, you can immediately place it underneath the Heating Stove M008 . From next round, whenever you use a person to take an action, you can build the Heating Stove immediately afterwards by paying the required resources. The Heating Stove is worth 1 additional bonus point for you.",
   "type": "minor"
  },
@@ -10244,7 +10244,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Pastoral Letter",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "If the Well A10 has not yet been built, you can immediately place it under the Village Church M009 . From next round, whenever you use a person to take an action, you can build the Village Church immediately afterwards by paying the required resources. The Village Church and the Church M132 are each worth 1 additional bonus point for you.",
   "type": "minor"
  },
@@ -10252,7 +10252,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Co-operative Store",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Place 4 usage counters on this card. At any time, you can remove 1 of them to exchange any 1 building resource for any other building resource except stone.",
   "type": "minor"
  },
@@ -10260,7 +10260,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Out on the Wallaby",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You receive goods if you own craftman's buildings. Joinery A7: 3 wood; Pottery A8: 3 clay; Basketmaker's Workshop A9: 2 reeds. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
@@ -10268,7 +10268,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Chamber of Commerce",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "You immediately receive 1 wood and 1 reed. At the end of the game, each of these major improvements: Joinery A7, Pottery A8 and Basketmaker's Workshop A9 is worth 1 additional bonus point to you.",
   "type": "minor"
  },
@@ -10276,7 +10276,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Routine Work",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you choose not to use a craftman's building to convert building resources to food during the harvest, you receive your choice of 1 food or 1 fuel instead.",
   "type": "minor"
  },
@@ -10284,7 +10284,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Peat-Cutting Rights",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Add 4 and 7 to the current round. Place 1 moor tile on each of the corresponding rounds. These tiles show that you can use the special action \"Cut Peat\" at the start of the round.",
   "type": "minor"
  },
@@ -10292,7 +10292,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Agricultural Implement",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use a person to take the \"Plough fields\" action, you can take a special action card immediately afterwards, as long as it has not already been used twice.",
   "type": "minor"
  },
@@ -10300,7 +10300,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Moor Enclosures",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Place 2 Moor tiles on this card. The card represents 2 additional, normal farmyard spaces. Place it beside your farmyard. Each of the new spaces must border an existing farmyard space. This expands your farm by 2 spaces.",
   "type": "minor"
  },
@@ -10308,7 +10308,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Bog Forest",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Immediately place 1 forest tile on as many of your own moor tiles as you wish. You can only use the covered moor tiles once you have removed the forest tiles with the \"Fell Trees\" special action. You cannot use \"Slash and Burn\" on forest tiles that are on top of moor tiles.",
   "type": "minor"
  },
@@ -10316,7 +10316,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Forest Swamp",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Cut Peat\" special action, turn over the moor tile that you remove. Add 4 to the current round and place the tile on the corresponding round space. At the start of the round, you can place the forest tile on an empty space in your farmyard.",
   "type": "minor"
  },
@@ -10324,7 +10324,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Tree Nursery",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Place 1 forest tile on the spaces for rounds 12 and 13. At the start of these rounds, you can take the tile and place it on an empty space in your farmyard.",
   "type": "minor"
  },
@@ -10332,7 +10332,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Land Parcel",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "When you play this card, you receive 1 forest tile that you must immediately place on an empty space in your farmyard. At the end of the game, you receive 2 bonus point if you have 1 unused farmyard space, you receive -1 bonus point if you have 2 unused spaces, and you receive -3 bonus point if you have 3 or more unused spaces.",
   "type": "minor"
  },
@@ -10340,7 +10340,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Stock-breeding Prize",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "At the end of the game, you receive 2 bonus points if you have at least 1 animal of each of the 4 types.",
   "type": "minor"
  },
@@ -10348,7 +10348,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Family Burial Plot",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Immediately place the tombstone on an unused space in your farmyard. That space cannot be used to hold anything now, but is counted as used, and is worth 1 additional bonus point at the end of the game.",
   "type": "minor"
  },
@@ -10356,7 +10356,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Moor Archaeology",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "Whenever you use the \"Cut Peat\" special action, you can place 1 fence from your supply on the emptied farmyard space. You cannot use this farmyard space to hold anything, but it is counted as used, and is worth 1 additional bonus point at the end of the game.",
   "type": "minor"
  },
@@ -10364,7 +10364,7 @@
   "deck": "M",
   "implemented": false,
   "name": "Church",
-  "reason": "not yet implemented",
+  "reason": "requires Farmers of the Moor systems (fuel/heating, horses, forest/moor tiles)",
   "text": "For upgrading the Village Church M009 to the Church, you receive 2 food. At the end of each round, you can tithe up to 1 fuel to earn 1 bonus point.",
   "type": "minor"
  },
