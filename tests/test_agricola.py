@@ -589,6 +589,163 @@ def test_lasso_double_placement(engine):
     assert s["current_player"] == (first + 1) % 2
 
 
+# ── Guest tokens / occupied-space placement (CARDS.md gaps) ─────────
+
+def test_guest_extra_turn_in_rotation_and_reset(engine, temp_card):
+    """A guest token is one more placement this round only, folded into
+    the normal rotation (not an immediate second turn like the Lasso)."""
+    def grant_once(state, player, inst, ctx):
+        if ctx["actor"] == player["index"] and not inst["data"].get("granted"):
+            inst["data"]["granted"] = True
+            cards.grant_guest(player)
+
+    temp_card("test_guest_source", "Test Guest Source", "minor", cost={},
+              text="test", hooks={"space_used": grant_once})
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    put_in_play(s, first, "test_guest_source")
+
+    s = place(engine, s, {"kind": "place", "space": "grain_seeds"})
+    assert s["players"][first]["guests"] == 1
+    assert s["current_player"] == other
+
+    s = place(engine, s, {"kind": "place", "space": "day_laborer"})
+    # first's capacity is people_total(2) + guests(1) = 3: normal rotation
+    # gives them another turn instead of skipping to `other`.
+    assert s["current_player"] == first
+
+    s = place(engine, s, {"kind": "place", "space": "forest"})
+    assert s["players"][first]["people_placed"] == 2
+    assert s["current_player"] == other
+
+    s = place(engine, s, {"kind": "place", "space": "clay_pit"})
+    assert s["players"][other]["people_placed"] == 2  # other is done
+    assert s["current_player"] == first  # first still has the guest turn
+
+    s = place(engine, s, {"kind": "place", "space": "reed_bank"})
+    # first's 3rd placement (the guest turn) was also everyone's last --
+    # the round rolls straight into round 2 within this same action.
+    assert s["round"] == 2
+    # The guest doesn't carry over.
+    assert s["players"][first]["guests"] == 0
+    assert s["players"][first]["people_placed"] == 0
+
+
+def test_guests_do_not_affect_feeding_or_scoring(engine):
+    s = make_state(engine, 2)
+    p = s["players"][0]
+    food_before = engine._food_needed(s, p)
+    score_before = score_player(p, s)
+
+    cards.grant_guest(p, 3)
+
+    assert p["people_total"] == 2  # untouched by the guest grant
+    assert engine._food_needed(s, p) == food_before
+    assert score_player(p, s) == score_before
+
+
+def test_occupied_ok_allows_placing_on_occupied_space(engine, temp_card):
+    temp_card("test_occupied_any", "Test Occupied Any", "minor", cost={},
+              text="test", occupied_ok=lambda state, player, inst, space: True)
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+
+    s = place(engine, s, {"kind": "place", "space": "forest"})
+    forest = next(sp for sp in s["action_spaces"] if sp["id"] == "forest")
+    assert forest["occupied_by"] == first
+
+    other_pid = s["players"][other]["player_id"]
+    valid = engine.get_valid_actions(s, other_pid)
+    assert not any(a["kind"] == "place" and a["space"] == "forest"
+                   for a in valid)
+    with pytest.raises(ValueError):
+        engine.apply_action(s, other_pid, {"kind": "place", "space": "forest"})
+
+    put_in_play(s, other, "test_occupied_any")
+    valid = engine.get_valid_actions(s, other_pid)
+    assert any(a["kind"] == "place" and a["space"] == "forest" for a in valid)
+
+    s = place(engine, s, {"kind": "place", "space": "forest"})
+    forest = next(sp for sp in s["action_spaces"] if sp["id"] == "forest")
+    assert forest["occupied_by"] == first  # the original occupant is kept
+    assert forest["extra_occupants"] == [other]
+
+
+def test_occupied_ok_restricted_to_specific_spaces(engine, temp_card):
+    """3 players so the restricted override isn't the round's very last
+    placement -- otherwise the round rolls over (and occupied_by/
+    extra_occupants reset) inside the same apply_action call, before we
+    get a chance to inspect them."""
+    temp_card("test_occupied_forest_only", "Test Occupied Forest Only",
+              "minor", cost={}, text="test",
+              occupied_ok=lambda state, player, inst, space:
+                  space["id"] == "forest")
+
+    s = make_state(engine, 3)
+    first = s["current_player"]
+    holder = (first + 1) % 3
+    third = (first + 2) % 3
+    put_in_play(s, holder, "test_occupied_forest_only")
+
+    s = place(engine, s, {"kind": "place", "space": "clay_pit"})  # first
+
+    holder_pid = s["players"][holder]["player_id"]
+    valid = engine.get_valid_actions(s, holder_pid)
+    # clay_pit is occupied but not one of this card's allowed spaces.
+    assert not any(a["kind"] == "place" and a["space"] == "clay_pit"
+                   for a in valid)
+    with pytest.raises(ValueError):
+        engine.apply_action(s, holder_pid,
+                            {"kind": "place", "space": "clay_pit"})
+    s = place(engine, s, {"kind": "place", "space": "grain_seeds"})  # holder
+    s = place(engine, s, {"kind": "place", "space": "day_laborer"})  # third
+    s = place(engine, s, {"kind": "place", "space": "forest"})  # first, again
+
+    holder_pid = s["players"][holder]["player_id"]
+    valid = engine.get_valid_actions(s, holder_pid)
+    # forest is occupied and IS the allowed space.
+    assert any(a["kind"] == "place" and a["space"] == "forest" for a in valid)
+    s = place(engine, s, {"kind": "place", "space": "forest"})  # holder overrides
+    assert s["round"] == 1  # third still has a placement left this round
+    forest = next(sp for sp in s["action_spaces"] if sp["id"] == "forest")
+    assert forest["occupied_by"] == first
+    assert forest["extra_occupants"] == [holder]
+
+
+def test_returning_home_spaces_shared_occupancy(engine, temp_card):
+    """returning_home must credit a shared space to every player who has
+    a person on it, not just the first (original occupied_by) occupant."""
+    def record(state, player, inst, ctx):
+        inst["data"]["spaces"] = list(ctx["spaces"])
+
+    temp_card("test_shared_space", "Test Shared Space", "minor", cost={},
+              text="test", occupied_ok=lambda state, player, inst, space: True,
+              hooks={"returning_home": record})
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    put_in_play(s, first, "test_shared_space")
+    put_in_play(s, other, "test_shared_space")
+
+    s = place(engine, s, {"kind": "place", "space": "forest"})
+    s = place(engine, s, {"kind": "place", "space": "forest"})  # other shares it
+    s = place(engine, s, {"kind": "place", "space": "clay_pit"})
+    s = place(engine, s, {"kind": "place", "space": "reed_bank"})
+    assert s["round"] == 2  # the round rolled over cleanly
+
+    inst_first = next(i for i in s["players"][first]["minors"]
+                       if i["id"] == "test_shared_space")
+    inst_other = next(i for i in s["players"][other]["minors"]
+                       if i["id"] == "test_shared_space")
+    assert "forest" in inst_first["data"]["spaces"]
+    assert "forest" in inst_other["data"]["spaces"]
+
+
 def test_milk_jug_other_player_trigger(engine):
     s = make_state(engine, 2)
     first = s["current_player"]

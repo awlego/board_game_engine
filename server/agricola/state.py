@@ -481,6 +481,7 @@ def create_player(index, player_id, name):
         "house_type": "wood",
         "people_total": 2,
         "people_placed": 0,
+        "guests": 0,
         "newborns": 0,
         "pets": {},
         "begging": 0,
@@ -505,6 +506,7 @@ def create_action_spaces(player_count):
                 "desc": spec["desc"],
                 "stage": 0,
                 "occupied_by": None,
+                "extra_occupants": [],
                 "supply": {},
                 "accumulates": bool(spec.get("acc")),
             })

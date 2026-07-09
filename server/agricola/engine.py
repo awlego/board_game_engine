@@ -258,6 +258,21 @@ class AgricolaEngine(GameEngine):
                 return s
         return None
 
+    def _capacity(self, player):
+        """Placements a player may make this round: people plus any
+        guest tokens. Never people_total itself -- feeding, scoring, and
+        family-growth room checks all read people_total directly and
+        must not see guests."""
+        return player["people_total"] + player.get("guests", 0)
+
+    def _space_occupants(self, space):
+        """All player indices with a person on `space` this round. Kept
+        as `occupied_by` (the first occupant, for backward compatibility
+        with every existing reader) plus `extra_occupants` (additional
+        occupants placed there via a card's `occupied_ok`)."""
+        occ = [space["occupied_by"]] if space["occupied_by"] is not None else []
+        return occ + space.get("extra_occupants", [])
+
     def _pay(self, player, cost):
         for res, amount in cost.items():
             if player["resources"][res] < amount:
@@ -378,6 +393,7 @@ class AgricolaEngine(GameEngine):
             "desc": card["desc"],
             "stage": card["stage"],
             "occupied_by": None,
+            "extra_occupants": [],
             "supply": {},
             "accumulates": bool(card.get("acc")),
         })
@@ -400,9 +416,15 @@ class AgricolaEngine(GameEngine):
                 for good, amount in acc.items():
                     space["supply"][good] = space["supply"].get(good, 0) + amount
             space["occupied_by"] = None
+            space["extra_occupants"] = []
 
         for p in state["players"]:
             p["people_placed"] = 0
+            # Guest tokens don't carry over: an unused guest from a card
+            # played earlier is gone. This resets before round_start
+            # hooks fire below, so a hook may still grant one for the
+            # round it's firing in.
+            p["guests"] = 0
 
         # Start-of-round card effects.
         for p in state["players"]:
@@ -454,13 +476,14 @@ class AgricolaEngine(GameEngine):
         for step in range(n):
             pidx = (start_pidx + step) % n
             p = state["players"][pidx]
-            if p["people_placed"] >= p["people_total"]:
+            capacity = self._capacity(p)
+            if p["people_placed"] >= capacity:
                 continue
             if self._placement_actions(state, pidx):
                 state["current_player"] = pidx
                 return
-            remaining = p["people_total"] - p["people_placed"]
-            p["people_placed"] = p["people_total"]
+            remaining = capacity - p["people_placed"]
+            p["people_placed"] = capacity
             log.append(
                 f"{p['name']} cannot use any action space and forfeits "
                 f"{remaining} placement(s)")
@@ -475,7 +498,7 @@ class AgricolaEngine(GameEngine):
         # not, so the event can't double-fire.
         for p in state["players"]:
             spaces = [s["id"] for s in state["action_spaces"]
-                      if s["occupied_by"] == p["index"]]
+                      if p["index"] in self._space_occupants(s)]
             ctx = {"spaces": spaces, "log": log, "actor": p["index"],
                    "extra": {}}
             cards.fire_player(state, p, "returning_home", ctx)
@@ -568,13 +591,18 @@ class AgricolaEngine(GameEngine):
         p = state["players"][pidx]
         if state["phase"] != "work" or self._prompt(state):
             return []
-        if p["people_placed"] >= p["people_total"]:
+        if p["people_placed"] >= self._capacity(p):
             return []
 
         actions = []
         for space in state["action_spaces"]:
-            if space["occupied_by"] is not None:
-                continue
+            occupants = self._space_occupants(space)
+            if occupants:
+                # Already occupied: only usable via a card's occupied_ok,
+                # and never a second time by this same player (matches
+                # every real card's "not with 2 of your own people" text).
+                if pidx in occupants or not cards.occupied_ok(state, p, space):
+                    continue
             if self._space_usable(state, p, space):
                 entry = {
                     "kind": "place",
@@ -673,14 +701,19 @@ class AgricolaEngine(GameEngine):
             raise ValueError("Not your turn")
 
         p = state["players"][pidx]
-        if p["people_placed"] >= p["people_total"]:
+        if p["people_placed"] >= self._capacity(p):
             raise ValueError("No people left to place")
 
         space = self._space(state, action.get("space"))
         if space is None:
             raise ValueError("Unknown action space")
-        if space["occupied_by"] is not None:
-            raise ValueError("That action space is occupied")
+        occupants = self._space_occupants(space)
+        if occupants:
+            if pidx in occupants:
+                raise ValueError(
+                    "You already have a person on that action space")
+            if not cards.occupied_ok(state, p, space):
+                raise ValueError("That action space is occupied")
         if not self._space_usable(state, p, space):
             raise ValueError("You cannot use that action space")
 
@@ -693,14 +726,17 @@ class AgricolaEngine(GameEngine):
                 raise ValueError("The Lasso requires an animal market")
 
         log = [f"{p['name']} places a person on {space['name']}"]
-        space["occupied_by"] = pidx
+        if space["occupied_by"] is None:
+            space["occupied_by"] = pidx
+        else:
+            space.setdefault("extra_occupants", []).append(pidx)
         p["people_placed"] += 1
 
         self._resolve_space(state, p, space, action, log)
 
         # Prompts (accommodation, choices) may be queued; otherwise move on.
         if not self._prompt(state):
-            if lasso and p["people_placed"] < p["people_total"]:
+            if lasso and p["people_placed"] < self._capacity(p):
                 log.append(f"{p['name']} uses the Lasso to place again")
                 self._advance_work(state, log, start_pidx=pidx)
             else:
@@ -840,8 +876,10 @@ class AgricolaEngine(GameEngine):
     def _fire_space_used(self, state, p, sid, provided, log, animals=None):
         """Fire the space_used event, then route all gained animals
         (from the space and from card extras) through accommodation."""
+        space = self._space(state, sid)
+        occupants = self._space_occupants(space) if space else [p["index"]]
         ctx = {"space_id": sid, "goods": provided, "extra": {},
-               "log": log, "actor": p["index"]}
+               "log": log, "actor": p["index"], "occupants": occupants}
         cards.fire(state, "space_used", ctx)
         gained = dict(animals or {})
         for good, amount in ctx["extra"].items():
@@ -1287,7 +1325,7 @@ class AgricolaEngine(GameEngine):
             # exactly where _end_work_phase left off.
             self._finish_end_work_phase(state, log)
         elif state["phase"] == "work" and not self._prompt(state):
-            if lasso and p["people_placed"] < p["people_total"]:
+            if lasso and p["people_placed"] < self._capacity(p):
                 log.append(f"{p['name']} uses the Lasso to place again")
                 self._advance_work(state, log, start_pidx=pidx)
             else:
@@ -1413,7 +1451,7 @@ class AgricolaEngine(GameEngine):
             self._finish_end_work_phase(state, log)
         elif state["phase"] == "work" and not self._prompt(state):
             if prompt.get("after_lasso") and \
-                    p["people_placed"] < p["people_total"]:
+                    p["people_placed"] < self._capacity(p):
                 self._advance_work(state, log, start_pidx=pidx)
             else:
                 self._advance_work(state, log)

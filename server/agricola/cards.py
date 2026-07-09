@@ -247,6 +247,35 @@ def has_lasso(player):
     return any(spec(i).get("lasso") for i in in_play(player))
 
 
+def grant_guest(player, n=1):
+    """Grant `player` n extra work-phase placement(s) ("guest tokens")
+    for the *current* round. Consumed by the placement flow (folded into
+    the same capacity as people_total, but never written to people_total
+    itself, so feeding/scoring/family-growth -- all of which read
+    people_total directly -- are unaffected). Reset to 0 by every
+    _start_round before that round's round_start hooks fire, so an
+    unused guest never carries over and a round_start hook may grant one
+    for the round it is firing in."""
+    player["guests"] = player.get("guests", 0) + n
+
+
+def occupied_ok(state, player, space):
+    """True if some in-play card lets `player` place a person on `space`
+    even though it is already occupied by (an)other player(s). Must be a
+    pure predicate: it is evaluated on every get_valid_actions call (not
+    only on an actual placement), so a card's `occupied_ok` fn must not
+    mutate state -- restrictions like "once per round" or "only the 3rd
+    person you place" need to be expressed as a check against existing
+    state (space id, current occupants, player["people_placed"], round
+    number, ...), not as a side effect. Card-local flags in
+    inst["data"] may still be *read* here."""
+    for inst in in_play(player):
+        fn = spec(inst).get("occupied_ok")
+        if fn and fn(state, player, inst, space):
+            return True
+    return False
+
+
 def card_fields(player):
     """In-play minor-improvement instances that are fields."""
     return [i for i in player["minors"] if spec(i).get("field")]

@@ -227,11 +227,21 @@ pools, and flagged in the client catalog.
 
 Known remaining gaps, and how they'd fit if a future card needs them:
 
-- **Guest tokens / extra people**: a per-round placement counter on the
-  player, consulted by `_advance_work` (the Lasso's replacement-turn logic
-  is the template).
-- **Replacement effects** ("use an occupied space"): a `mod_valid` query in
-  `_space_usable` / `_apply_place`, same pattern as `cost_mod`.
+- **Guest tokens / extra people** and **replacement effects** ("use an
+  occupied action space") are now supported by the engine —
+  `cards.grant_guest(player, n)` (a per-round placement counter folded
+  into `_advance_work`/`_placement_actions`/`_apply_place`'s capacity
+  check, alongside `people_total`) and the `occupied_ok=fn(state,
+  player, inst, space) -> bool` spec key (consulted by
+  `_placement_actions`/`_apply_place` before the normal occupied-space
+  check), respectively. See `decks/GUIDE.md` for the full contract
+  (guest reset timing and feeding/scoring isolation; the `occupied_by`
+  + `extra_occupants` representation for spaces shared by more than one
+  player, and the client-rendering gap that leaves). No card actually
+  uses either mechanism yet — implementing the ~20 blocked compendium
+  cards that need them (Guest I73, Telegram A022, Bassinet A025, Head
+  of the Family E159, Field Warden E163, Hay Rake FR029, Second Spouse
+  C129, Little Peasant B151, Seatmate B129, ...) is a separate pass.
 - **Farmers of the Moor** (deck M): fuel/heating, horses, forest/moor
   tiles — a whole expansion's systems; M-deck cards stay unimplemented
   until that lands.

@@ -51,7 +51,7 @@ through the accommodation prompt automatically):
 | event | fires | extra ctx |
 |---|---|---|
 | `play` | when this card is played | `params` (client-supplied dict) |
-| `space_used` | any player finishes an action space | `space_id`, `goods` the space provided |
+| `space_used` | any player finishes an action space | `space_id`, `goods` the space provided, `occupants` (every player index with a person on that space *after* this placement — length > 1 only when a card's `occupied_ok` let someone place on top of an existing occupant) |
 | `occupation_played` / `minor_played` | any player plays a card | `card_id` |
 | `round_start` | preparation phase (own cards only) | `round` |
 | `improvement_built` | any player builds/upgrades a major improvement | `improvement` id |
@@ -65,7 +65,7 @@ through the accommodation prompt automatically):
 | `renovate` | after own renovation | `free_stable_cell` param |
 | `family_growth` | own family growth | — |
 | `converted` | any goods→goods conversion outside a normal action-space grant (feeding-phase conversions in the "feed" action; cooking animals during accommodation instead of placing them) | `give` (goods consumed), `get` (goods produced), `via` ("raw", "cook", an improvement id like "joinery", or the converting card's own id) |
-| `returning_home` | once per player at the end of the work phase, before `occupied_by` is reset (own cards only) | `spaces`: action-space ids that player's people occupy this round |
+| `returning_home` | once per player at the end of the work phase, before `occupied_by`/`extra_occupants` is reset (own cards only) | `spaces`: action-space ids that player's people occupy this round (includes spaces occupied only via `extra_occupants` -- see occupied-space placement below) |
 | `renovate_any` / `plow_any` / `sow_any` / `rooms_built_any` / `stable_built_any` / `bake_any` | broadcast twin of the correspondingly-named owner-only event above, fired to **every** player's cards (not just the actor's) | same fields as the parent event, plus `actor` |
 
 `converted` is broadcast like `space_used` (all players' cards, actor
@@ -113,6 +113,60 @@ no card in hand has its prereq satisfied. Don't add a `raise` in a `play`
 hook to re-check something already expressible as `prereq=` — only a
 round-dependent or variable-cost condition needs that.
 
+**Guest tokens (extra placements):** `cards.grant_guest(player, n=1)`
+grants `player` n additional work-phase placements for the *current*
+round only. It's a plain counter (`player["guests"]`), completely
+separate from `people_total`: `_advance_work`/`_placement_actions`/
+`_apply_place` all check capacity as `people_total + guests`, but
+nothing else (feeding's `_food_needed`, `score_player`'s `people`
+category, or the family-growth room checks on `basic_wish`/
+`urgent_wish`) reads `guests` — they all read `people_total` directly,
+so a guest never needs feeding, never scores, and is invisible to
+family-growth logic, matching the rulebook ("a guest does not count as
+family member," "does not need to be fed"). Call `grant_guest` from
+any hook (`play`, `space_used`, `round_start`, a scheduled-round effect,
+...); `_start_round` resets every player's `guests` to 0 (before that
+round's `round_start` hooks fire) so an unused guest never carries into
+the next round, and a `round_start` hook may still grant one for the
+round it's firing in. The guest's placement happens in normal
+rotation order, like an extra person — it is *not* an immediate
+second turn (contrast the Lasso, which explicitly requests one via
+`action["lasso"]`).
+
+**Placing on an occupied action space:** `occupied_ok=fn(state, player,
+inst, space) -> bool` on a card spec lets `player` place a person on
+`space` even though another person (a previous placement by any
+player, including `player` themself if the card allows it) is already
+there. `_placement_actions` and `_apply_place` both consult
+`cards.occupied_ok(state, player, space)` before falling back to the
+normal "is this space occupied" check, so listing and validation can't
+disagree. **`occupied_ok` must be a pure predicate** — it's evaluated
+on every `get_valid_actions` call, not only when a placement actually
+happens, so it must not mutate `inst["data"]`; express restrictions
+("only this space", "only your Nth placement", "only while some static
+condition holds") as reads against `state`/`player`/`space`
+(`space["id"]`, `player["people_placed"]`, `state["round"]`, a static
+house-type check, ...) rather than as a flag set on first use. A card
+is still never allowed to use its own `occupied_ok` to place a *second*
+person of the same player on one space in the same round — the engine
+rejects that unconditionally (matches every compendium card's "not
+with 2 of your own people" ruling).
+
+Because more than one player can now occupy a space, `occupied_by`
+keeps its old meaning (the *first* occupant — every existing reader of
+`occupied_by == idx` / `is not None` still works unmodified) and a new
+list field, `extra_occupants`, holds any additional occupants placed
+there via `occupied_ok`. Use `state["action_spaces"]` entries' full
+occupancy as `([occupied_by] if occupied_by is not None else []) +
+extra_occupants` (or just call the engine's own `_space_occupants`
+internally) — this is what `returning_home`'s `spaces` ctx and the
+`space_used` event's `occupants` ctx are built from, so a card doesn't
+need to reimplement it. Both fields reset to `None` / `[]` every round.
+**Client note:** `client/games/Agricola_MP.jsx` only renders
+`occupied_by` (the primary occupant) on the board; a future pass needs
+to render `extra_occupants` too once a card actually uses this
+mechanism.
+
 **Static ability keys** (data on the spec, queried by the engine):
 
 - `cost_mod=fn(state, player, kind, cost, ctx) -> cost` — kinds:
@@ -130,7 +184,14 @@ round-dependent or variable-cost condition needs that.
 - `field={"crops": ("vegetable",)}` — this card is a sowable field.
 - `conversions=[{"give": {...}, "get": {...}, "per_harvest": n?}]` —
   exchange rates usable during feeding (give may include animals).
-- `lasso=True` — double placement on animal markets.
+- `lasso=True` — double placement on animal markets. Interacts cleanly
+  with guests: the Lasso's replacement-turn check and a guest's
+  extra-capacity check are the same `people_total + guests` comparison,
+  so a player with both can Lasso *and* still have their guest turn
+  later in the rotation.
+- `occupied_ok=fn(state, player, inst, space) -> bool` — place on an
+  action space another (or the same) player already occupies; see
+  above.
 - `score_bonus=fn(state, player, inst) -> int` — end-game bonus points.
 - `card_action={"available": fn(state, player, inst) -> bool,
    "apply": fn(state, player, inst, ctx),
@@ -188,8 +249,12 @@ Spaces not yet revealed cannot be targeted.
 
 ## Not supported (mark UNIMPLEMENTED, cite the mechanic)
 
-- Guest tokens / extra people / placing on occupied spaces
-- Affecting other players' hands, people, or farms directly
+- Affecting other players' hands, people, or farms directly (guest
+  tokens and occupied-space placement, per se, ARE supported now --
+  see `grant_guest`/`occupied_ok` above -- but removing/returning
+  *another player's* person, as in D093 Sheep Inspector or D094/D150
+  "return the first person you placed home," is not: there's no
+  "unplace" primitive)
 - Farmers of the Moor concepts: fuel, horses, forest/moor tiles,
   heating, special actions (all of deck M, and FotM-tagged rulings)
 - Moving/removing built fences, rooms, or fields
