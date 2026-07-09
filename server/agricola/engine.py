@@ -327,6 +327,27 @@ class AgricolaEngine(GameEngine):
         if animals:
             self._gain_animals(state, player, animals, log)
 
+    def _fire_any(self, state, event, actor_player, fields, log):
+        """Broadcast the "<event>_any" twin of an owner-only event (fired
+        via fire_player elsewhere) to every player's cards, so "each time
+        ANOTHER player renovates/plows/sows/builds/bakes..." cards can
+        react. ctx is `fields` plus the usual actor/log/extra; extras
+        (like _fire) only reach the acting player -- a card belonging to
+        someone else must use cards.grant_goods instead."""
+        ctx = {"actor": actor_player["index"], "log": log, "extra": {}}
+        ctx.update(fields)
+        cards.fire(state, event + "_any", ctx)
+        self._apply_extras(state, actor_player, ctx["extra"], log)
+
+    def _fire_converted(self, state, p, give, get, via, log):
+        """Fire `converted`: goods were converted to other goods outside
+        a normal action-space grant (feeding-phase conversions, cooking
+        during accommodation). Broadcast like space_used so "each time
+        another player converts..." cards can observe it; extras only
+        reach the converting player (p)."""
+        ctx = {"give": dict(give), "get": dict(get), "via": via}
+        self._fire(state, "converted", p, ctx, log)
+
     # ── Round setup ──────────────────────────────────────────────────
 
     def _start_round(self, state, log):
@@ -423,6 +444,17 @@ class AgricolaEngine(GameEngine):
 
     def _end_work_phase(self, state, log):
         log.append("All people return home")
+        # Fire once per player, before occupied_by is reset by the next
+        # _start_round (or ever, if the game just ended). This is the
+        # single place the work phase ends on every round, harvest or
+        # not, so the event can't double-fire.
+        for p in state["players"]:
+            spaces = [s["id"] for s in state["action_spaces"]
+                      if s["occupied_by"] == p["index"]]
+            ctx = {"spaces": spaces, "log": log, "actor": p["index"],
+                   "extra": {}}
+            cards.fire_player(state, p, "returning_home", ctx)
+            self._apply_extras(state, p, ctx["extra"], log)
         if state["round"] in HARVEST_ROUNDS:
             self._start_harvest(state, log)
         else:
@@ -858,6 +890,7 @@ class AgricolaEngine(GameEngine):
         p["cells"][cell]["type"] = "field"
         log.append(f"{p['name']} plows a field")
         self._fire(state, "plow", p, {"cell": cell}, log, to_all=False)
+        self._fire_any(state, "plow", p, {"cell": cell}, log)
 
     def _room_cost(self, state, p):
         material = ROOM_COST_MATERIAL[p["house_type"]]
@@ -890,6 +923,7 @@ class AgricolaEngine(GameEngine):
         log.append(f"{p['name']} builds {len(built)} {p['house_type']} room(s)")
         self._fire(state, "rooms_built", p, {"cells": built}, log,
                    to_all=False)
+        self._fire_any(state, "rooms_built", p, {"cells": built}, log)
 
     def _stable_possible(self, p):
         if self._stables(p) >= MAX_STABLES or p["resources"]["wood"] < 2:
@@ -912,6 +946,7 @@ class AgricolaEngine(GameEngine):
         log.append(f"{p['name']} builds {len(cells)} stable(s)")
         self._fire(state, "stable_built", p, {"cells": list(cells)}, log,
                    to_all=False)
+        self._fire_any(state, "stable_built", p, {"cells": list(cells)}, log)
 
     def _do_build_fences(self, state, p, new_fences, log):
         if not new_fences or not isinstance(new_fences, list):
@@ -968,6 +1003,8 @@ class AgricolaEngine(GameEngine):
                "actor": p["index"], "extra": {}}
         cards.fire_player(state, p, "renovate", ctx)
         self._apply_extras(state, p, ctx["extra"], log)
+        self._fire_any(state, "renovate",
+                       p, {"free_stable_cell": action.get("stable")}, log)
 
     # ── Improvements, baking, sowing ─────────────────────────────────
 
@@ -1068,6 +1105,7 @@ class AgricolaEngine(GameEngine):
                "extra": {}}
         cards.fire_player(state, p, "bake", ctx)
         self._apply_extras(state, p, ctx["extra"], log)
+        self._fire_any(state, "bake", p, {"grain": total_grain}, log)
 
     def _empty_fields(self, p):
         """Sowable targets: field-tile cells and empty card fields."""
@@ -1130,6 +1168,7 @@ class AgricolaEngine(GameEngine):
         ctx = {"sown": sown, "log": log, "actor": p["index"], "extra": {}}
         cards.fire_player(state, p, "sow", ctx)
         self._apply_extras(state, p, ctx["extra"], log)
+        self._fire_any(state, "sow", p, {"sown": sown}, log)
 
     # ── Animal husbandry ─────────────────────────────────────────────
 
@@ -1167,6 +1206,7 @@ class AgricolaEngine(GameEngine):
         # at any time).
         cook_values = self._cook_values(p)
         food = 0
+        converted_events = []
         for animal, count in cook.items():
             if animal not in ANIMAL_TYPES:
                 raise ValueError("You can only cook animals here")
@@ -1177,7 +1217,9 @@ class AgricolaEngine(GameEngine):
             if count > available[animal]:
                 raise ValueError(f"Not enough {animal} to cook")
             available[animal] -= count
-            food += count * cook_values[animal]
+            gained = count * cook_values[animal]
+            food += gained
+            converted_events.append(({animal: count}, {"food": gained}))
         if food:
             p["resources"]["food"] += food
             log.append(f"{p['name']} cooks animals for {food} food")
@@ -1196,12 +1238,22 @@ class AgricolaEngine(GameEngine):
         lasso = pending.get("after_lasso")
         state["prompts"].pop(0)
 
+        # Fire `converted` for each animal cooked, now that the prompt
+        # this accommodation resolved is already popped: if a hook grants
+        # more animals, _gain_animals queues a fresh prompt rather than
+        # merging into (and then losing) the one we just resolved.
+        for give, get in converted_events:
+            self._fire_converted(state, p, give, get, "cook", log)
+
         if state["phase"] == "work" and not self._prompt(state):
             if lasso and p["people_placed"] < p["people_total"]:
                 log.append(f"{p['name']} uses the Lasso to place again")
                 self._advance_work(state, log, start_pidx=pidx)
             else:
                 self._advance_work(state, log)
+        elif state["phase"] == "feeding" and not self._prompt(state) and \
+                all(pl["fed"] for pl in state["players"]):
+            self._finish_harvest(state, log)
         return self._result(state, log)
 
     def _apply_animal_placement(self, p, placements, pets, totals):
@@ -1319,6 +1371,9 @@ class AgricolaEngine(GameEngine):
                 self._advance_work(state, log, start_pidx=pidx)
             else:
                 self._advance_work(state, log)
+        elif state["phase"] == "feeding" and not self._prompt(state) and \
+                all(pl["fed"] for pl in state["players"]):
+            self._finish_harvest(state, log)
         return self._result(state, log)
 
     def _apply_card_action(self, state, pidx, action):
@@ -1365,6 +1420,13 @@ class AgricolaEngine(GameEngine):
 
         cook_values = self._cook_values(p)
         raw = cards.raw_values(p)
+        # Buffer "converted" events instead of firing mid-loop: a hook
+        # granting goods (ctx["extra"]) must not run between two
+        # conversion entries, where it could pollute the resource checks
+        # (available amounts, harvest_conversions_used limits) later
+        # entries in this same loop still rely on. Firing the whole
+        # batch once the loop is done keeps the conversion math pure.
+        converted_events = []
         for conv in action.get("conversions") or []:
             good = conv.get("good")
             via = conv.get("via")
@@ -1377,7 +1439,9 @@ class AgricolaEngine(GameEngine):
                 if p["resources"][good] < count:
                     raise ValueError(f"Not enough {good}")
                 p["resources"][good] -= count
-                p["resources"]["food"] += count * raw[good]
+                gained = count * raw[good]
+                p["resources"]["food"] += gained
+                converted_events.append(({good: count}, {"food": gained}, "raw"))
             elif via == "cook":
                 if not cook_values or good not in cook_values:
                     raise ValueError("You cannot cook that")
@@ -1387,7 +1451,9 @@ class AgricolaEngine(GameEngine):
                     p["resources"]["vegetable"] -= count
                 else:
                     self._remove_animals(p, good, count)
-                p["resources"]["food"] += count * cook_values[good]
+                gained = count * cook_values[good]
+                p["resources"]["food"] += gained
+                converted_events.append(({good: count}, {"food": gained}, "cook"))
             elif via in ("joinery", "pottery", "basketmaker"):
                 if via not in p["improvements"]:
                     raise ValueError(f"You do not own the {via}")
@@ -1401,6 +1467,7 @@ class AgricolaEngine(GameEngine):
                 p["resources"][resource] -= 1
                 p["resources"]["food"] += value
                 p["harvest_conversions_used"].append(via)
+                converted_events.append(({resource: 1}, {"food": value}, via))
             elif isinstance(via, str) and ":" in via:
                 # Card-provided conversion "<card_id>:<index>".
                 match = next((c for key, c, _inst
@@ -1408,10 +1475,14 @@ class AgricolaEngine(GameEngine):
                               if key == via), None)
                 if match is None:
                     raise ValueError("Unknown card conversion")
+                match_inst = next((i for key, _c, i
+                                   in cards.conversion_options(p)
+                                   if key == via), None)
                 limit = match.get("per_harvest")
                 used = p["harvest_conversions_used"].count(via)
                 if limit is not None and used + count > limit:
                     raise ValueError("Conversion limit reached this harvest")
+                total_give, total_get = {}, {}
                 for _ in range(count):
                     for res, amount in match["give"].items():
                         if res in ANIMAL_TYPES:
@@ -1420,11 +1491,18 @@ class AgricolaEngine(GameEngine):
                             raise ValueError(f"Not enough {res}")
                         else:
                             p["resources"][res] -= amount
+                        total_give[res] = total_give.get(res, 0) + amount
                     for res, amount in match["get"].items():
                         p["resources"][res] += amount
+                        total_get[res] = total_get.get(res, 0) + amount
                     p["harvest_conversions_used"].append(via)
+                converted_events.append(
+                    (total_give, total_get, match_inst["id"]))
             else:
                 raise ValueError("Unknown conversion")
+
+        for give, get, conv_via in converted_events:
+            self._fire_converted(state, p, give, get, conv_via, log)
 
         needed = self._food_needed(state, p)
         paid = min(needed, p["resources"]["food"])
@@ -1439,7 +1517,9 @@ class AgricolaEngine(GameEngine):
             log.append(f"{p['name']} feeds their family ({needed} food)")
         p["fed"] = True
 
-        if all(pl["fed"] for pl in state["players"]):
+        # A "converted" hook could have queued an accommodation prompt
+        # (extra animals); don't advance past feeding until it resolves.
+        if all(pl["fed"] for pl in state["players"]) and not self._prompt(state):
             self._finish_harvest(state, log)
         return self._result(state, log)
 

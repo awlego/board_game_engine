@@ -64,6 +64,35 @@ through the accommodation prompt automatically):
 | `bake` | after own bake | `grain` count baked |
 | `renovate` | after own renovation | `free_stable_cell` param |
 | `family_growth` | own family growth | — |
+| `converted` | any goods→goods conversion outside a normal action-space grant (feeding-phase conversions in the "feed" action; cooking animals during accommodation instead of placing them) | `give` (goods consumed), `get` (goods produced), `via` ("raw", "cook", an improvement id like "joinery", or the converting card's own id) |
+| `returning_home` | once per player at the end of the work phase, before `occupied_by` is reset (own cards only) | `spaces`: action-space ids that player's people occupy this round |
+| `renovate_any` / `plow_any` / `sow_any` / `rooms_built_any` / `stable_built_any` / `bake_any` | broadcast twin of the correspondingly-named owner-only event above, fired to **every** player's cards (not just the actor's) | same fields as the parent event, plus `actor` |
+
+`converted` is broadcast like `space_used` (all players' cards, actor
+first) so "each time another player converts..." cards work; filter on
+`ctx["actor"]`. Timing: for the "feed" action, every conversion in the
+request is applied first (so a hook can't run *between* two conversion
+entries and pollute the resource checks or `harvest_conversions_used`
+limits later entries in the same request still rely on), then all of
+that request's `converted` events fire as a batch, before the food-need
+calculation — so a hook that grants extra food via `ctx["extra"]` still
+counts toward paying that feeding. For the accommodate-cook branch, the
+event fires after the accommodation's own prompt has already been
+popped, so a hook granting more animals queues a fresh prompt instead of
+being merged into (and discarded with) the one just resolved.
+
+**`returning_home` prompt safety (verified empirically, see
+`tests/test_agricola.py`):** do not call `prompt_choice` (or grant
+animals via `ctx["extra"]`) from a `returning_home` hook. On a harvest
+round, `_end_work_phase` leads into `_start_harvest`/feeding, which
+does not clear `state["prompts"]`, so a queued prompt would survive
+long enough to reach the player. But on a non-harvest round,
+`_end_work_phase` leads straight into the next `_start_round`, which
+clears `state["prompts"]` before anyone can respond — the exact same
+hazard already documented for `round_start` hooks below. Since a card
+has no way to know in advance whether the round it fires on is a
+harvest round, `returning_home` hooks must auto-apply their effect
+(pick a default, like `round_start` hooks do) rather than prompt.
 
 `resolve_choice` is **not** a hook: pass it as a top-level spec key
 (`compendium_card(..., resolve_choice=fn)`); the engine reads

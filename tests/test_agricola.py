@@ -19,6 +19,24 @@ def engine():
     return AgricolaEngine()
 
 
+@pytest.fixture
+def temp_card():
+    """Register a throwaway card spec (cards.card(...) args/kwargs) for
+    one test, then unregister it -- otherwise it leaks into the global
+    cards.CARDS registry and breaks test_agricola_catalog.py, which
+    exports every registered card to the client catalog."""
+    registered = []
+
+    def _register(cid, *args, **kwargs):
+        spec = cards.card(cid, *args, **kwargs)
+        registered.append(cid)
+        return spec
+
+    yield _register
+    for cid in registered:
+        cards.CARDS.pop(cid, None)
+
+
 def make_state(engine, n=2, seed=42):
     random.seed(seed)
     ids = [f"p_{i}" for i in range(n)]
@@ -1198,6 +1216,219 @@ def test_game_over_and_winner(engine):
     assert s["scores"] is not None
     assert s["winners"] == [0]
     assert engine.get_waiting_for(s) == []
+
+
+# ── converted / returning_home / broadcast (_any) event hooks ────────
+
+def test_converted_event_feed_raw(engine, temp_card):
+    """`converted` fires with give/get/via for a feeding-phase raw
+    conversion, reaching the converting player's own cards."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    cid = "test_converted_feed_raw"
+    temp_card(cid, "Test Card", "minor", "test",
+               hooks={"converted": lambda state, player, inst, ctx:
+                      inst["data"].setdefault("seen", []).append(
+                          {"give": ctx["give"], "get": ctx["get"],
+                           "via": ctx["via"], "actor": ctx["actor"]})})
+    put_in_play(s, first, cid)
+    p["resources"].update({"food": 0, "grain": 2})
+    s["phase"] = "feeding"
+    for pl in s["players"]:
+        pl["fed"] = False
+    s = engine.apply_action(s, p["player_id"], {
+        "kind": "feed",
+        "conversions": [{"good": "grain", "via": "raw", "count": 2}],
+    }).new_state
+    inst = next(i for i in s["players"][first]["minors"] if i["id"] == cid)
+    assert inst["data"]["seen"] == [
+        {"give": {"grain": 2}, "get": {"food": 2}, "via": "raw", "actor": first}]
+
+
+def test_converted_event_broadcasts_to_other_players(engine, temp_card):
+    """`converted` fires to ALL players' cards (like space_used), not
+    just the converting player's own, so "each time another player
+    converts..." cards can react."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = 1 - first
+    p = s["players"][first]
+    cid = "test_converted_observer"
+    temp_card(cid, "Observer", "minor", "test",
+               hooks={"converted": lambda state, player, inst, ctx:
+                      inst["data"].setdefault("seen_actors", []).append(ctx["actor"])})
+    put_in_play(s, other, cid)
+    p["resources"].update({"food": 0, "grain": 1})
+    s["phase"] = "feeding"
+    for pl in s["players"]:
+        pl["fed"] = False
+    s = engine.apply_action(s, p["player_id"], {
+        "kind": "feed",
+        "conversions": [{"good": "grain", "via": "raw", "count": 1}],
+    }).new_state
+    inst = next(i for i in s["players"][other]["minors"] if i["id"] == cid)
+    assert inst["data"]["seen_actors"] == [first]
+
+
+def test_converted_event_accommodate_cook(engine, temp_card):
+    """`converted` also fires for the cook branch of accommodate
+    (cooking gained animals instead of placing them), via="cook"."""
+    s, first = sheep_pasture_state(engine)
+    p = s["players"][first]
+    p["improvements"].append("fireplace_2")
+    s["available_improvements"].remove("fireplace_2")
+    cid = "test_converted_cook_branch"
+    temp_card(cid, "Test Card", "minor", "test",
+               hooks={"converted": lambda state, player, inst, ctx:
+                      inst["data"].setdefault("seen", []).append(
+                          {"give": ctx["give"], "get": ctx["get"],
+                           "via": ctx["via"]})})
+    put_in_play(s, first, cid)
+    pid = p["player_id"]
+    set_sheep_market(s, 2)
+    s = place(engine, s, {"kind": "place", "space": "sheep_market"})
+    s = engine.apply_action(s, pid, {
+        "kind": "accommodate",
+        "cook": {"sheep": 1},
+        "placements": [{"cell": 4, "type": "sheep", "count": 1}],
+    }).new_state
+    inst = next(i for i in s["players"][first]["minors"] if i["id"] == cid)
+    assert inst["data"]["seen"] == [
+        {"give": {"sheep": 1}, "get": {"food": 2}, "via": "cook"}]
+
+
+def test_returning_home_spaces_non_harvest_round(engine, temp_card):
+    """`returning_home` fires once per player at the end of the work
+    phase with the action-space ids that player's people occupy --
+    verified on a non-harvest round."""
+    s = make_state(engine, 2)
+    cid = "test_returning_home_spaces_nh"
+    temp_card(cid, "Test Card", "minor", "test",
+               hooks={"returning_home": lambda state, player, inst, ctx:
+                      inst["data"].setdefault("fires", []).append(list(ctx["spaces"]))})
+    put_in_play(s, 0, cid)
+    s["round"] = 2  # not a harvest round
+    s["phase"] = "work"
+    forest = next(sp for sp in s["action_spaces"] if sp["id"] == "forest")
+    clay_pit = next(sp for sp in s["action_spaces"] if sp["id"] == "clay_pit")
+    forest["occupied_by"] = 0
+    clay_pit["occupied_by"] = 1
+    for pl in s["players"]:
+        pl["people_placed"] = pl["people_total"]
+    log = []
+    engine._end_work_phase(s, log)
+    inst = next(i for i in s["players"][0]["minors"] if i["id"] == cid)
+    assert inst["data"]["fires"] == [["forest"]]  # fired exactly once
+
+
+def test_returning_home_spaces_harvest_round(engine, temp_card):
+    """Same as above, verified on a harvest round: still fires exactly
+    once with the correct spaces, at the same single choke point."""
+    s = make_state(engine, 2)
+    cid = "test_returning_home_spaces_h"
+    temp_card(cid, "Test Card", "minor", "test",
+               hooks={"returning_home": lambda state, player, inst, ctx:
+                      inst["data"].setdefault("fires", []).append(list(ctx["spaces"]))})
+    put_in_play(s, 0, cid)
+    s["round"] = 4  # a harvest round
+    s["phase"] = "work"
+    forest = next(sp for sp in s["action_spaces"] if sp["id"] == "forest")
+    forest["occupied_by"] = 0
+    for pl in s["players"]:
+        pl["people_placed"] = pl["people_total"]
+    log = []
+    engine._end_work_phase(s, log)
+    assert s["phase"] == "feeding"  # harvest ran
+    inst = next(i for i in s["players"][0]["minors"] if i["id"] == cid)
+    assert inst["data"]["fires"] == [["forest"]]  # fired exactly once
+
+
+def test_returning_home_prompt_discarded_on_non_harvest_round(engine, temp_card):
+    """Prompting (or granting animals via ctx["extra"]) from
+    returning_home is unsafe except on harvest rounds: on a non-harvest
+    round the very next _start_round wipes state["prompts"] before the
+    player ever gets to respond -- the same hazard already documented
+    for round_start hooks. See decks/GUIDE.md."""
+    s = make_state(engine, 2)
+    cid = "test_returning_home_prompt_nh"
+
+    def hook(state, player, inst, ctx):
+        cards.prompt_choice(state, player, inst["id"], "Take wood or clay?",
+                             ["wood", "clay"])
+
+    temp_card(cid, "Test Card", "minor", "test",
+               hooks={"returning_home": hook},
+               resolve_choice=lambda state, player, inst, ctx:
+                   inst["data"].setdefault("resolved", True))
+    put_in_play(s, 0, cid)
+    s["round"] = 2  # not a harvest round
+    s["phase"] = "work"
+    for pl in s["players"]:
+        pl["people_placed"] = pl["people_total"]
+    log = []
+    engine._end_work_phase(s, log)
+    assert s["prompts"] == []  # queued, then silently wiped
+    inst = next(i for i in s["players"][0]["minors"] if i["id"] == cid)
+    assert "resolved" not in inst["data"]
+
+
+def test_renovate_any_broadcasts_to_other_players(engine, temp_card):
+    """`renovate_any` fires to ALL players' cards (ctx = the same fields
+    plus actor), unlike the owner-only `renovate` event -- enabling
+    "each time ANOTHER player renovates..." cards."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = 1 - first
+    cid = "test_renovate_any_observer"
+    temp_card(cid, "Observer", "minor", "test",
+               hooks={"renovate_any": lambda state, player, inst, ctx:
+                      inst["data"].setdefault("seen", []).append(ctx["actor"])})
+    put_in_play(s, other, cid)
+    give(s, first, clay=2, reed=1)
+    add_space(s, "house_redevelopment", "House Redevelopment")
+    s = place(engine, s, {"kind": "place", "space": "house_redevelopment"})
+    inst = next(i for i in s["players"][other]["minors"] if i["id"] == cid)
+    assert inst["data"]["seen"] == [first]
+
+
+def test_sow_any_broadcasts_to_other_players(engine, temp_card):
+    """`sow_any` fires to ALL players' cards, unlike the owner-only
+    `sow` event."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = 1 - first
+    p = s["players"][first]
+    cid = "test_sow_any_observer"
+    temp_card(cid, "Observer", "minor", "test",
+               hooks={"sow_any": lambda state, player, inst, ctx:
+                      inst["data"].setdefault("seen", []).append(ctx["actor"])})
+    put_in_play(s, other, cid)
+    p["cells"][0]["type"] = "field"
+    give(s, first, grain=1)
+    add_space(s, "grain_utilization", "Grain Utilization")
+    s = place(engine, s, {"kind": "place", "space": "grain_utilization",
+                          "sow": [{"cell": 0, "crop": "grain"}]})
+    inst = next(i for i in s["players"][other]["minors"] if i["id"] == cid)
+    assert inst["data"]["seen"] == [first]
+
+
+def test_plow_any_broadcasts_to_other_players(engine, temp_card):
+    """`plow_any` fires to ALL players' cards; covers the self._fire(...,
+    to_all=False) call sites (plow/rooms_built/stable_built), distinct
+    from the cards.fire_player(...) sites (renovate/bake/sow)."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = 1 - first
+    cid = "test_plow_any_observer"
+    temp_card(cid, "Observer", "minor", "test",
+               hooks={"plow_any": lambda state, player, inst, ctx:
+                      inst["data"].setdefault("seen", []).append(
+                          (ctx["actor"], ctx["cell"]))})
+    put_in_play(s, other, cid)
+    s = place(engine, s, {"kind": "place", "space": "farmland", "cell": 0})
+    inst = next(i for i in s["players"][other]["minors"] if i["id"] == cid)
+    assert inst["data"]["seen"] == [(first, 0)]
 
 
 # ── Random full-game fuzz ────────────────────────────────────────────

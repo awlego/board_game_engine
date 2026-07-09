@@ -77,13 +77,27 @@ accommodation prompt for animal goods. `on_play_gain` and
 card with either factory is animal-safe regardless of the gain's contents.
 
 Current hook points: `play`, `occupation_played`, `round_start`,
-`space_used`, `fences_built`, `stable_built`, `sow`, `bake`, `renovate`,
-`harvest_field`.
+`space_used`, `fences_built`, `stable_built`, `rooms_built`, `sow`, `bake`,
+`renovate`, `plow`, `harvest_field`, `converted`, `returning_home`.
 
 Firing order is deterministic: players in index order starting with the
 actor, then each player's cards in play order. `space_used` fires for *all*
 players' cards, which is how "each time *another player* uses the Cattle
-Market..." cards work — the hook just checks `ctx["actor"]`.
+Market..." cards work — the hook just checks `ctx["actor"]`. `converted`
+(any goods→goods conversion outside a normal space grant: feeding-phase
+conversions, cooking during accommodation) is broadcast the same way.
+
+`renovate`, `plow`, `sow`, `rooms_built`, `stable_built`, and `bake` fire
+only to the *acting* player's own cards (`fire_player`) — dozens of
+shipped cards assume that. Each of these also fires a broadcast twin,
+`<event>_any` (e.g. `renovate_any`), to every player's cards with the
+same ctx plus `actor`, so "each time ANOTHER player renovates/plows/
+sows/builds/bakes..." cards are expressible without disturbing the
+existing owner-only cards. See `decks/GUIDE.md`'s hook table for the
+full ctx shape of every event, including `converted` and
+`returning_home` (fired once per player at the end of the work phase,
+before `occupied_by` resets — see that file for the prompt-safety
+caveat).
 
 ### 3. Modifier queries (pull)
 
