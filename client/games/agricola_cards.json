@@ -4489,42 +4489,54 @@
   "type": "occupation"
  },
  "E11": {
+  "cost": {
+   "food": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Field",
-  "reason": "not yet implemented",
   "text": "When you play this card, immediately plough 1 field. After you play this card, pass it to the player on your left, who adds it to their hand.",
+  "traveling": true,
   "type": "minor"
  },
  "E12": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Fishing Rod",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"Fishing\" action space, you receive 1 additional food. From round 8 onwards, you receive 2 additional food.",
   "type": "minor"
  },
  "E13": {
+  "cost": {
+   "stone": 1,
+   "wood": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Axe",
-  "reason": "not yet implemented",
   "text": "Whenever you add a room to your wooden hut, you only pay 2 wood and 2 reed.",
   "type": "minor"
  },
  "E14": {
+  "bake": [
+   2,
+   5
+  ],
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Baker's Oven",
-  "reason": "not yet implemented",
+  "points": 3,
+  "prereq_text": "an oven (Clay Oven or Stone Oven) to return",
   "text": "Whenever you use the \"Bake bread\" a bread baking action, you can use the Baker's Oven to convert up to 2 grain into 5 food each. When you play this card, you can also take the \"Bake bread\" action bake bread immediately.",
   "type": "minor"
  },
  "E147": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 3,
   "name": "Land Agent",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"Take 1 Vegetable\" action space, you also receive 1 grain. When you play this card, you receive 1 vegetable from the general supply.",
   "type": "occupation"
  },
@@ -4532,7 +4544,7 @@
   "deck": "E",
   "implemented": false,
   "name": "Academic",
-  "reason": "not yet implemented",
+  "reason": "Academic: 'counts as 2 occupations' must retroactively change how OTHER cards count occupations (minor-improvement prerequisites engine-wide, plus Reeve E217/Tutor E174's own scoring); needs_occupations/exact_occupations and occupation counts read len(player['occupations']) directly with no per-card weighting hook, and retrofitting every prereq/scoring consumer engine-wide is out of scope for one card.",
   "text": "This card counts as 2 occupations for minor improvements and when scoring the Reeve E217 or Tutor E174 occupation card.",
   "type": "occupation"
  },
@@ -4540,7 +4552,7 @@
   "deck": "E",
   "implemented": false,
   "name": "Master Baker",
-  "reason": "not yet implemented",
+  "reason": "Master Baker: reacting to ANOTHER player baking bread needs cross-player observation of the 'bake' event, but engine.py's _do_bake fires it via cards.fire_player (only the baking player's own cards), never to other players' cards.",
   "text": "Whenever another player bakes bread, you can bake bread if you have a baking improvement with the \"baking\" symbol. If you take a bake action yourself, you receive 1 additional food.",
   "type": "occupation"
  },
@@ -4548,47 +4560,55 @@
   "deck": "E",
   "implemented": false,
   "name": "Baking Tray",
-  "reason": "not yet implemented",
+  "reason": "makes Clay Oven/Stone Oven count as minor improvements for you (score-category manipulation beyond bonus points is unsupported) and discounts their cost by 1 resource of your choice -- but modified_cost's kind='improvement' call passes no ctx identifying which improvement is being built, so a cost_mod can't target just these two ovens without misfiring on every other major improvement; the same discount on the Wood-fired Oven (a minor card, E27) is unreachable too, since _play_minor pays a minor's own cost directly and never calls modified_cost.",
   "text": "The Clay Oven A5 and Stone Oven A6 are minor improvements for you. The Clay Oven, Stone Oven and Wood-fired Oven E27 cost you 1 building resource (of your choice) less.",
   "type": "minor"
  },
  "E150": {
   "deck": "E",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Baker",
-  "reason": "not yet implemented",
   "text": "During each harvest, you may bake bread at the start of the feeding phase if you have an appropriate improvement. When you play this card, you may bake bread as an additional action.",
   "type": "occupation"
  },
  "E151": {
   "deck": "E",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Master Builder",
-  "reason": "not yet implemented",
   "text": "Once during the game, at any time after your home reaches at least 5 rooms, you may extend it by 1 room at no cost.",
   "type": "occupation"
  },
  "E152": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 3,
   "name": "Berry Picker",
-  "reason": "not yet implemented",
   "text": "Whenever you use a person's action to take wood, you receive an additional 1 food.",
   "type": "occupation"
  },
  "E153": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Mendicant",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you can discard up to 2 begging cards without losing points for them.",
   "type": "occupation"
  },
  "E154": {
+  "conversions": [
+   {
+    "get": {
+     "food": 3
+    },
+    "give": {
+     "grain": 1
+    },
+    "per_harvest": 1
+   }
+  ],
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Master Brewer",
-  "reason": "not yet implemented",
   "text": "In the feeding phase of each harvest, the Master Brewer can convert up to 1 grain to 3 food.",
   "type": "occupation"
  },
@@ -4596,7 +4616,7 @@
   "deck": "E",
   "implemented": false,
   "name": "Bread Seller",
-  "reason": "not yet implemented",
+  "reason": "Bread Seller: same gap as Master Baker -- needs to react to ANY player's bake (including others), but the 'bake' event only fires to the acting player's own in-play cards.",
   "text": "You receive 1 food from the general supply for each grain that is baked whenever any player (including yourself) bakes bread.",
   "type": "occupation"
  },
@@ -4604,23 +4624,22 @@
   "deck": "E",
   "implemented": false,
   "name": "Brush Maker",
-  "reason": "not yet implemented",
+  "reason": "Brush Maker: needs to count each time a wild boar is converted to food (cooked), but no hook fires for cooking/conversion -- the accommodate and feed 'cook' paths mutate resources directly with no card event.",
   "text": "Whenever you convert wild boar to food, you place the boar on this card. At the end of the game, you receive bonus points if you have wild boar markers on this card: 4 or more markers, 3 points; 3 markers, 2 points; 2 markers, 1 point.",
   "type": "occupation"
  },
  "E157": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 3,
   "name": "Thatcher",
-  "reason": "not yet implemented",
   "text": "Pay 1 reed less to build each room, for each renovation, and for each of the Water Mill I103 , Half-timbered House E21 , Chicken Coop I84 , Holiday House I71 , Mansion K144 and Corn Storehouse I86 .",
   "type": "occupation"
  },
  "E158": {
   "deck": "E",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 3,
   "name": "Turner",
-  "reason": "not yet implemented",
   "text": "At any time, you can use the Turner to convert any number of wood to 1 food each.",
   "type": "occupation"
  },
@@ -4628,23 +4647,22 @@
   "deck": "E",
   "implemented": false,
   "name": "Head of the Family",
-  "reason": "not yet implemented",
+  "reason": "Head of the Family: requires using a room-building/family-growth action space already occupied by another player; placing on occupied spaces is explicitly unsupported.",
   "text": "You can use any room building or family growth action space, even if another player has already placed a person on it.",
   "type": "occupation"
  },
  "E16": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Building Material",
-  "reason": "not yet implemented",
   "text": "You receive either 1 wood or 1 clay when you play this card. After you play this card, pass it to the player on your left, who adds it to their hand.",
+  "traveling": true,
   "type": "minor"
  },
  "E160": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 4,
   "name": "Farmer",
-  "reason": "not yet implemented",
   "text": "The next time you build fences, you receive 1 wild boar. Each time you build at least 1 fence after that, you receive 1 cattle.",
   "type": "occupation"
  },
@@ -4652,15 +4670,15 @@
   "deck": "E",
   "implemented": false,
   "name": "Fisherman",
-  "reason": "not yet implemented",
+  "reason": "Fisherman: the optional double-take on Fishing requires paying food to OTHER players who own any of several named original-edition minors (Fishing Rod, Raft, Canoe, Fish Trap, Landing Net) that are outside this occupations deck's scope and not guaranteed to exist in the registry; paying an arbitrary/unknown set of other players in one action isn't expressible.",
   "text": "Whenever you use the \"Fishing\" action space, you can choose to take twice as many food as is on the space. If you do this, you must give 1 food each to the owners of the Fishing Rod E12 , Raft E22 , Canoe E30 , Fish Trap I95 , and Landing Net K126 .",
   "type": "occupation"
  },
  "E162": {
   "deck": "E",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Meat Seller",
-  "reason": "not yet implemented",
   "text": "If you have an oven, you can convert your animals into food at any time. Take 2 food for each sheep, 3 for each wild boar and 4 for each cattle.",
   "type": "occupation"
  },
@@ -4668,7 +4686,7 @@
   "deck": "E",
   "implemented": false,
   "name": "Field Warden",
-  "reason": "not yet implemented",
+  "reason": "Field Warden: requires using Take-1-Vegetable/Plough-1-Field/Plough-Field-and-Sow action spaces already occupied by another player; placing on occupied spaces is explicitly unsupported.",
   "text": "You can use the \"Take 1 Vegetable\", \"Plough 1 Field\" and \"Plough Field and Sow\" action spaces even if another player has already placed a person on the space.",
   "type": "occupation"
  },
@@ -4676,79 +4694,82 @@
   "deck": "E",
   "implemented": false,
   "name": "Master Forester",
-  "reason": "not yet implemented",
+  "reason": "Master Forester: adds a brand-new action space to the board and forces any player who uses it to pay the owner food first (a legality-gating replacement effect on other players' actions); neither dynamically adding action spaces nor gating other players' placements is supported.",
   "text": "Include the \"2 Wood\" action card from the 3-player game as an additional forest. At the start of each round, place 2 wood on the card. Any player who uses this action space must pay you 2 food.",
   "type": "occupation"
  },
  "E165": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 3,
   "name": "Yeoman Farmer",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you only lose points for unused farmyard spaces and begging cards.",
   "type": "occupation"
  },
  "E166": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 4,
   "name": "Undergardener",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"Day Labourer\" action space, you also receive 1 vegetable.",
   "type": "occupation"
  },
  "E167": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 4,
   "name": "Conjurer",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"Traveling Players\" action on an action space, you receive1 additional grain.",
   "type": "occupation"
  },
  "E168": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 3,
   "name": "Greengrocer",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"Take 1 Grain\" action space, you also receive 1 vegetable.",
   "type": "occupation"
  },
  "E169": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 4,
   "name": "Storyteller",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"Traveling Players\" action on an action space, you can leave 1 food on the space and receive 1 vegetable instead.",
   "type": "occupation"
  },
  "E17": {
+  "cost": {
+   "stone": 1,
+   "wood": 3
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Windmill",
-  "reason": "not yet implemented",
+  "points": 2,
+  "raw_values": {
+   "grain": 2
+  },
   "text": "At any time, you can convert grain to 2 food (without having to bake bread).",
   "type": "minor"
  },
  "E170": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 3,
   "name": "Estate Manager",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you receive bonus points, if for none of the three animal species, any other player has more animals than you: in a 3-player game, 2 points; in a 4-player game, 3 points; in a 5-player game, 4 points.",
   "type": "occupation"
  },
  "E171": {
   "deck": "E",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Dock Worker",
-  "reason": "not yet implemented",
   "text": "At any time, you can use the Dock Worker to convert 3 wood to either 1 clay, 1 reed or 1 stone, or to convert 2 clay, 2 reed or 2 stone to 1 other building resource.",
   "type": "occupation"
  },
  "E172": {
+  "cost": {
+   "food": 2
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Chief",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you receive 1 bonus point for each room in your stone house. Playing this card costs an additional 2 food.",
   "type": "occupation"
  },
@@ -4756,47 +4777,42 @@
   "deck": "E",
   "implemented": false,
   "name": "Chief's Daughter",
-  "reason": "not yet implemented",
+  "reason": "Chief's Daughter: must react to another player playing the Chief (E172) WHILE STILL IN HAND (unplayed), but the hook system only fires events to already-in-play cards (cards.fire/fire_player iterate in_play(player)); a card sitting in hand can never observe or react to anything.",
   "text": "If another player plays the Chief E172 card, you can play this card immediately at no cost. At the end of the game, you receive 3 bonus points if you have a stone house, 1 if you have a clay hut.",
   "type": "occupation"
  },
  "E174": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Tutor",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you receive 1 bonus point for each occupation that you play after this one.",
   "type": "occupation"
  },
  "E175": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Hedge Keeper",
-  "reason": "not yet implemented",
   "text": "Whenever you build at least 1 fence, you can build 3 additional fences without paying any additional wood.",
   "type": "occupation"
  },
  "E176": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Woodcutter",
-  "reason": "not yet implemented",
   "text": "You receive 1 additional wood whenever you use a person's action to take wood.",
   "type": "occupation"
  },
  "E177": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 3,
   "name": "Wooden Hut Builder",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you receive 1 bonus point for each room in your wooden hut.",
   "type": "occupation"
  },
  "E178": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 4,
   "name": "Hut Builder",
-  "reason": "not yet implemented",
   "text": "Play this card during round 1-4. At the start of round 11, you can extend your hut by 1 room at no cost, as long as you have not yet renovated to a stone house.",
   "type": "occupation"
  },
@@ -4804,95 +4820,105 @@
   "deck": "E",
   "implemented": false,
   "name": "Merchant",
-  "reason": "not yet implemented",
+  "reason": "Merchant: a second use of a 'minor OR major improvement' action requires reimplementing the engine-internal major-improvement transaction (cost, available_improvements bookkeeping, well/bake_on_build hooks) outside the normal placement flow -- the same gap flagged for B150.",
   "text": "Whenever you use a \"minor improvement\" or \"minor or major improvement\" action, you can pay 1 food to use the action a second time.",
   "type": "occupation"
  },
  "E18": {
   "deck": "E",
-  "implemented": false,
+  "field": {
+   "crops": [
+    "vegetable"
+   ]
+  },
+  "min_players": 1,
   "name": "Bean Field",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "2 occupations",
   "text": "When you sow, you can plant vegetables on this card as though it were a field.",
   "type": "minor"
  },
  "E180": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 4,
   "name": "Hobby Farmer",
-  "reason": "not yet implemented",
   "text": "When you play this card, you receive 1 vegetable that you may sow immediately if you have an empty plowed field.",
   "type": "occupation"
  },
  "E181": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 4,
   "name": "Cook",
-  "reason": "not yet implemented",
   "text": "In the feeding phase of each harvest, only 2 of your people eat 2 food each; all others are satisfied with only 1 food each.",
   "type": "occupation"
  },
  "E182": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 3,
   "name": "Charcoal Burner",
-  "reason": "not yet implemented",
   "text": "You receive 1 food and 1 wood whenever any player (including you) builds a baking improvement with a \"baking\" symbol.",
   "type": "occupation"
  },
  "E183": {
+  "conversions": [
+   {
+    "get": {
+     "food": 3
+    },
+    "give": {
+     "reed": 1
+    },
+    "per_harvest": 1
+   }
+  ],
   "deck": "E",
-  "implemented": false,
+  "min_players": 4,
   "name": "Basketmaker",
-  "reason": "not yet implemented",
   "text": "In each harvest, the Basketmaker can convert up to 1 reed to 3 food.",
   "type": "occupation"
  },
  "E184": {
   "deck": "E",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Grocer",
-  "reason": "not yet implemented",
   "text": "Pile (from bottom to top) 1 vegetable, reed, clay, wood, vegetable, stone, grain, reed on this card. At any time, you may buy the top item for 1 food.",
   "type": "occupation"
  },
  "E185": {
   "deck": "E",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 4,
   "name": "Clay Firer",
-  "reason": "not yet implemented",
   "text": "You can use the Clay Firer at any time to convert 2 clay to 1 stone or 3 clay to 2 stone.",
   "type": "occupation"
  },
  "E186": {
   "deck": "E",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 4,
   "name": "Clay Seller",
-  "reason": "not yet implemented",
   "text": "You can use the Clay Seller at any time to convert 2 clay to 1 sheep or 1 reed, 3 clay to 1 wild boar or 1 stone, and/or 4 clay to 1 cattle.",
   "type": "occupation"
  },
  "E187": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Clay Deliveryman",
-  "reason": "not yet implemented",
   "text": "Place 1 clay on each remaining space for rounds 6 to 14. At the start of these rounds, you receive the clay.",
   "type": "occupation"
  },
  "E188": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Clay Mixer",
-  "reason": "not yet implemented",
   "text": "Whenever you take only clay with one of your people's actions, you receive 2 additional clay.",
   "type": "occupation"
  },
  "E189": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Lord of the Manor",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you receive 1 bonus point for each scoring category where you have scored the maximum 4 points.",
   "type": "occupation"
  },
@@ -4900,23 +4926,22 @@
   "deck": "E",
   "implemented": false,
   "name": "Gypsy's Crock",
-  "reason": "not yet implemented",
+  "reason": "requires detecting a Fireplace/Cooking Hearth 'convert 2+ goods to food at once' event; the cook conversion in _apply_feed's feeding-phase loop never fires a card event (same gap as B029).",
   "text": "Whenever you convert any 2 goods to food at one time using a Fireplace A1/A2 , Cooking Hearth A3/A4 or Cooking Corner I85 , you receive 1 additional food.",
   "type": "minor"
  },
  "E190": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Maid",
-  "reason": "not yet implemented",
   "text": "Once you have built a clay hut, place 1 food on each remaining round space. At the start of these rounds, you receive the food.",
   "type": "occupation"
  },
  "E191": {
   "deck": "E",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Mason",
-  "reason": "not yet implemented",
   "text": "Once during the game, at any time after your stone house reaches at least 4 rooms, you may extend it by 1 room at no cost.",
   "type": "occupation"
  },
@@ -4924,7 +4949,7 @@
   "deck": "E",
   "implemented": false,
   "name": "Patron",
-  "reason": "not yet implemented",
+  "reason": "Patron: '2 food before you pay the costs' requires granting resources usable toward an occupation's own cost payment before that payment happens, but _play_occupation pays the food cost before any hook fires -- the same gap flagged for B155 (no alternate-resource-source channel for occupation costs).",
   "text": "In future, whenever you play an occupation, you receive 2 food before you pay the costs of the occupation.",
   "type": "occupation"
  },
@@ -4932,39 +4957,35 @@
   "deck": "E",
   "implemented": false,
   "name": "Pastor",
-  "reason": "not yet implemented",
+  "reason": "Pastor: must detect when another player builds their third room (to know who is 'last' at 2 rooms), but rooms_built fires with to_all=False -- only to the building player's own cards, never observable by other players.",
   "text": "If, when you play this card or later in the game, you are the last player to have only 2 rooms in your home, you receive 3 wood, 2 clay, 1 reed and 1 stone.",
   "type": "occupation"
  },
  "E194": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Plough Driver",
-  "reason": "not yet implemented",
   "text": "Once you have a stone house, you can pay 1 food at the start of each round to plough (at most) 1 field.",
   "type": "occupation"
  },
  "E195": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Plough Maker",
-  "reason": "not yet implemented",
   "text": "Whenever you use either of the \"Plough 1 Field\" or \"Plough Field and Sow\" action spaces, you can pay 1 food to plough 1 additional field.",
   "type": "occupation"
  },
  "E196": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Mushroom Collector",
-  "reason": "not yet implemented",
   "text": "Whenever you use a person's action to take wood that is lying on an action space, you can leave 1 of that wood on the space and receive 2 food in exchange.",
   "type": "occupation"
  },
  "E197": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 3,
   "name": "Braggart",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you receive bonus points for the number of improvements in front of you: for 9 or more improvements, 9 points; for 8 improvements, 7 points; for 7 improvements, 5 points; for 6 improvements, 3 points; for 5 improvements, 1 point.",
   "type": "occupation"
  },
@@ -4972,87 +4993,92 @@
   "deck": "E",
   "implemented": false,
   "name": "Ratcatcher",
-  "reason": "not yet implemented",
+  "reason": "Ratcatcher: forces OTHER players to leave 1 family member unplaced in specific rounds; directly constraining other players' people/placements is explicitly unsupported.",
   "text": "In rounds 10 and 12, all other players may not place 1 of their family's offspring (if they have any). This card may only be played until the end of Round 9.",
   "type": "occupation"
  },
  "E199": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Renovator",
-  "reason": "not yet implemented",
   "text": "Pay 2 less clay to renovate to a clay hut, and pay 2 less stone to renovate to a stone house.",
   "type": "occupation"
  },
  "E20": {
+  "bake": [
+   null,
+   2
+  ],
+  "cook": {
+   "boar": 2,
+   "cattle": 3,
+   "sheep": 1,
+   "vegetable": 2
+  },
+  "cost": {
+   "clay": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Simple Fireplace",
-  "reason": "not yet implemented",
+  "points": 1,
   "text": "At any time, you may convert goods to food as follows: vegetable \u2192 2 food; sheep \u2192 1 food; wild boar \u2192 2 food; cattle \u2192 3 food. Whenever you use the \"Bake Bread' a bread baking action, you may convert: grain \u2192 2 food.",
   "type": "minor"
  },
  "E200": {
   "deck": "E",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Conservator",
-  "reason": "not yet implemented",
   "text": "You can renovate your wooden hut to a stone house without first needing to renovate it to a clay hut.",
   "type": "occupation"
  },
  "E201": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 4,
   "name": "Cattle Whisperer",
-  "reason": "not yet implemented",
   "text": "Add 5 and 9 to the number of the current round. Place 1 cattle on each corresponding round space. At the start of these rounds, you receive the cattle.",
   "type": "occupation"
  },
  "E202": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Seasonal Worker",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"Day Labourer\" action space, you receive 1 additional grain. From round 6 onwards, you can choose to receive 1 vegetable instead.",
   "type": "occupation"
  },
  "E203": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 4,
   "name": "Shepherd",
-  "reason": "not yet implemented",
   "text": "During each harvest, if you have at least 4 sheep during the breeding phase, you receive 2 lambs instead of 1 as long as you have room for them.",
   "type": "occupation"
  },
  "E204": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 4,
   "name": "Master Shepherd",
-  "reason": "not yet implemented",
   "text": "Place 1 sheep on each of the next 3 round spaces. At the start of these rounds, you receive the sheep.",
   "type": "occupation"
  },
  "E205": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 3,
   "name": "Reed Collector",
-  "reason": "not yet implemented",
   "text": "Place 1 reed on the next 4 round spaces. At the start of these rounds, you receive the reed.",
   "type": "occupation"
  },
  "E206": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 4,
   "name": "Swineherd",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"1 Wild Boar\" action space, you receive 1 additional wild boar from the general supply.",
   "type": "occupation"
  },
  "E207": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Stablehand",
-  "reason": "not yet implemented",
   "text": "Whenever you build at least 1 fence, you also receive 1 stable which you must build immediately.",
   "type": "occupation"
  },
@@ -5060,63 +5086,74 @@
   "deck": "E",
   "implemented": false,
   "name": "Stablemaster",
-  "reason": "not yet implemented",
+  "reason": "Stablemaster: raising one specific unfenced stable's cap to 3 animals requires overriding state.validate_animal_placement's hardcoded 'an unfenced stable holds only 1 animal' rule, which has no per-stable override hook.",
   "text": "One (and only one) of your unfenced stables may hold up to 3 animals of the same type.",
   "type": "occupation"
  },
  "E209": {
   "deck": "E",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 3,
   "name": "Quarryman",
-  "reason": "not yet implemented",
   "text": "You can use the Quarryman at any time to convert stone to food. For each stone you convert, you receive 2 food.",
   "type": "occupation"
  },
  "E21": {
+  "cost": {
+   "clay": 1,
+   "reed": 1,
+   "stone": 2,
+   "wood": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Half-timbered House",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you receive 1 bonus point for each room in your stone house.",
   "type": "minor"
  },
  "E210": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Stone Carrier",
-  "reason": "not yet implemented",
   "text": "Whenever you take stone with an action of a person, you can also take 1 additional stone. If you also receive other building resources, this costs you 1 food.",
   "type": "occupation"
  },
  "E211": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 3,
   "name": "Stonecutter",
-  "reason": "not yet implemented",
   "text": "All improvements, rooms and renovations cost you 1 stone less.",
   "type": "occupation"
  },
  "E212": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 4,
   "name": "Dancer",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"Traveling Players\" action on an action space, you receive at least 4 food, even if only 1 to 3 food are on the space.",
   "type": "occupation"
  },
  "E213": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 4,
   "name": "Stockman",
-  "reason": "not yet implemented",
   "text": "You receive 1 cattle when you build your second stable, 1 wild boar when you build your third and 1 sheep when you build your fourth.",
   "type": "occupation"
  },
  "E214": {
+  "conversions": [
+   {
+    "get": {
+     "food": 2
+    },
+    "give": {
+     "clay": 1
+    },
+    "per_harvest": 1
+   }
+  ],
   "deck": "E",
-  "implemented": false,
+  "min_players": 3,
   "name": "Potter",
-  "reason": "not yet implemented",
   "text": "In each harvest, the Potter can convert up to 1 clay to 2 food.",
   "type": "occupation"
  },
@@ -5124,7 +5161,7 @@
   "deck": "E",
   "implemented": false,
   "name": "Tenant Farmer",
-  "reason": "not yet implemented",
+  "reason": "Tenant Farmer: the loaned animals must be returnable via a deliberate action at any time before scoring (independent of ordinary cooking/discarding), and only trigger the point penalty for animals the player chooses not to (or cannot) give back. Approximating this from final animal counts would misrepresent the real trade-off between an unreturned loan animal and the player's own naturally bred stock of the same type; no explicit 'return a loan' action channel exists.",
   "text": "You immediately receive a loan of one of each type of animal. Before scoring, return the 3 animals. For each animal that you cannot or do not want to return, you lose 1 point.",
   "type": "occupation"
  },
@@ -5132,47 +5169,54 @@
   "deck": "E",
   "implemented": false,
   "name": "Animal Keeper",
-  "reason": "not yet implemented",
+  "reason": "Animal Keeper: mixed-species pastures require overriding state.validate_animal_placement's hardcoded single-type-per-pasture rule, which has no override hook (the same class of gap as Stablemaster/E208).",
   "text": "You can keep sheep, wild boar and cattle in the same pasture.",
   "type": "occupation"
  },
  "E217": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 3,
   "name": "Reeve",
-  "reason": "not yet implemented",
   "text": "You receive wood immediately when you play this card: if played in round 12 or 13, take 1 wood; if played in round 9, 10, or 11, take 2 wood; if played in round 6, 7, or 8, take 3 wood; if played before round 6, take 4 wood. At the end of the game, all players with the most occupation cards in front of them receive 3 bonus points each.",
   "type": "occupation"
  },
  "E218": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Carpenter",
-  "reason": "not yet implemented",
   "text": "To extend your home, you need only 3 of the appropriate resource and 2 reed for each new room.",
   "type": "occupation"
  },
  "E22": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Raft",
-  "reason": "not yet implemented",
+  "points": 1,
   "text": "Whenever you use the \"Fishing\" action space, you receive an additional 1 food or 1 reed.",
   "type": "minor"
  },
  "E23": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Manger",
-  "reason": "not yet implemented",
   "text": "At the end of the game, if your pastures occupy 6/7/8/9+ farmyard spaces, you receive 1/2/3/4 bonus points.",
   "type": "minor"
  },
  "E24": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Animal Pen",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "4 occupations",
   "text": "Place 2 food on each remaining round space. At the start of each round, you receive the food.",
   "type": "minor"
  },
@@ -5180,7 +5224,7 @@
   "deck": "E",
   "implemented": false,
   "name": "Spices",
-  "reason": "not yet implemented",
+  "reason": "same gap as Gypsy's Crock (E19): the vegetable-to-food cook conversion in _apply_feed never fires a card event to react to.",
   "text": "Whenever you convert vegetables to food using a Fireplace A1/A2 , Cooking Hearth A3/A4 or Cooking Corner I85 , you receive 1 additional food.",
   "type": "minor"
  },
@@ -5188,23 +5232,33 @@
   "deck": "E",
   "implemented": false,
   "name": "Plane",
-  "reason": "not yet implemented",
+  "reason": "requires reacting to a Joinery/Sawmill/Cabinetmaker wood-to-food conversion; the via='joinery' branch of _apply_feed's conversion loop doesn't fire any card event either (same class of gap as D083's harvest-food conversions).",
   "text": "Whenever you turn 1 wood into food using the Joinery A7 , Sawmill K122 or Cabinetmaker I258 , you receive 1 additional food. You can choose instead to turn a second wood into exactly 2 food.",
   "type": "minor"
  },
  "E27": {
+  "bake": [
+   null,
+   3
+  ],
+  "cost": {
+   "stone": 1,
+   "wood": 3
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Wood-fired Oven",
-  "reason": "not yet implemented",
+  "points": 2,
   "text": "Whenever you use the \"Bake bread\" a bread baking action, you can use the Wood-fired Oven to turn any number of grain into 3 food each. When you play this card, you can also take the \"Bake bread\" action bake bread immediately.",
   "type": "minor"
  },
  "E28": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Clogs",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you receive 1 bonus point for a clay hut, or 2 bonus points for a stone house.",
   "type": "minor"
  },
@@ -5212,39 +5266,49 @@
   "deck": "E",
   "implemented": false,
   "name": "Shepherd's Pipe",
-  "reason": "not yet implemented",
+  "reason": "two blocked mechanics: the +2 pasture capacity only for pastures 'where you keep sheep' can't be expressed since pasture_capacity_bonus is a flat additive across every pasture regardless of animal type; and unfenced-stable capacity is hardcoded to 1 in validate_animal_placement with no card-modifier hook (same class of gap as B012).",
   "text": "You can hold up to 2 additional sheep in each of the pastures where you keep sheep. You can keep up to 2 sheep in each unfenced stable.",
   "type": "minor"
  },
  "E30": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Canoe",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "2 occupations",
   "text": "Whenever you use the \"Fishing\" action space, you receive an additional 1 Food and 1 Reed.",
   "type": "minor"
  },
  "E31": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Carp Pond",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "2 improvements and 1 occupations",
   "text": "Place 1 food on each remaining odd-numbered round space. At the start of these rounds, you receive the food.",
   "type": "minor"
  },
  "E32": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Potato Dibber",
-  "reason": "not yet implemented",
   "text": "Whenever you sow fields with vegetables, place 1 additional vegetable from the general supply on each field that you Sow newly sown stack of vegetables.",
   "type": "minor"
  },
  "E33": {
+  "cost": {
+   "clay": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Ceramics",
-  "reason": "not yet implemented",
+  "prereq_text": "an oven (Clay Oven, Stone Oven, Baker's Oven, or Wood-fired Oven)",
   "text": "When you play this card, you receive 2 food. From now, the Pottery A8 is a minor improvement for you and costs you nothing.",
   "type": "minor"
  },
@@ -5252,31 +5316,34 @@
   "deck": "E",
   "implemented": false,
   "name": "Feed Pellets",
-  "reason": "not yet implemented",
+  "reason": "would gain an animal (duplicating one already owned) through a feeding-phase conversion, but the engine's conversion 'get' path only credits player['resources'], with no accommodation route for animal types (same gap as D083).",
   "text": "During the feeding phase of each harvest, you may trade 1 vegetable for 1 of any type of animal that you already have in your farmyard.",
   "type": "minor"
  },
  "E34": {
+  "cost": {
+   "reed": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Basket",
-  "reason": "not yet implemented",
   "text": "Whenever you use a person's action to take wood that is on an action space, you can leave 2 of that wood on the action space and receive 3 food in exchange.",
   "type": "minor"
  },
  "E341": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 3,
   "name": "Guildmaster",
-  "reason": "not yet implemented",
   "text": "You receive 4 wood when you acquire the Joinery A7 or play the Cabinetmaker I258 . When you acquire the Pottery A8 or play the Potter E214 , you receive 4 clay. When you acquire the Basketmaker's Workshop A9 or play the Basketmaker E183 , you receive 3 reed. If you have already played any of these cards when you play the Guildmaster, you receive 2 building resources of the appropriate type for each existing card.",
   "type": "occupation"
  },
  "E35": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Corn Scoop",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"Take 1 Grain\" action space, you receive 1 additional grain.",
   "type": "minor"
  },
@@ -5284,175 +5351,230 @@
   "deck": "E",
   "implemented": false,
   "name": "Clay Roof",
-  "reason": "not yet implemented",
+  "reason": "lets the player substitute up to 2 reed for the same amount of clay when building a room or renovating -- a genuine per-build payment-material choice, but cost_mod is a pure automatic function with no parameter channel for that choice (same limitation noted for B065/D088).",
   "text": "You can replace 1 or 2 Reed with the same amount of clay whenever you extend or renovate your home.",
   "type": "minor"
  },
  "E37": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Clay Supports",
-  "reason": "not yet implemented",
   "text": "Whenever you add a room to your clay hut, you can pay 2 clay, 1 wood and 1 reed instead of 5 clay and 2 reed.",
   "type": "minor"
  },
  "E38": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Madonna Statue",
-  "reason": "not yet implemented",
+  "points": 2,
+  "prereq_text": "2 improvements (major or minor) in front of you",
   "text": "The Madonna Statue has no effect.",
   "type": "minor"
  },
  "E39": {
+  "cost": {
+   "grain": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Market Stall",
-  "reason": "not yet implemented",
   "text": "When you play this card, you receive 1 vegetable. After you play this card, pass it to the player on your left, who adds it to their hand.",
+  "traveling": true,
   "type": "minor"
  },
  "E40": {
+  "cost": {
+   "food": 2
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Mini Pasture",
-  "reason": "not yet implemented",
   "text": "When you play this card, immediately fence one space in your farmyard. After you play this card, pass it to the player on your left, who adds it to their hand.",
+  "traveling": true,
   "type": "minor"
  },
  "E41": {
+  "bake_bonus_flat": 2,
+  "cost": {
+   "stone": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Millstone",
-  "reason": "not yet implemented",
   "text": "Whenever you bake 1 or more grain into bread, you receive 2 additional food.",
   "type": "minor"
  },
  "E42": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Helpful Neighbours",
-  "reason": "not yet implemented",
+  "prereq_text": "1 wood or 1 clay",
   "text": "When you play this card, you receive either 1 stone or 1 reeds. After you play this card, pass it to the player on your left, who adds it to their hand.",
+  "traveling": true,
   "type": "minor"
  },
  "E43": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Fruit Tree",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "3 occupations",
   "text": "Place 1 food on each remaining round space for rounds 8 to 14. At the start of these rounds, you receive food.",
   "type": "minor"
  },
  "E44": {
+  "cost": {
+   "clay": 1,
+   "wood": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Outhouse",
-  "reason": "not yet implemented",
+  "points": 2,
+  "prereq_text": "another player with fewer than 2 occupations",
   "text": "The Outhouse has no effect. You can only build it if at least one other player has fewer than 2 occupations.",
   "type": "minor"
  },
  "E45": {
+  "cost": {
+   "food": 2
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Private Forest",
-  "reason": "not yet implemented",
   "text": "Place 1 wood on each remaining even-numbered round space. At the start of these rounds, you receive the wood.",
   "type": "minor"
  },
  "E46": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Sack Cart",
-  "reason": "not yet implemented",
+  "prereq_text": "2 occupations",
   "text": "Place 1 grain on each remaining space for rounds 5, 8, 11 and 14. At the start of these rounds, you receive the grain.",
   "type": "minor"
  },
  "E47": {
   "deck": "E",
-  "implemented": false,
+  "field": {
+   "crops": [
+    "vegetable"
+   ]
+  },
+  "min_players": 1,
   "name": "Lettuce Patch",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "3 occupations",
   "text": "On this card, you can plant vegetables as you would on a field. Vegetables on this field can be converted to 4 food when harvested.",
   "type": "minor"
  },
  "E48": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Reed Pond",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "3 occupations",
   "text": "Place 1 reed each on the next 3 remaining round spaces. At the start of each round, you receive the reed.",
   "type": "minor"
  },
  "E49": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Writing Desk",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "2 occupations",
   "text": "Whenever you take an \"occupation\" action on an action space, you may play 2 occupations one after another. The second occupation costs you 2 food.",
   "type": "minor"
  },
  "E50": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Builder's Trowel",
-  "reason": "not yet implemented",
   "text": "You can renovate your wooden hut to a clay hut at any time without using a \"Renovate\" action.",
   "type": "minor"
  },
  "E51": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Spindle",
-  "reason": "not yet implemented",
   "text": "In every field phase of a harvest, you may receive additional food if you have sheep: for 5 sheep or more, 2 food; for 3 or 4 sheep, 1 food.",
   "type": "minor"
  },
  "E52": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Stable",
-  "reason": "not yet implemented",
   "text": "When you play this card, immediately build 1 stable. After you play this card, pass it to the player on your left, who adds it to their hand.",
+  "traveling": true,
   "type": "minor"
  },
  "E53": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Butter Churn",
-  "reason": "not yet implemented",
   "text": "Whenever you have sheep during the field phase of a harvest, you receive 1 food for each third sheep. Whenever you have cattle during the field phase, you receive 1 food for each second cattle.",
   "type": "minor"
  },
  "E54": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Quarry",
-  "reason": "not yet implemented",
+  "points": 2,
+  "prereq_text": "4 occupations",
   "text": "Whenever you use the \"Day Labourer\" action space, you receive an additional 3 stone.",
   "type": "minor"
  },
  "E55": {
+  "cost": {
+   "reed": 1,
+   "stone": 3
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Stone House Extension",
-  "reason": "not yet implemented",
   "text": "When you play this card, immediately extend your stone house by 1 room. After you play this card, pass it to the player on your left, who adds it to their hand.",
+  "traveling": true,
   "type": "minor"
  },
  "E56": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Stone Tongs",
-  "reason": "not yet implemented",
   "text": "Whenever you use one of the \"1 Stone\" action spaces that become available in rounds 5-7 and 10-11, you receive 1 additional stone.",
   "type": "minor"
  },
  "E57": {
+  "cost": {
+   "stone": 2
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Dovecote",
-  "reason": "not yet implemented",
+  "points": 2,
   "text": "Place 1 food on each remaining space for rounds 10 to 14. At the start of these rounds, you receive the food.",
   "type": "minor"
  },
@@ -5460,39 +5582,50 @@
   "deck": "E",
   "implemented": false,
   "name": "Animal Yard",
-  "reason": "not yet implemented",
+  "reason": "a card-held slot for 2 animals of any type, kept outside the house/pastures; validate_animal_placement only recognizes pastures, unfenced stables, and the house as accommodation buckets (same gap as B012).",
   "text": "This card can hold up to two animals of your choice. They need not be the same type of animal.",
   "type": "minor"
  },
  "E59": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Drinking Trough",
-  "reason": "not yet implemented",
+  "pasture_capacity_bonus": 2,
+  "points": 1,
   "text": "Each pasture (with or without a stable) can hold up to 2 more animals.",
   "type": "minor"
  },
  "E60": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Cattle Market",
-  "reason": "not yet implemented",
+  "prereq_text": "1 sheep",
   "text": "When you play this card, you receive 1 cattle. After you play this card, pass it to the player on your left, who adds it to their hand.",
+  "traveling": true,
   "type": "minor"
  },
  "E61": {
+  "cost": {
+   "wood": 4
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Riding Plough",
-  "reason": "not yet implemented",
+  "prereq_text": "3 occupations",
   "text": "Twice during the game, when you use either the \"Plough 1 Field\" or \"Plough Field and Sow\" action space, you can plough 3 fields instead of 1.",
   "type": "minor"
  },
  "E62": {
+  "cost": {
+   "wood": 3
+  },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Turnwrest Plough",
-  "reason": "not yet implemented",
+  "prereq_text": "2 occupations",
   "text": "Once during the game, when you use either the \"Plough 1 Field\" or \"Plough Field and Sow\" action space, you can plough 3 fields instead of 1.",
   "type": "minor"
  },
@@ -5980,31 +6113,33 @@
   "deck": "FR",
   "implemented": false,
   "name": "Abandoned Willow",
-  "reason": "not yet implemented",
+  "reason": "removes an empty field from the farmyard; moving/removing built fields is explicitly unsupported",
   "text": "Immediately remove 1 empty field from your farmyard and receive 4 Wood. (That space now counts as unused).",
   "type": "minor"
  },
  "FR002": {
   "deck": "FR",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Absinthe",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "3 occupations",
   "text": "Place 1 Food on the next 5 remaining Round spaces. At the start of these rounds' Work phase, place the Food on an Action space of your choice. (The next player to use this space receives the Food.)",
   "type": "minor"
  },
  "FR003": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Amusement Park",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "1 pasture",
   "text": "Place 1 Food each on the next 2/3/4/5 remaining Round spaces if you have 1/2/3/4 pastures. At the start of these rounds, you receive the Food.",
   "type": "minor"
  },
  "FR004": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Apple Garden",
-  "reason": "not yet implemented",
   "text": "You receive 2 Bonus points for either Grain or Vegetables missing from your farm at the end of the game. (The fruit replaces this type of good.) (You still lose the points for the missing good.)",
   "type": "minor"
  },
@@ -6012,7 +6147,7 @@
   "deck": "FR",
   "implemented": false,
   "name": "Artists Garden",
-  "reason": "not yet implemented",
+  "reason": "requires a per-round 'returning home phase' harvest hook; harvest_field only fires during the 6 official harvests, not every round",
   "text": "In the Returning home phase of each round, you may harvest 1 field.",
   "type": "minor"
  },
@@ -6020,23 +6155,26 @@
   "deck": "FR",
   "implemented": false,
   "name": "Badger",
-  "reason": "not yet implemented",
+  "reason": "requires moving a marker between orthogonally adjacent action spaces; the engine stores revealed spaces as an unordered/unpositioned list with no adjacency layout (same gap as B120)",
   "text": "Immediately place a marker on an Action space of your choice. At the start of each round, you must move it to an orthogonally adjacent revealed Action space. Any player that uses that space also receives 1 Food.",
   "type": "minor"
  },
  "FR007": {
   "deck": "FR",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Baguette",
-  "reason": "not yet implemented",
   "text": "During each Harvest, you may pay 1 Wood to Bake bread at the start of the Feeding phase if you have an Improvement with the bread symbol.",
   "type": "minor"
  },
  "FR008": {
+  "cost": {
+   "reed": 1,
+   "wood": 3
+  },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Barber shop",
-  "reason": "not yet implemented",
   "text": "For every Harvest remaining when you play this card, you receive 1 Bonus point.",
   "type": "minor"
  },
@@ -6044,31 +6182,36 @@
   "deck": "FR",
   "implemented": false,
   "name": "Bathroom",
-  "reason": "not yet implemented",
+  "reason": "requires detecting 'converted a grain/vegetable into food' as a discrete event; raw crop-to-food conversion is a static rate query (raw_values), never a fired event (same gap as B029)",
   "text": "Each time you convert a Grain or Vegetable into Food, you may place it on this card. For each field you Sow, you may take 1 Good of the same type from this card and add it to that field. (Goods on this card do not count for points when scoring.)",
   "type": "minor"
  },
  "FR010": {
+  "cost": {
+   "vegetable": 1
+  },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Breakfast Outdoors",
-  "reason": "not yet implemented",
+  "points": 1,
   "text": "In each Feeding phase, you receive 1 Food.",
   "type": "minor"
  },
  "FR011": {
   "deck": "FR",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Brickyard",
-  "reason": "not yet implemented",
+  "prereq_text": "2 occupations",
   "text": "At the start of each round, if you have no Clay in your supply, place 1 Clay on this card. At any time when this card has 4 or more Clay on it, you may move all of the Clay to your personal supply.",
   "type": "minor"
  },
  "FR012": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Camembert",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "2 occupations",
   "text": "Place 1 Food each on 3 Action spaces (unoccupied or occupied) from the general supply. The next player to use the Action space receives the Food.",
   "type": "minor"
  },
@@ -6076,7 +6219,7 @@
   "deck": "FR",
   "implemented": false,
   "name": "Chameleon",
-  "reason": "not yet implemented",
+  "reason": "requires extra animal capacity limited to pastures that specifically hold sheep; pasture_capacity_bonus applies uniformly to every pasture with no per-pasture, per-animal-type condition (same gap as B115)",
   "text": "When you play this card, you receive 1 Wild boar. You may keep 1 Wild boar in each of your pastures that hold Sheep. (Pastures can still only hold the normal amount of animals).",
   "type": "minor"
  },
@@ -6084,31 +6227,37 @@
   "deck": "FR",
   "implemented": false,
   "name": "Chocolade",
-  "reason": "not yet implemented",
+  "reason": "requires a food stash usable only to pay Occupation costs; the occupation-cost payment path has no hook for an alternate resource source (same gap as B155)",
   "text": "Place 4 Food from the supply on this card. This food can only be used to pay for Occupations.",
   "type": "minor"
  },
  "FR015": {
+  "cost": {
+   "clay": 1
+  },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Coffee Break",
-  "reason": "not yet implemented",
+  "points": 1,
   "text": "Place 1 Food on the next 5 Round spaces. At the start of these rounds, you receive the Food. If you play an Occupation before receiving the Food, immediately remove this cards remaining Food from future Round spaces.",
   "type": "minor"
  },
  "FR016": {
+  "cost": {
+   "food": 1
+  },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Cornrick",
-  "reason": "not yet implemented",
+  "prereq_text": "1 field",
   "text": "Place 1 Grain each on the spaces for rounds 7 and 9. At the start of these rounds, you receive the Grain.",
   "type": "minor"
  },
  "FR017": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Diary",
-  "reason": "not yet implemented",
+  "prereq_text": "2 occupations",
   "text": "Whenever you play an Occupation, you receive 1 Wood.",
   "type": "minor"
  },
@@ -6116,47 +6265,52 @@
   "deck": "FR",
   "implemented": false,
   "name": "Encircling Wall",
-  "reason": "not yet implemented",
+  "reason": "grants a free Build Fences sub-action with a player-chosen fence layout from a card's play effect; no channel carries open-ended fence-edge parameters outside the normal placement flow (same gap as B088/B093/B130)",
   "text": "When you play this card, you may immediately fence 1 space in your farmyard. (You do not need to pay Wood for the fences).",
   "type": "minor"
  },
  "FR019": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Evening Prayer",
-  "reason": "not yet implemented",
+  "prereq_text": "exactly 0 occupations",
   "text": "If you have 1/2 plowed fields, immediately pay 1/2 Food to play 1/2 Occupations.",
   "type": "minor"
  },
  "FR020": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Five Rings",
-  "reason": "not yet implemented",
   "text": "Whenever you play an Improvement, pay 1 Wood/Stone less if you chose Wood/Stone as the cost of this card. (Mark this card with 1 Wood/ Stone from the supply.)",
   "type": "minor"
  },
  "FR021": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Flat Hill",
-  "reason": "not yet implemented",
+  "prereq_text": "4 planted fields",
   "text": "When you play this card, immediately Renovate your Wooden hut to a Clay hut for free.",
   "type": "minor"
  },
  "FR022": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Full-bottomed Wig",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "3 sheep",
   "text": "You no longer need Reed when you renovate your home.",
   "type": "minor"
  },
  "FR023": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Goblet",
-  "reason": "not yet implemented",
   "text": "The Well is a Minor Improvement for you. When you build the Well, place 2 Food on the next 5 Round spaces instead of 1 Food. (If you have already built the Well, then this card has no effect.)",
   "type": "minor"
  },
@@ -6164,7 +6318,7 @@
   "deck": "FR",
   "implemented": false,
   "name": "Golden Rose",
-  "reason": "not yet implemented",
+  "reason": "discounts the food cost of playing an Occupation or Minor Improvement; _play_minor pays a minor's printed cost directly with no cost_mod query at all (only room/renovation/improvement/fences costs are modifiable), so half the card's effect can't be expressed",
   "text": "Whenever you pay Food to play an Occupation or a Minor Improvement, you may pay up to 2 Food less.",
   "type": "minor"
  },
@@ -6172,15 +6326,16 @@
   "deck": "FR",
   "implemented": false,
   "name": "Grain Mill Oven",
-  "reason": "not yet implemented",
+  "reason": "lets a played minor be discarded to fully pay for a major improvement, and treats Clay/Stone Ovens as minors for other cards' prerequisites; neither an alternate-payment-via-discard channel nor a 'counts as' prerequisite override exists",
   "text": "You can't Bake bread with the Grain Mill Oven. Clay and Stone Ovens are Minor Improvements for you. You may discard this instead of paying an Oven's cost. When you play this card, you can immediately take the \"Bake bread\" action.",
   "type": "minor"
  },
  "FR026": {
   "deck": "FR",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Grotto",
-  "reason": "not yet implemented",
+  "prereq_text": "2 occupations",
   "text": "Place 3 Clay and 2 Stone from the supply on this card. At the end of each round, you may pay 2 Food to receive 1 of these resources. Once this card is empty, it provides room for 1 Family member.",
   "type": "minor"
  },
@@ -6188,15 +6343,20 @@
   "deck": "FR",
   "implemented": false,
   "name": "Ground Pickaxe Plow",
-  "reason": "not yet implemented",
+  "reason": "requires knowing which action spaces are orthogonally adjacent to the Plow space; no adjacency layout exists for action spaces (same gap as B120/FR006)",
   "text": "Once during the game, when you use either the \"Plow 1 field\" or the \"Plow 1 field and/or Sow\" Action space, you can place 1 Wood from your supply on 1/2 orthogonally adjacent (revealed or unrevealed) Action spaces (to the used plow space) to Plow 1/2 additional fields.",
   "type": "minor"
  },
  "FR028": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "FR",
-  "implemented": false,
+  "extra_rooms": 1,
+  "min_players": 1,
   "name": "Hammock",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "4 rooms and 1 sheep",
   "text": "One of your rooms can hold 1 additional Family member.",
   "type": "minor"
  },
@@ -6204,39 +6364,53 @@
   "deck": "FR",
   "implemented": false,
   "name": "Hay Rake",
-  "reason": "not yet implemented",
+  "reason": "lets a placement ignore that an action space is already occupied; placing on occupied spaces is explicitly unsupported",
   "text": "Each Work phase, the third person you place can use the \"Plow 1 field\" Action space even if it is occupied.",
   "type": "minor"
  },
  "FR030": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Haystack",
-  "reason": "not yet implemented",
+  "prereq_text": "6 animals",
   "text": "Place 3 Food on each remaining Round space. At the start of these rounds, you receive the Food.",
   "type": "minor"
  },
  "FR031": {
+  "cost": {
+   "stone": 1
+  },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Heatwave",
-  "reason": "not yet implemented",
+  "prereq_text": "clay hut or stone house",
   "text": "Immediately build a Fireplace for free or upgrade a Fireplace to a Cooking Hearth.",
   "type": "minor"
  },
  "FR032": {
+  "cost": {
+   "food": 2,
+   "reed": 2
+  },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Homework",
-  "reason": "not yet implemented",
+  "points": 1,
   "text": "When you play this card, you may immediately play up to 2 Occupations. (You must still pay any additional costs of the Occupations.)",
   "type": "minor"
  },
  "FR033": {
+  "cost": {
+   "reed": 1
+  },
   "deck": "FR",
-  "implemented": false,
+  "house_capacity": 1,
+  "min_players": 1,
   "name": "Kid's Corner",
-  "reason": "not yet implemented",
+  "points": 1,
   "text": "Your home may hold 1 additional animal. You may keep more than 1 type of animal in your home.",
   "type": "minor"
  },
@@ -6244,23 +6418,28 @@
   "deck": "FR",
   "implemented": false,
   "name": "Kitchen Table",
-  "reason": "not yet implemented",
+  "reason": "would need to intercept the Bake Bread action before it resolves to offer 'store food instead'; the only baking hook fires after a bake completes (with the grain count), not before/instead of one",
   "text": "For you, all \"Bake Bread\" actions now read \"Bake Bread or place 1 Food from your supply on Kitchen Table.\"At any time, you may return 1 Food from this card to your supply and take a \"Bake Bread\" Action.",
   "type": "minor"
  },
  "FR035": {
+  "cost": {
+   "stone": 2,
+   "wood": 1
+  },
   "deck": "FR",
-  "implemented": false,
+  "extra_rooms": 1,
+  "min_players": 1,
   "name": "Lighthouse",
-  "reason": "not yet implemented",
+  "points": 2,
+  "prereq_text": "exactly 2 stone rooms",
   "text": "The Lighthouse provides room for 1 Family member.",
   "type": "minor"
  },
  "FR036": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "March",
-  "reason": "not yet implemented",
   "text": "When you play this card, you may return 2 different animals to the general supply to Plow 2 fields.",
   "type": "minor"
  },
@@ -6268,79 +6447,102 @@
   "deck": "FR",
   "implemented": false,
   "name": "Necklace",
-  "reason": "not yet implemented",
+  "reason": "requires knowing whether two people occupy orthogonally adjacent action spaces; no adjacency layout exists for action spaces (same gap as B120/FR006)",
   "text": "Whenever at the end of a Work phase, you have at least 2 Family members occupying 2 orthogonally adjacent Action spaces, you receive 1 Food.",
   "type": "minor"
  },
  "FR038": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Orchard",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "1 planted field",
   "text": "Place 1 Food on each of the next Round spaces up to the number of planted fields in your farmyard. At the start of these rounds, you receive the Food.",
   "type": "minor"
  },
  "FR039": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "FR",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Par Force Hunting",
-  "reason": "not yet implemented",
+  "points": 1,
   "text": "Add 4 and 7 to the current round and place 1 Wild boar on each corresponding Round space. At the start of these rounds, you can pay 1 Food to take the Wild boar.",
   "type": "minor"
  },
  "FR040": {
   "deck": "FR",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Park Cemetary",
-  "reason": "not yet implemented",
   "text": "Place 3 Stone on the \"Plow 1 field\" Action space from the general supply. Any player who uses that space may also receive 1 Stone from it. If there is no Stone on that space, you may discard this card and Plow 1 field.",
   "type": "minor"
  },
  "FR041": {
+  "conversions": [
+   {
+    "get": {
+     "food": 4
+    },
+    "give": {
+     "reed": 1
+    },
+    "per_harvest": 1
+   }
+  ],
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Peasants Boutique",
-  "reason": "not yet implemented",
+  "points": 3,
+  "prereq_text": "Basketmaker's Workshop",
   "text": "Every harvest you may convert 1 Reed into 4 Food. At the end of the game, you receive 1/2/3 Bonus points for having 1/3/4 Reed. You do not receive additional Bonus points from the Basket Maker's Workshop.",
   "type": "minor"
  },
  "FR042": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Rock Pyramid",
-  "reason": "not yet implemented",
   "text": "Whenever you build a Stone room, you can Plow up to 1 field. If you paid at least 1 Stone for that room, you may Plow up to 2 fields instead.",
   "type": "minor"
  },
  "FR043": {
+  "cost": {
+   "reed": 1
+  },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Sofa",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you receive 4/2 Bonus points if your home has at most 2/3 rooms.",
   "type": "minor"
  },
  "FR044": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Star Classification Meal",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "stone house",
   "text": "Place 1 Food on each remaining Round space. At the start of these rounds, you receive the Food.",
   "type": "minor"
  },
  "FR045": {
+  "cost": {
+   "stone": 1
+  },
   "deck": "FR",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Stone House Reconstruction",
-  "reason": "not yet implemented",
+  "points": 1,
   "text": "You can Renovate your Clay hut to a Stone house at any time without using the \"Renovate\" action. (You must still pay for the Renovation.)",
   "type": "minor"
  },
  "FR046": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Straw-Thatched Hut",
-  "reason": "not yet implemented",
+  "prereq_text": "2 planted fields",
   "text": "Whenever you add a room to your Clay hut, you can pay 2 Clay, 1 Grain and 1 Food instead of 5 Clay and 2 Reed.",
   "type": "minor"
  },
@@ -6348,31 +6550,37 @@
   "deck": "FR",
   "implemented": false,
   "name": "Sunday School",
-  "reason": "not yet implemented",
+  "reason": "requires reducing the number of people placed in a specific future round (no such placement-count modifier exists) and a round-end hook to grant free occupations afterward (only round_start fires; there is no round-end event)",
   "text": "Place a marker on the next round. During that round, you place 1 fewer Family member. At the end of that round, remove the marker and play 2 Occupations for free.",
   "type": "minor"
  },
  "FR048": {
+  "cost": {
+   "reed": 1
+  },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Swimming Studio",
-  "reason": "not yet implemented",
+  "points": 1,
   "text": "Whenever you use the \"Fishing\" Action space, you may also convert up to 1 Wood to 3 Food.",
   "type": "minor"
  },
  "FR049": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "The Port Le Havre",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "1 oven",
   "text": "Whenever you use the \"Bake Bread\" Action, you may convert 1/2 Clay into 1/2 Stone.",
   "type": "minor"
  },
  "FR050": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Threshing Machine Plow",
-  "reason": "not yet implemented",
   "text": "Once during the game, when you use the \"Plow 1 field\" Action space, you may Plow all 3 middle spaces on your farmyard instead of Plowing 1 field. (The middle 3 spaces are those surrounded by exactly 8 other spaces.)",
   "type": "minor"
  },
@@ -6380,55 +6588,72 @@
   "deck": "FR",
   "implemented": false,
   "name": "Timetable",
-  "reason": "not yet implemented",
+  "reason": "restricts a resource stash to paying only Minor Improvement costs; occupation/room/renovation/improvement costs all draw from the same undifferentiated resource pool with no hook to gate payment by source, so the card's core restriction (its only balancing feature) can't be enforced",
   "text": "Place 1 building resource of each type on this card. These building resources can only be used to pay for Minor Improvements.",
   "type": "minor"
  },
  "FR052": {
+  "cost": {
+   "wood": 3
+  },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Trees for the Citizens",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "3 occupations",
   "text": "If you have the Joinery or Sawmill, you do not have to pay the Wood cost for this card. At the end of the game, you receive 1 Bonus point for every 2 Improvements in front of you that have a printed Wood cost.",
   "type": "minor"
  },
  "FR053": {
+  "cost": {
+   "reed": 1
+  },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Trip to the Lake",
-  "reason": "not yet implemented",
+  "prereq_text": "2 occupations",
   "text": "Whenever you use the \"Fishing\" Action space, you receive an additional 1 Food and 1 Wood.",
   "type": "minor"
  },
  "FR054": {
+  "cost": {
+   "stone": 3,
+   "wood": 1
+  },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Tuileries Garden",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "4 occupations",
   "text": "Whenever you use the \"Plow 1 field\" Action space, you may immediately afterward take 1 Grain or 1 Vegetable from the general supply and Sow it.",
   "type": "minor"
  },
  "FR055": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Vegetable Harvest",
-  "reason": "not yet implemented",
+  "prereq_text": "1 oven",
+  "raw_values": {
+   "vegetable": 4
+  },
   "text": "If you have an Oven, you can convert Vegetables into Food at any time. Take 4 Food for each Vegetable.",
   "type": "minor"
  },
  "FR056": {
+  "cost": {
+   "food": 1
+  },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Watering Can",
-  "reason": "not yet implemented",
   "text": "Immediately add 1 Grain from the supply to each of your planted Grain fields and 1 Vegetable to each of your planted Vegetable fields.",
   "type": "minor"
  },
  "FR057": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Wild Game",
-  "reason": "not yet implemented",
+  "prereq_text": "1 wild boar",
   "text": "You immediately receive 5 Food.",
   "type": "minor"
  },
@@ -6436,7 +6661,7 @@
   "deck": "FR",
   "implemented": false,
   "name": "Winter Deadwood",
-  "reason": "not yet implemented",
+  "reason": "conditionally keeps or passes the card based on an in-hook choice; _play_minor decides whether to send a card to the left neighbor using the static `traveling` spec flag immediately after the play hook returns, before any later resolve_choice could run, so the outcome can't be made conditional on a choice made inside that hook",
   "text": "When you play this card, you may either pay 1 Wood for 1 Bonus point or receive 1 Wood and pass this card to the player on your left who adds it to his/her hand.",
   "type": "minor"
  },
@@ -6444,15 +6669,18 @@
   "deck": "FR",
   "implemented": false,
   "name": "Witches' Dance Ground",
-  "reason": "not yet implemented",
+  "reason": "extends or shrinks the farmyard by 2 spaces; the 15-cell grid (ROWS*COLS) is a fixed engine constant with no per-player extension/removal mechanism",
   "text": "Place this card on or beside your farm. If you place it beside your farm, you gain 2 extra farmyard spaces (to be scored as normal) and you receive 1 Bonus point. If you place it on your farm, cover two orthogonally adjacent unused spaces which no longer count as part of your farm.",
   "type": "minor"
  },
  "FR060": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "FR",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Wood Saw",
-  "reason": "not yet implemented",
   "text": "Whenever every other player has more Family members than you, you may immediately build 1 or more rooms by paying their cost.",
   "type": "minor"
  },
@@ -6460,47 +6688,42 @@
   "deck": "FR",
   "implemented": false,
   "name": "Agrarian",
-  "reason": "not yet implemented",
+  "reason": "Agrarian: needs to reclaim placed food (or trigger a free plow) at the END of a round if the 'Plow 1 field' space went unused; there is no end-of-round hook (only round_start/space_used/etc.), so the refund-or-forfeit logic can't be resolved.",
   "text": "At the start of each round, you may place 1 Food from your supply on the \"Plow 1 field\" Action space. Any player that uses that space also receives the Food. At the end of the round, if the space has not been used, you take the Food back and may Plow 1 field.",
   "type": "occupation"
  },
  "FR062": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 4,
   "name": "Animal Welfarist",
-  "reason": "not yet implemented",
   "text": "At the end of each Work phase in which you used both the \"Build Stables\" action on an Action space and the \"Build Fences\" action on an Action space, you receive 1 animal of each kind.",
   "type": "occupation"
  },
  "FR063": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 4,
   "name": "Art Director",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"Traveling Players\" Action, you receive an additional 1 Food and a building resource of your choice.",
   "type": "occupation"
  },
  "FR064": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Award Winner",
-  "reason": "not yet implemented",
   "text": "Once per round, when you build a Major or Minor Improvement, you may pay 1 additional building resource of those already paid for 1 Bonus Point.",
   "type": "occupation"
  },
  "FR065": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 3,
   "name": "Benefactor",
-  "reason": "not yet implemented",
   "text": "Once during the game, when you have 4 fenced pastures, you may return 1 animal to the supply to extend your Wooden hut by 1 room at no cost.",
   "type": "occupation"
  },
  "FR066": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Boatswain",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"Fishing\" Action space, you may place 1 Grain from the supply on each of your empty plowed fields. These fields are now considered planted fields. (This does not count as a \"Sow\" action)",
   "type": "occupation"
  },
@@ -6508,7 +6731,7 @@
   "deck": "FR",
   "implemented": false,
   "name": "Cabbage Lover",
-  "reason": "not yet implemented",
+  "reason": "Cabbage Lover: needs to count each vegetable converted into food during feeding, but _apply_feed's raw/cook conversions fire no hook at all -- there is no per-conversion event to count against.",
   "text": "When you play this card, you receive 1 Vegetable. For each Vegetable that you convert into Food, you can place 1 Clay from your personal supply on this card. At the end of the game, you receive 1 Bonus point for each Clay on this card, up to a maximum of 5 points.",
   "type": "occupation"
  },
@@ -6516,31 +6739,28 @@
   "deck": "FR",
   "implemented": false,
   "name": "Card Player",
-  "reason": "not yet implemented",
+  "reason": "Card Player: needs to react to receiving ANY of 4 resource types 'in any way', plus an end-of-round stack rotation; no generic 'you received resource X' event exists (only specific space_used/occupation_played/etc. hooks), so the trigger can't be observed comprehensively.",
   "text": "From bottom to top, stack 1 Stone, Reed, Clay, and Wood on this card. At the end of each round, move the top resource to the bottom of the stack. Whenever you receive the top/bottom resource type, take 1 additional/fewer resource of that type. (Take from or move the resource to the supply).",
   "type": "occupation"
  },
  "FR069": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 3,
   "name": "Cat Lover",
-  "reason": "not yet implemented",
   "text": "If there are 1/2/4/7 animals on your farm, you may pay 1/2/3/4 fewer building resources of your choice for each new Wooden room.",
   "type": "occupation"
  },
  "FR070": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 4,
   "name": "Cattle Dealer",
-  "reason": "not yet implemented",
   "text": "Whenever you fence a new pasture that covers at least 3 farmyard spaces, you can pay 1 Reed to receive 2 Cattle.",
   "type": "occupation"
  },
  "FR071": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 4,
   "name": "Child Care Worker",
-  "reason": "not yet implemented",
   "text": "Whenever another player uses a \"Family Growth\" action, you may convert 1 Wood to 2 Food, or 1 Wood and 1 Reed to 5 Food.",
   "type": "occupation"
  },
@@ -6548,15 +6768,14 @@
   "deck": "FR",
   "implemented": false,
   "name": "Cocotte",
-  "reason": "not yet implemented",
+  "reason": "Cocotte: the Minor Improvement branch is a simple bonus play, but the Major Improvement branch ('pay 1 food to play a Major Improvement') needs the full build-improvement flow (upgrade check, Fireplace handling, Well trigger, cost affordability) replicated outside the normal placement dispatch -- matches the B150 precedent for 'bonus Major Improvement' cards.",
   "text": "Whenever you use the \"Day Laborer\" Action space, you can also play a Minor Improvement or pay 1 Food to play a Major Improvement.",
   "type": "occupation"
  },
  "FR073": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Convict Number 24601",
-  "reason": "not yet implemented",
   "text": "Starting from next round, you cannot take actions with 1 of your Family members. At the end of the game, you receive 2 Bonus Points for every round after playing this card, including the current round.",
   "type": "occupation"
  },
@@ -6564,7 +6783,7 @@
   "deck": "FR",
   "implemented": false,
   "name": "Country Doctor",
-  "reason": "not yet implemented",
+  "reason": "Country Doctor: needs to bypass the room-vs-people-total legality check on the basic_wish/urgent_wish action spaces; there is no mod_valid-style hook for action-space legality (only costs are pluggable, via cost_mod).",
   "text": "Once during the game, when you have 3 planted Grain fields, you may play the \"Family growth\" action as \"Family growth even without room.",
   "type": "occupation"
  },
@@ -6572,7 +6791,7 @@
   "deck": "FR",
   "implemented": false,
   "name": "Cowboy And Mother",
-  "reason": "not yet implemented",
+  "reason": "Cowboy And Mother: needs an end-of-work-phase trigger (counting spaces used and family size that phase) plus an optional reward choice (food, or from round 8/12 an animal/plow instead); no end-of-work-phase hook exists, and the choice can't be offered from round_start (the nearest proxy) per the no-prompt-at-round_start rule.",
   "text": "From Round 4 on, at the end of any Work phase in which you used 2 or fewer Action spaces and have 2 or fewer Family members, you receive 1 Food. From Round 8/12, you may choose to receive an animal/Plow 1 field instead.",
   "type": "occupation"
  },
@@ -6580,7 +6799,7 @@
   "deck": "FR",
   "implemented": false,
   "name": "Debt Collector",
-  "reason": "not yet implemented",
+  "reason": "Debt Collector: Guest tokens are explicitly unsupported.",
   "text": "When you play this card, place a Guest token on any Round space at least 3 higher than the current round. At the start of that round, pay the Starting player (which may be you) 1 Food and place the Guest. After that, play starts with the starting player as usual.",
   "type": "occupation"
  },
@@ -6588,7 +6807,7 @@
   "deck": "FR",
   "implemented": false,
   "name": "Dove Hunter",
-  "reason": "not yet implemented",
+  "reason": "Dove Hunter: DB text is corrupted -- it describes 'the Chandler' (an unrelated card that converts sheep/cattle to food) rather than an effect belonging to Dove Hunter, with no clean leading clause recoverable as this card's own text (see module docstring).",
   "text": "In the Feeding phase of each Harvest, the Chandler can convert either 1 Sheep to 4 Food or 1 Cattle to 6 Food.",
   "type": "occupation"
  },
@@ -6596,23 +6815,21 @@
   "deck": "FR",
   "implemented": false,
   "name": "Drawing Genius",
-  "reason": "not yet implemented",
+  "reason": "Drawing Genius: same Major Improvement re-implementation gap as FR072/B150 -- 'play 1 Major or Minor Improvement' after using the newest round space needs the full build flow replicated outside the placement dispatch.",
   "text": "Immediately after using the most recent Round card, you may play 1 Major or Minor Improvement. (Pay costs for the Improvement normally.)",
   "type": "occupation"
  },
  "FR079": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Drinker of Absinthe",
-  "reason": "not yet implemented",
   "text": "Place 1 Food each on the spaces for rounds 7 to 14. At the start of these rounds, you receive the Food.",
   "type": "occupation"
  },
  "FR080": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 3,
   "name": "Fencing Master",
-  "reason": "not yet implemented",
   "text": "Whenever you play an Occupation (including this one), place up to 2 fences from your supply on this card. From your 4th Occupation on, place up to 1 fence instead. You build these fences for free when taking a \"Fences\" Action.",
   "type": "occupation"
  },
@@ -6620,31 +6837,29 @@
   "deck": "FR",
   "implemented": false,
   "name": "Fiddler",
-  "reason": "not yet implemented",
+  "reason": "Fiddler: needs to know whether you received ANY building resource during the round (from all sources) to reward receiving none; there is no generic per-round gain ledger, and a before/after snapshot can't distinguish gains from spends.",
   "text": "At the end of each round in which you did not receive any Building resources, you receive 1 Wood. If its an evennumbered round, you additionally receive 1 Food.",
   "type": "occupation"
  },
  "FR082": {
   "deck": "FR",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 3,
   "name": "Gardening Enthusiast",
-  "reason": "not yet implemented",
   "text": "You immediately receive a loan of 1 Grain and 1 Vegetable. Before scoring, return the 2 crops from your supply. For each crop that you cannot or choose not to return, you receive 1 Negative point.",
   "type": "occupation"
  },
  "FR083": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 3,
   "name": "Good Friend",
-  "reason": "not yet implemented",
   "text": "Place 3 Wood, 2 Clay, 2 Stone, and 1 Reed on this card. Whenever another player pays building resources to build a Minor Improvement, you may take 1 building resource of the same type from this card.",
   "type": "occupation"
  },
  "FR084": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Grain Speculator",
-  "reason": "not yet implemented",
   "text": "Add 1, 3, and 5 to the current round and place 1 Grain on each corresponding Round space. At the start of these rounds, you receive the Grain.",
   "type": "occupation"
  },
@@ -6652,7 +6867,7 @@
   "deck": "FR",
   "implemented": false,
   "name": "Harvester",
-  "reason": "not yet implemented",
+  "reason": "Harvester: the wood-on-play tiers are easy, but 'ALL players who harvest at least 5 goods in the final harvest get 3 bonus points' awards points to players other than this card's owner; score_bonus is scoped to the owning player only, with no mechanism to award other players.",
   "text": "If there are still 1/3/6/9 rounds to play, you immediately receive 1/2/3/4 Wood. At the end of the game, all players who harvest at least 5 goods during the final Harvest receive 3 Bonus points.",
   "type": "occupation"
  },
@@ -6660,15 +6875,14 @@
   "deck": "FR",
   "implemented": false,
   "name": "Head Of The Revolution",
-  "reason": "not yet implemented",
+  "reason": "Head Of The Revolution: same scoring-scope gap as FR085 -- 'the next player to have no unused farmyard spaces receives 3 Bonus points' awards points to a player who may not own this card; score_bonus can't target other players.",
   "text": "If there are still 1/3/6/9 rounds to play, you immediately receive 1/2/3/4 Wood. After playing this card, the next player to have no Unused farmyard spaces (who currently has Unused spaces) receives 3 Bonus points.",
   "type": "occupation"
  },
  "FR087": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Immigrants Son",
-  "reason": "not yet implemented",
   "text": "When you play your 5th, 6th and 7th Occupation, you can Plow 1 field immediately afterward. (You cannot Plow immediately if you play this card as your 5th, 6th, or 7th Occupation.)",
   "type": "occupation"
  },
@@ -6676,7 +6890,7 @@
   "deck": "FR",
   "implemented": false,
   "name": "Journeyman",
-  "reason": "not yet implemented",
+  "reason": "Journeyman: 'at the start of each round, pay 1 food for 1 animal of your choice' is an optional round_start choice (which animal); round_start hooks cannot prompt (see GUIDE.md and the deck_d D167 precedent) and there is no action-parameter channel to take the choice up front instead.",
   "text": "Once you have a Stone house, you can pay 1 Food at the start of each round for 1 animal of your choice.",
   "type": "occupation"
  },
@@ -6684,15 +6898,15 @@
   "deck": "FR",
   "implemented": false,
   "name": "Landscape Gardener",
-  "reason": "not yet implemented",
+  "reason": "Landscape Gardener: 'sow on this card as if it were 2 fields' needs a card field slot holding 2 independent crop plantings; the field={...} architecture (and inst['crops']) supports exactly one crop per card instance. It also grants an immediate bonus Sow action on play, which would need the full sow-action flow replicated outside the placement dispatch.",
   "text": "When you Sow, you may Sow on this card as if it were 2 fields. When you play this card, you may take a \"Sow\" action. (This card does not count as a field when scoring.)",
   "type": "occupation"
  },
  "FR090": {
   "deck": "FR",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 3,
   "name": "Lemon Trader",
-  "reason": "not yet implemented",
   "text": "Twice per round, you may exchange 1 Grain from your supply for 1 building resource, or 1 Vegetable from your supply for 2 different building resources.",
   "type": "occupation"
  },
@@ -6700,23 +6914,21 @@
   "deck": "FR",
   "implemented": false,
   "name": "Manual Labourer",
-  "reason": "not yet implemented",
+  "reason": "Manual Labourer: same generic-gain-tracking gap as FR068/FR081 -- 'received exactly 1 type of building resource in any way' can't be observed without a comprehensive per-round gain ledger.",
   "text": "At the end of each round in which you received exactly 1 type of building resource (in any way), you also receive 1 more building resource of that type.",
   "type": "occupation"
  },
  "FR092": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 4,
   "name": "Martial Artist",
-  "reason": "not yet implemented",
   "text": "At the start of each Harvest, you may discard up to 2 Minor Improvements from your hand to receive 2 Food each.",
   "type": "occupation"
  },
  "FR093": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Mastermind",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you receive 1 Bonus Point for each card with a Bonus point symbol that you play after this one. (An example of a Bonus point symbol appears on the bottom of this card.)",
   "type": "occupation"
  },
@@ -6724,7 +6936,7 @@
   "deck": "FR",
   "implemented": false,
   "name": "Miser",
-  "reason": "not yet implemented",
+  "reason": "Miser: the discount only applies when you build EXACTLY 1 room, but cost_mod for kind='room' is never told how many rooms are being built in this action (only 'fences' carries a count in ctx); the condition can't be evaluated.",
   "text": "Whenever you use a \"Build Room(s)\" action on an Action space, you may pay 1 Wood/ Clay/ Stone less and 1 Reed less if you build exactly 1 Wood/ Clay/ Stone room. (It is irrelevant whether you build stables.)",
   "type": "occupation"
  },
@@ -6732,23 +6944,21 @@
   "deck": "FR",
   "implemented": false,
   "name": "Musketeer",
-  "reason": "not yet implemented",
+  "reason": "Musketeer: 'place an Arrow marker at the intersection of 4 action spaces' needs 2-D adjacency/positioning between action spaces, which this engine doesn't model (same gap as B120).",
   "text": "Place an Arrow marker in the intersection between 4 Action spaces. At the end of each Work phase, if 2/3/4 of those spaces are occupied by your Family members, you receive 1 Sheep / Wild boar / Cattle.",
   "type": "occupation"
  },
  "FR096": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Oceanographer",
-  "reason": "not yet implemented",
   "text": "Pile (from bottom to top) 1 Vegetable, 1 Stone, 1 Grain, 1 Clay, 1 Wood on this card. Whenever you Plow exactly 1 field, you may receive the top item.",
   "type": "occupation"
  },
  "FR097": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Parquet Setter",
-  "reason": "not yet implemented",
   "text": "At the end of each Work phase in which you reduced the number of your unused farmyard spaces, you receive 1 Wood. If you reduced it by 2 or more spaces, you also receive 1 Food.",
   "type": "occupation"
  },
@@ -6756,31 +6966,28 @@
   "deck": "FR",
   "implemented": false,
   "name": "Pasteurization Expert",
-  "reason": "not yet implemented",
+  "reason": "Pasteurization Expert: 'receive the top item when you receive that type of animal outside of breeding' needs a generic 'animal gained' event covering every source (markets, other cards, occupations); only specific hooks exist, so this can't be observed without missing sources.",
   "text": "Pile (from bottom to top) 1 Cattle, Sheep, Wild boar, Sheep on this card. You receive the top item when you receive that type of animal outside of the Breeding phase of Harvest.",
   "type": "occupation"
  },
  "FR099": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 4,
   "name": "Pear Peeler",
-  "reason": "not yet implemented",
   "text": "Whenever you use an action to take Wood from an Action space, you may leave 1/2/3 Wood on the space and take 1 Grain/ Vegetable/ Grain and Vegetable in exchange.",
   "type": "occupation"
  },
  "FR100": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Pipe Smoker",
-  "reason": "not yet implemented",
   "text": "Whenever you have at least 1 planted Grain field at the start of a Harvest, you receive 2 Wood.",
   "type": "occupation"
  },
  "FR101": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 4,
   "name": "Powerhouse",
-  "reason": "not yet implemented",
   "text": "Whenever you have at least 3/5 Stone in your supply at the start of the Work phase, you receive 1/2 Food.",
   "type": "occupation"
  },
@@ -6788,23 +6995,21 @@
   "deck": "FR",
   "implemented": false,
   "name": "Prefect",
-  "reason": "not yet implemented",
+  "reason": "Prefect: needs to count every player's feeding-phase conversions (Joinery/Pottery/Basketmaker/raw) to food; _apply_feed fires no hook per conversion (same gap as FR067), and this card additionally needs visibility into OTHER players' feedings, which conversions don't broadcast.",
   "text": "You receive 1 Food for each Occupation and for each Improvement used by any player to convert building resources to Food during Harvest.",
   "type": "occupation"
  },
  "FR103": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 4,
   "name": "Prosecutor",
-  "reason": "not yet implemented",
   "text": "If you have fewer Improvements than 2/3/4 other players, you may pay 1/2/3 building resource less of your choice when you play an Improvement.",
   "type": "occupation"
  },
  "FR104": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 3,
   "name": "Racing Stable Manager",
-  "reason": "not yet implemented",
   "text": "Whenever you build at least 1 stable, you may also pay 1 Food to immediately Plow 1 field.",
   "type": "occupation"
  },
@@ -6812,63 +7017,56 @@
   "deck": "FR",
   "implemented": false,
   "name": "Reformer",
-  "reason": "not yet implemented",
+  "reason": "Reformer: 'keep 1 animal on each occupation card' needs a house_capacity variant scaled by the number of occupations in play; house_capacity only supports a flat int or 'per_room', and extending it means editing cards.py's shared query function, outside this module's two deliverables.",
   "text": "You may keep any 1 animal on each of your played Occupation cards.",
   "type": "occupation"
  },
  "FR106": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Sailboat Constructor",
-  "reason": "not yet implemented",
   "text": "Place 4 stacks of resources on this card: 3 Wood, 3 Clay, 2 Stone, and 1 Grain with 1 Vegetable. In the Field phase of each Harvest you can buy (some or all of) these stacks. Pay 2/3/4/5 Food for the 1st/ 2nd/ 3rd/ 4th stack you buy.",
   "type": "occupation"
  },
  "FR107": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 3,
   "name": "Sculptors Son",
-  "reason": "not yet implemented",
   "text": "If you have the Joinery/ Pottery/ Basketmaker's Workshop or their upgrades, you receive an additional 2 Wood/ 2 Clay/ 1 Reed whenever you use a Family member's action to take only Wood/ Clay/ Reed.",
   "type": "occupation"
  },
  "FR108": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 4,
   "name": "Shovel Worker",
-  "reason": "not yet implemented",
   "text": "In the Field phase of each Harvest, you receive 1/2/3/4 Food if you have 2/3/4/5 pastures.",
   "type": "occupation"
  },
  "FR109": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 4,
   "name": "Stage Star",
-  "reason": "not yet implemented",
   "text": "If you play this card in Stage 1, you immediately receive 6 wood. Whenever another player uses the \"Traveling Player\" action, you must pay him 1 Wood if you have any in your supply.",
   "type": "occupation"
  },
  "FR110": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Stroller",
-  "reason": "not yet implemented",
   "text": "Pile 6 building resources of your choice, but including at least 1 of each type, on this card in any order. During the Field phase of each Harvest, you receive the top item.",
   "type": "occupation"
  },
  "FR111": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Sun Farmer",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"Take 1 Grain\" action, you receive 1 additional Sheep. Whenever you use the accumulating \"Sheep\" action, you receive 1 additional Grain.",
   "type": "occupation"
  },
  "FR112": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 4,
   "name": "Tower Builder",
-  "reason": "not yet implemented",
   "text": "If you are the only player to have only 2 rooms in your home and you use a \"Build rooms\" action on an Action space to build at least 1 room, you may build 1 additional room for free.",
   "type": "occupation"
  },
@@ -6876,15 +7074,14 @@
   "deck": "FR",
   "implemented": false,
   "name": "Trailblazer",
-  "reason": "not yet implemented",
+  "reason": "Trailblazer: 'at the start of each round, you may pay 1 Food to Plow 1 field' is an optional round_start choice; round_start hooks cannot prompt, and there is no parameter channel to take the choice up front (same precedent as FR088/FR120).",
   "text": "At the start of each round, if you have no empty plowed fields on your farm, you may pay 1 Food to Plow 1 field.",
   "type": "occupation"
  },
  "FR114": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Turkey Breeder",
-  "reason": "not yet implemented",
   "text": "You may immediately build up to 4 fences and 1 stable for free. At the end of the final Harvest, you must return 4 Wood to the general supply. If you cannot, you must take 1 Begging Card for each Wood you cannot return.",
   "type": "occupation"
  },
@@ -6892,23 +7089,21 @@
   "deck": "FR",
   "implemented": false,
   "name": "Unicycle Driver",
-  "reason": "not yet implemented",
+  "reason": "Unicycle Driver: 'place a fence as a road between 2 orthogonally adjacent Action spaces' needs 2-D adjacency between action spaces, which this engine doesn't model (same gap as FR095).",
   "text": "At the start of each round, you may pay 1 Stone to place 1 of your unused fences as a road between 2 orthogonally adjacent Action spaces. At the end of each Work phase, you may use 1 empty Action space with a road to one occupied by you.",
   "type": "occupation"
  },
  "FR116": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 4,
   "name": "Village Druid",
-  "reason": "not yet implemented",
   "text": "In the future, whenever you play an Occupation, you receive 1 Sheep afterward.",
   "type": "occupation"
  },
  "FR117": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 4,
   "name": "Wealthiest European",
-  "reason": "not yet implemented",
   "text": "If this is your first Occupation, immediately take 1 building resource of your choice for each completed round of the game.",
   "type": "occupation"
  },
@@ -6916,15 +7111,15 @@
   "deck": "FR",
   "implemented": false,
   "name": "Wood Gatherers",
-  "reason": "not yet implemented",
+  "reason": "Wood Gatherers: needs the actual (post-cost_mod) wood spent on improvements/rooms/stables/fences within a round; the corresponding hooks (rooms_built/stable_built/fences_built/improvement_built) expose cell/id counts, not the resource amount actually paid after other cards' discounts, so the 'spent >=4 wood' condition can't be reconstructed reliably.",
   "text": "Each round, if you spend 4 or more Wood for Improvements, rooms, stables, or fences, you receive 2 Wood at the end of the round.",
   "type": "occupation"
  },
  "FR119": {
   "deck": "FR",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 4,
   "name": "Workaholic",
-  "reason": "not yet implemented",
   "text": "When you play the card, if there are no animals on your farm, place 5 Wood, 4 Clay, and 3 Stone on this card. At any time, if you have 5/7/9 animals, you receive all the Wood/ Clay/ Stone on this card.",
   "type": "occupation"
  },
@@ -6932,7 +7127,7 @@
   "deck": "FR",
   "implemented": false,
   "name": "Writing Maniac",
-  "reason": "not yet implemented",
+  "reason": "Writing Maniac: needs an optional pay-2-food-or-return choice at the start of rounds 5/7/9/11; round_start hooks cannot prompt (same precedent as FR088/FR113).",
   "text": "Place 1 Occupation (from your hand) face down on each space for rounds 5,7,9, and 11. At the start of these rounds, you can pay 2 Food to play the Occupation. If you do not, return it to your hand.",
   "type": "occupation"
  },
@@ -7892,15 +8087,15 @@
   "deck": "I",
   "implemented": false,
   "name": "Tavern",
-  "reason": "not yet implemented",
+  "reason": "creates a new action space usable by every player (shared action-space creation), matching the B042 precedent -- unsupported.",
   "text": "The Tavern is an additional action space. Whenever another player uses it, they receive 3 food. Whenever you use it, you can choose either to take 3 food or to score 2 bonus points.",
   "type": "minor"
  },
  "I101": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Animal Feed",
-  "reason": "not yet implemented",
+  "prereq_text": "4 planted field(s)",
   "text": "Immediately before scoring, you receive 1 additional animal of each type that you already have.",
   "type": "minor"
  },
@@ -7908,7 +8103,7 @@
   "deck": "I",
   "implemented": false,
   "name": "Wildlife Reserve",
-  "reason": "not yet implemented",
+  "reason": "requires card-based animal storage capacity outside house/pastures; accommodation only consults house_capacity and pasture_capacity_bonus (same gap as the B012 precedent).",
   "text": "This card can hold up to 1 sheep, 1 wild boar and 1 cattle.",
   "type": "minor"
  },
@@ -7916,23 +8111,25 @@
   "deck": "I",
   "implemented": false,
   "name": "Water Mill",
-  "reason": "not yet implemented",
+  "reason": "offers every player (not just the owner) an optional feeding-phase conversion, taxed to the owner; card_action/conversions are only ever queried against the acting player's own in_play cards, and harvest_field only fires to the acting player's own cards (fire_player), so this card can't even react to other players' harvests.",
   "text": "After the field phase of a harvest, each player can use the Water Mill to convert up to 1 grain to 3 food. Each player that uses the Water Mill must give you 1 of the food.",
   "type": "minor"
  },
  "I104": {
+  "cost": {
+   "grain": 3
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Weekly Market",
-  "reason": "not yet implemented",
   "text": "When you play this card, you receive 2 vegetables. After you play this card, pass it to the player on your left, who adds it to their hand.",
+  "traveling": true,
   "type": "minor"
  },
  "I219": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Fieldsman",
-  "reason": "not yet implemented",
   "text": "Whenever you sow 1 field, place 2 additional goods of the same type from the general supply on the stack. Whenever you sow 2 fields, place 1 extra good on each.",
   "type": "occupation"
  },
@@ -7940,15 +8137,14 @@
   "deck": "I",
   "implemented": false,
   "name": "Well Builder",
-  "reason": "not yet implemented",
+  "reason": "reclassifies the Well as a minor improvement with a special cost just for this player; cost_mod for kind='improvement' folds over ALL major improvements uniformly with no per-improvement id in ctx, so a discount (or a major->minor reclassification) can't be targeted at the Well alone.",
   "text": "For you, the Well A10 is not a major but now a minor improvement and costs only 1 stone and 1 wood to build.",
   "type": "occupation"
  },
  "I221": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 3,
   "name": "Village Elder",
-  "reason": "not yet implemented",
   "text": "You receive wood immediately when you play this card: if played in round 12 or 13, take 1 wood; if played in round 9, 10, or 11, take 2 wood; if played in round 6, 7, or 8, take 3 wood; if played before round 6, take 4 wood. At the end of the game, all players with the most improvements in front of them receive 3 bonus points each.",
   "type": "occupation"
  },
@@ -7956,7 +8152,7 @@
   "deck": "I",
   "implemented": false,
   "name": "Social Climber",
-  "reason": "not yet implemented",
+  "reason": "requires tracking the game-wide order in which players first renovate to clay/stone; the 'renovate' event only fires to the acting player's own cards (fire_player, not a broadcast), so no card can observe another player's renovation.",
   "text": "Whenever you are the first player to renovate to a clay hut or a stone house, you receive 3 stone. If you are the second, you receive 2 stone; the third, you receive 1 stone.",
   "type": "occupation"
  },
@@ -7964,7 +8160,7 @@
   "deck": "I",
   "implemented": false,
   "name": "Harvest Helper",
-  "reason": "not yet implemented",
+  "reason": "takes a grain directly from another player's field; affecting other players' farms directly is unsupported.",
   "text": "At the start of the feeding phase in each harvest, you can take 1 grain from 1 field belonging to another player. That player receives 2 food from the general supply.",
   "type": "occupation"
  },
@@ -7972,15 +8168,14 @@
   "deck": "I",
   "implemented": false,
   "name": "Field Worker",
-  "reason": "not yet implemented",
+  "reason": "reacts to another player's sow action, but 'sow' only fires to the acting player's own cards (fire_player, not a broadcast) -- no card can observe another player's sow.",
   "text": "Whenever another player sows one or more fields, you receive 1 grain in a 3-player game or 1 food in a 4/5 player game.",
   "type": "occupation"
  },
  "I225": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Field Watchman",
-  "reason": "not yet implemented",
   "text": "Whenever you use the action space \"Take 1 Grain\", you can also plough up to 1 field.",
   "type": "occupation"
  },
@@ -7988,15 +8183,14 @@
   "deck": "I",
   "implemented": false,
   "name": "Gardener",
-  "reason": "not yet implemented",
+  "reason": "requires the field-phase harvest to not decrement the crop count on vegetable fields, but crops are already decremented in _start_harvest's unconditional per-player loop before any hook fires, with no delta passed to harvest_field -- there is nothing left to intercept or restore.",
   "text": "Take vegetables from the general supply and not from your vegetable field whenever you harvest them - you keep the vegetables on the fields.",
   "type": "occupation"
  },
  "I227": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Church Warden",
-  "reason": "not yet implemented",
   "text": "You receive wood immediately when you play this card: if played in round 12 or 13, take 1 wood; if played in round 9, 10, or 11, take 2 wood; if played in round 6, 7, or 8, take 3 wood; if played before round 6, take 4 wood. At the end of the game, any player who performed actions with at least 5 people in round 14 receives 3 bonus points.",
   "type": "occupation"
  },
@@ -8004,7 +8198,7 @@
   "deck": "I",
   "implemented": false,
   "name": "Businessman",
-  "reason": "not yet implemented",
+  "reason": "grants a bonus Major OR Minor Improvement action; the minor half has a precedent (_offer_free_minor-style), but the major-improvement half needs cell/cost/available-improvements bookkeeping reproduced from a card hook (same gap as B150), and silently dropping the major half would misrepresent the card.",
   "text": "Whenever you use the \"Starting Player\" action space, you can play an additional minor or major improvement after you play the minor improvement.",
   "type": "occupation"
  },
@@ -8012,7 +8206,7 @@
   "deck": "I",
   "implemented": false,
   "name": "Sycophant",
-  "reason": "not yet implemented",
+  "reason": "forces other players to pay you before they may use the 'Take 1 Grain' space -- a legality-gating replacement effect on other players' actions (same category as B138); space_used only fires after a space's action has already resolved, so it cannot block or charge as a precondition.",
   "text": "Any other player that uses the \"Take 1 Grain\" action space must first pay you 1 food. In addition, you receive 1 food from the general supply. You receive that food even when you take the grain yourself.",
   "type": "occupation"
  },
@@ -8020,23 +8214,21 @@
   "deck": "I",
   "implemented": false,
   "name": "Clay Digger",
-  "reason": "not yet implemented",
+  "reason": "adds an entirely new action space to the board (action-space deck/order/reveal is explicitly out of scope) and additionally requires other players to pay a legality-gating fee before using it (same as I229/B138).",
   "text": "Include the \"1 Clay\" action card from the 3-player game as an additional clay pit. Immediately place 3 clay on the card and add 1 clay at the start of each round. Any player who uses this action must pay you 3 food.",
   "type": "occupation"
  },
  "I231": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Manservant",
-  "reason": "not yet implemented",
   "text": "When you build a stone house, place 3 food on each remaining round space. At the start of these rounds, you receive the food.",
   "type": "occupation"
  },
  "I232": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 4,
   "name": "Midwife",
-  "reason": "not yet implemented",
   "text": "Whenever another player has offspring and then has a larger family than you, you receive 1 food. If they have at least 2 more family members than you, you receive 2 food.",
   "type": "occupation"
  },
@@ -8044,31 +8236,28 @@
   "deck": "I",
   "implemented": false,
   "name": "Farm Steward",
-  "reason": "not yet implemented",
+  "reason": "requires bypassing the 'Family Growth without Room' legality check on the basic_wish space for exactly one future use; the check runs inside _resolve_space before any card hook fires, and the static extra_rooms key is a flat per-card value with no per-instance 'used up' state to consume after one use.",
   "text": "Once you live in a clay hut or stone house, play your next family growth action as a \"family growth even without room\".",
   "type": "occupation"
  },
  "I234": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 3,
   "name": "Wood Buyer",
-  "reason": "not yet implemented",
   "text": "Whenever another player receives wood from an action, you can buy 1 wood from them for 1 food (even without their agreement).",
   "type": "occupation"
  },
  "I235": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Wood Collector",
-  "reason": "not yet implemented",
   "text": "Place 1 wood on each of the next 5 round spaces. At the start of these rounds, you receive the wood.",
   "type": "occupation"
  },
  "I236": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 3,
   "name": "Hide Farmer",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you can pay 1 food each for any number of unused farmyard spaces. These do not lose you points in the scoring.",
   "type": "occupation"
  },
@@ -8076,7 +8265,7 @@
   "deck": "I",
   "implemented": false,
   "name": "Juggler",
-  "reason": "not yet implemented",
+  "reason": "doubling Traveling Players' food requires then paying 1 food to each OTHER player who owns any of 8 named occupations (Magician, Conjurer, Dancer, Animal Trainer, Storyteller, Acrobat, Puppeteer, Street Musician), most from decks this engine hasn't implemented; enumerating only the in-scope subset would silently misrepresent the card's cost.",
   "text": "Whenever you use the \"Traveling Players\" action on an action space, you can choose to receive twice as much food as is on the card. If you do this, you must give one food each to the owners of the Magician K311 , Conjurer E167 , Street Musician I257 , Puppeteer I249 , Acrobat K269 , Dancer E212 , Animal Trainer K342 and Storyteller E169 .",
   "type": "occupation"
  },
@@ -8084,7 +8273,7 @@
   "deck": "I",
   "implemented": false,
   "name": "Chamberlain",
-  "reason": "not yet implemented",
+  "reason": "reveals all remaining round-space cards early for one player only; the action-space list is shared global state with no per-player visibility, and modifying reveal order/timing is explicitly out of scope.",
   "text": "At the start of round 11 (or immediately, if you play this card after the start of Round 11), turn over the round cards for the remaining rounds. You (and only you) can use these actions immediately; the other players must wait until the appropriate round.",
   "type": "occupation"
  },
@@ -8092,39 +8281,35 @@
   "deck": "I",
   "implemented": false,
   "name": "Corn Profiteer",
-  "reason": "not yet implemented",
+  "reason": "the grain->food conversion itself maps to raw_values, but the card's defining mechanic is that any OTHER player can veto the conversion by buying the grain first; that legality-gating replacement effect on the actor's own action is unsupported, and implementing only the conversion half would silently drop the card's balancing risk.",
   "text": "You can convert 1 grain to 3 food at any time. Any other player can prevent this by buying the grain from you for 2 food. If more than one player wants to buy, you choose one of them.",
   "type": "occupation"
  },
  "I240": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 3,
   "name": "Cowherd",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"1 Cattle\" action space, you receive 1 additional cattle from the general supply.",
   "type": "occupation"
  },
  "I241": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Clay Plasterer",
-  "reason": "not yet implemented",
   "text": "Renovating your wooden hut to a clay hut costs you only 1 clay and 1 reeds. Each room of your clay hut costs you 3 clay and 2 reeds.",
   "type": "occupation"
  },
  "I242": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Clay Hut Builder",
-  "reason": "not yet implemented",
   "text": "Once you live in a clay hut, place 2 clay on each of the next 5 round spaces. At the start of these rounds, you receive the clay.",
   "type": "occupation"
  },
  "I243": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Bricklayer",
-  "reason": "not yet implemented",
   "text": "Pay 1 less clay for each improvement and renovation. Pay 2 less clay for each room.",
   "type": "occupation"
  },
@@ -8132,31 +8317,54 @@
   "deck": "I",
   "implemented": false,
   "name": "Layabout",
-  "reason": "not yet implemented",
+  "reason": "suppresses the field, breeding, AND feeding phases for one player for one whole harvest; those phases are unconditional per-player loops in _start_harvest/feeding with no per-player skip flag or hook -- there is nothing for a card to intercept.",
   "text": "Once you have played this card, you may not take part in the next harvest.",
   "type": "occupation"
  },
  "I245": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 3,
   "name": "Market Crier",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"Take 1 Grain\" action space, you can take an additional 1 grain and 1 vegetable. If you do this, the other players each receive 1 grain from the general supply.",
   "type": "occupation"
  },
  "I246": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 4,
   "name": "Milking Hand",
-  "reason": "not yet implemented",
   "text": "In the field phase of the harvest, you receive food if you have cattle, without having to give up the cattle: for 5 or more cattle, 3 food; for 3 or 4 cattle, 2 food; for 1 cattle, 1 food. At the end of the game, you receive 1 bonus point for every 2 cattle.",
   "type": "occupation"
  },
  "I247": {
+  "conversions": [
+   {
+    "get": {
+     "food": 1
+    },
+    "give": {
+     "sheep": 1
+    }
+   },
+   {
+    "get": {
+     "food": 2
+    },
+    "give": {
+     "boar": 1
+    }
+   },
+   {
+    "get": {
+     "food": 3
+    },
+    "give": {
+     "cattle": 1
+    }
+   }
+  ],
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Butcher",
-  "reason": "not yet implemented",
   "text": "You can convert your animals into food at any time. You receive 1 food for each sheep, 2 for each wild boar and 3 for each cattle.",
   "type": "occupation"
  },
@@ -8164,7 +8372,7 @@
   "deck": "I",
   "implemented": false,
   "name": "Net Fisherman",
-  "reason": "not yet implemented",
+  "reason": "requires a distinct 'returning home' checkpoint between the work phase and the next round's preparation phase to claim a space's leftover food ahead of other players; no such hook exists, and by the time round_start fires, the Fishing space's supply has already been re-accumulated for the new round, corrupting the amount being claimed.",
   "text": "If one of your people uses an action space that directly provides reeds, you can take all food from the \"Fishing\" action space in the returning home phase (phase 4).",
   "type": "occupation"
  },
@@ -8172,87 +8380,100 @@
   "deck": "I",
   "implemented": false,
   "name": "Puppeteer",
-  "reason": "not yet implemented",
+  "reason": "paying 1 food to play an occupation (without its own play cost) off another player's action would require duplicating _play_occupation's internals (cost, hand removal, occs_played bookkeeping, occupation_played firing) inside a card hook; the identically-named Puppeteer in deck C (C152) declined this same duplication per the architecture's engine-extension-over-duplication guidance.",
   "text": "Whenever another player chooses the \"Traveling players\" action on an action space, you can pay 1 food to play an occupation.",
   "type": "occupation"
  },
  "I250": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 4,
   "name": "Sheep Whisperer",
-  "reason": "not yet implemented",
   "text": "Add 4, 7, 9 and 11 to the number of the current round and place 1 sheep on each corresponding round space. At the start of these rounds, you receive the sheep.",
   "type": "occupation"
  },
  "I251": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 4,
   "name": "Reed Buyer",
-  "reason": "not yet implemented",
   "text": "Whenever reed is taken for the first time in a round, you may give the player who takes it 1 food in exchange for 1 of the reed. The other player receives an additional 1 food from the general supply as compensation.",
   "type": "occupation"
  },
  "I252": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 4,
   "name": "Pig Breeder",
-  "reason": "not yet implemented",
   "text": "Your wild boar breed at the end of round 12, if there is room for the piglet. When you play this card, you receive 1 wild boar.",
   "type": "occupation"
  },
  "I253": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 4,
   "name": "Pig Catcher",
-  "reason": "not yet implemented",
   "text": "Whenever you use a person to take wood that is on an action space, you can leave 2 of that wood on the space and receive a wild boar instead.",
   "type": "occupation"
  },
  "I254": {
   "deck": "I",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 4,
   "name": "Groom",
-  "reason": "not yet implemented",
   "text": "Once you have a stone house, you can build 1 stable at the beginning of each round at a cost of 1 wood. You do not need to place a family member on an action space to do this.",
   "type": "occupation"
  },
  "I255": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 4,
   "name": "Stone Buyer",
-  "reason": "not yet implemented",
   "text": "Whenever stone is taken for the first time in a round, you may give the player who takes it 1 food in exchange for 1 of the stone. The other player receives an additional 1 food from the general supply.",
   "type": "occupation"
  },
  "I256": {
+  "conversions": [
+   {
+    "get": {
+     "food": 3
+    },
+    "give": {
+     "stone": 1
+    },
+    "per_harvest": 1
+   }
+  ],
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Stone Carver",
-  "reason": "not yet implemented",
   "text": "In each harvest, the Stone Carver can convert up to 1 stone to 3 food.",
   "type": "occupation"
  },
  "I257": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 4,
   "name": "Street Musician",
-  "reason": "not yet implemented",
   "text": "You receive 1 grain whenever another player takes the \"Traveling Players\" action on an action space.",
   "type": "occupation"
  },
  "I258": {
+  "conversions": [
+   {
+    "get": {
+     "food": 2
+    },
+    "give": {
+     "wood": 1
+    },
+    "per_harvest": 1
+   }
+  ],
   "deck": "I",
-  "implemented": false,
+  "min_players": 3,
   "name": "Cabinetmaker",
-  "reason": "not yet implemented",
   "text": "In each harvest, the Cabinetmaker can convert up to 1 wood to 2 food.",
   "type": "occupation"
  },
  "I259": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 3,
   "name": "Animal Dealer",
-  "reason": "not yet implemented",
   "text": "Whenever you use one of the \"1 Sheep\", \"1 Wild Boar\" or \"1 Cattle\" action spaces, you can pay 1 food to take 1 additional animal of that type.",
   "type": "occupation"
  },
@@ -8260,23 +8481,21 @@
   "deck": "I",
   "implemented": false,
   "name": "Taster",
-  "reason": "not yet implemented",
+  "reason": "lets a non-starting player act before the starting player for one round while turn order resumes normally after; placement order is a fixed round-robin from state['starting_player'] with no per-round override hook (turn-sequencing changes are the one class of thing the architecture reserves for engine-level features, e.g. the Lasso).",
   "text": "Whenever another player is the starting player, you can pay them 1 food at the start of the round and be the first to place a family member. After that, play starts with the starting player as usual.",
   "type": "occupation"
  },
  "I261": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 4,
   "name": "Outrider",
-  "reason": "not yet implemented",
   "text": "Whenever you use the most recent round card with one of your people, you receive 1 additional grain.",
   "type": "occupation"
  },
  "I262": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Water Carrier",
-  "reason": "not yet implemented",
   "text": "Once any player has built the Well A10 , place 1 food on the remaining round spaces. At the start of these Rounds, you receive the food.",
   "type": "occupation"
  },
@@ -8284,15 +8503,14 @@
   "deck": "I",
   "implemented": false,
   "name": "Fence Builder",
-  "reason": "not yet implemented",
+  "reason": "grants a follow-up Build Fences action with a player-chosen action-space marker AND player-chosen fence edges; open-ended fence-edge parameters have no channel outside the normal placement flow (same gap as B088/B093/B130).",
   "text": "When you play this card, place one of your fences on an action space of your choice. If you use an action on this action space, you can also build fences as an additional action.",
   "type": "occupation"
  },
  "I264": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 4,
   "name": "Fencer",
-  "reason": "not yet implemented",
   "text": "Whenever another player builds 1 to 4 fences, you receive 1 wood from the general supply. Whenever another player builds 5 or more fences, you receive 2 wood.",
   "type": "occupation"
  },
@@ -8300,7 +8518,7 @@
   "deck": "I",
   "implemented": false,
   "name": "Fence Deliveryman",
-  "reason": "not yet implemented",
+  "reason": "pre-places unbuilt fences on future round spaces and lets the player build them for food instead of wood, but which of up to 15 edges to build is an open-ended choice with no channel outside the normal Build Fences flow (same gap as B088/B093/B130/I263), and it would have to be resolved from a round_start hook, where GUIDE.md disallows prompting.",
   "text": "Add 6 and 10 to the number of the current round. Place 4 of your fences on each corresponding round space. At the start of these rounds, you can pay 2 food to build all 4 fences immediately.",
   "type": "occupation"
  },
@@ -8308,55 +8526,75 @@
   "deck": "I",
   "implemented": false,
   "name": "Clay Deposit",
-  "reason": "not yet implemented",
+  "reason": "creates a new action space usable by every player (shared action-space creation), matching the B042 precedent -- unsupported.",
   "text": "This card is an additional action space. A player who uses this action space must pay you 1 food and receives 5 clay. If you use the Clay Deposit yourself, you may choose to take 2 bonus points instead of the clay.",
   "type": "minor"
  },
  "I340": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 4,
   "name": "Rancher",
-  "reason": "not yet implemented",
   "text": "Whenever, at the start of a round, you are using more farmyard spaces than every other player, you receive 1 wood.",
   "type": "occupation"
  },
  "I63": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Moldboard Plough",
-  "reason": "not yet implemented",
+  "prereq_text": "1 occupations",
   "text": "Twice during the game, when you use the \"Plough 1 Field\" action space, you may plough 2 fields instead of 1.",
   "type": "minor"
  },
  "I64": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Alms",
-  "reason": "not yet implemented",
+  "prereq_text": "no occupations",
   "text": "When you play this card, you receive 1 food for each completed round of the game. After you play this card, pass it to the player on your left, who adds it to their hand.",
+  "traveling": true,
   "type": "minor"
  },
  "I65": {
+  "bake": [
+   2,
+   5
+  ],
+  "cost": {
+   "stone": 2
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Baker's Kitchen",
-  "reason": "not yet implemented",
+  "points": 4,
+  "prereq_text": "an oven built (Clay Oven or Stone Oven)",
   "text": "Whenever you use a bread baking action, you can use the Baker's Kitchen to convert up to 2 grain into 5 food each. When you play this card, you can also bake bread immediately .",
   "type": "minor"
  },
  "I66": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Village Well",
-  "reason": "not yet implemented",
+  "points": 5,
+  "prereq_text": "the Well built",
   "text": "Place 1 food each on the next 3 remaining round spaces. At the start of these rounds, you receive the food.",
   "type": "minor"
  },
  "I67": {
+  "bake_on_spaces": [
+   "farmland",
+   "cultivation"
+  ],
+  "cost": {
+   "wood": 2
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Threshing Board",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "2 occupations",
   "text": "Whenever you use the \"Plough 1 Field\" or \"Plough Field and Sow\" action spaces, you can additionally bake bread.",
   "type": "minor"
  },
@@ -8364,15 +8602,16 @@
   "deck": "I",
   "implemented": false,
   "name": "Harrow",
-  "reason": "not yet implemented",
+  "reason": "grants a 'plough 2 fields instead of 1' option to OTHER players (who must pay the owner 2 food to use it); the choice dispatch (_apply_choice) requires the card instance to be in the resolving player's OWN in_play list, so a non-owner can never be prompted to invoke someone else's card -- there is no channel for 'another player may optionally activate your card for a fee'.",
   "text": "Once during the game, when you use either the \"Plough 1 Field\" or the \"Plough Field and Sow\" action space, you can plough 2 fields instead of 1. Each other player can also do this once during the game, but must pay you 2 food to do it.",
   "type": "minor"
  },
  "I69": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Strawberry Patch",
-  "reason": "not yet implemented",
+  "points": 2,
+  "prereq_text": "2 vegetable field(s)",
   "text": "Place 1 food on each of the next 3 round spaces. At the start of these rounds, you receive the food.",
   "type": "minor"
  },
@@ -8380,7 +8619,7 @@
   "deck": "I",
   "implemented": false,
   "name": "Punner",
-  "reason": "not yet implemented",
+  "reason": "requires reacting to another player's plough action (via the Harrow or a plough card), but the 'plow' event only fires to the acting player's own cards (fire_player, to_all=False) -- no card can observe another player's plow (same gap as the B159 precedent).",
   "text": "Whenever another player uses the Harrow I68 or a plough, you can immediately plough 1 field as well.",
   "type": "minor"
  },
@@ -8388,15 +8627,16 @@
   "deck": "I",
   "implemented": false,
   "name": "Holiday House",
-  "reason": "not yet implemented",
+  "reason": "forces the owner to skip all people placement in round 14 -- a turn-structure control the engine has no hook for; _advance_work/_placement_actions have no per-player 'skip the work phase' key to consult.",
   "text": "In round 14, you cannot place any people. Play this card at the latest during round 13.",
   "type": "minor"
  },
  "I72": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Goose Pond",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "3 occupations",
   "text": "Place 1 food each on the next 4 remaining round spaces. At the start of these rounds, you receive the food.",
   "type": "minor"
  },
@@ -8404,39 +8644,51 @@
   "deck": "I",
   "implemented": false,
   "name": "Guest",
-  "reason": "not yet implemented",
+  "reason": "guest tokens / extra people placements are explicitly unsupported.",
   "text": "When you play this card, you receive a guest token, which you may place once in the next round as you would a person. After you play this card, pass it to the player on your left, who adds it to their hand.",
   "type": "minor"
  },
  "I74": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Grain Cart",
-  "reason": "not yet implemented",
+  "prereq_text": "2 occupations",
   "text": "Whenever you use the \"Take 1 Grain\" action space, you receive 2 additional grain.",
   "type": "minor"
  },
  "I75": {
+  "cost": {
+   "stone": 1
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Hand Mill",
-  "reason": "not yet implemented",
+  "raw_values": {
+   "grain": 2
+  },
   "text": "During the feeding phase of the harvest, you can use the Hand Mill to turn either 1 grain into 2 food or 2 grain into 4 food.",
   "type": "minor"
  },
  "I76": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Rake",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you receive 2 bonus points if you have at least 5 fields. If you have played the Harrow I68 , Punner I70 , Yoke K124 or a plough, you need to have at least 6 fields.",
   "type": "minor"
  },
  "I77": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Shepherd's Crook",
-  "reason": "not yet implemented",
   "text": "Whenever you fence a new pasture that covers at least 4 farmyard spaces, you receive 2 sheep and place them in the new pasture.",
   "type": "minor"
  },
@@ -8444,175 +8696,245 @@
   "deck": "I",
   "implemented": false,
   "name": "Copse",
-  "reason": "not yet implemented",
+  "reason": "requires sowing wood (not grain/vegetable) onto a card-held field with its own stacking rule; _do_sow raises for any crop type other than grain/vegetable, and the field crop-count formula (3 grain / 2 vegetable) has no analog for wood stacks.",
   "text": "When you sow, you can plant wood on this card. There can be up to 2 stacks of wood on this card, as shown. The wood is treated the same as sown grain and is harvested during the field phase.",
   "type": "minor"
  },
  "I79": {
+  "cost": {
+   "wood": 3
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Wood Cart",
-  "reason": "not yet implemented",
+  "prereq_text": "3 occupations",
   "text": "Whenever you use a person to take wood that is on an action space, you receive 2 additional wood.",
   "type": "minor"
  },
  "I80": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Spinney",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "3 occupations",
   "text": "Whenever another player uses the \"3 Wood\" action space, they must give you one of the wood.",
   "type": "minor"
  },
  "I81": {
+  "cost": {
+   "reed": 1,
+   "wood": 5
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Wooden Hut Extension",
-  "reason": "not yet implemented",
   "text": "When you play this card, immediately extend your wooden hut by 1 room. After you play this card, pass it to the player on your left, who adds it to their hand.",
+  "traveling": true,
   "type": "minor"
  },
  "I82": {
   "deck": "I",
   "implemented": false,
   "name": "Wooden Crane",
-  "reason": "not yet implemented",
+  "reason": "the round restriction (5-7, 10-11) identifies a specific 'Take 1 Stone' card by the fixed round it's revealed on the original board; this engine shuffles stage-card order within each stage, so there is no stable mapping from those literal round numbers to western_quarry/eastern_quarry that would let the condition be tested faithfully.",
   "text": "Whenever you use one of the \"1 Stone\" action spaces that are placed in rounds 5-7 and 10-11, you receive 1 additional stone. If you pay 1 food, you can take 2 additional stone instead of 1.",
   "type": "minor"
  },
  "I83": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Wooden Path",
-  "reason": "not yet implemented",
   "text": "The player with the most valuable street receives 2 bonus points when scoring.",
   "type": "minor"
  },
  "I84": {
+  "cost": {
+   "reed": 1,
+   "wood": 2
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Chicken Coop",
-  "reason": "not yet implemented",
+  "points": 1,
   "text": "Place 1 food each on the next 8 remaining round spaces. At the start of these rounds, you receive the food.",
   "type": "minor"
  },
  "I85": {
+  "bake": [
+   null,
+   3
+  ],
+  "cook": {
+   "boar": 3,
+   "cattle": 4,
+   "sheep": 2,
+   "vegetable": 4
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Cooking Corner",
-  "reason": "not yet implemented",
+  "points": 3,
+  "prereq_text": "a Cooking Hearth built",
   "text": "At any time, you may convert goods to food as follows: vegetables \u2192 4 food; sheep \u2192 2 food; wild boar \u2192 3 food; cattle \u2192 4 food. Whenever you use a bread baking action, you may convert: grain \u2192 3 food.",
   "type": "minor"
  },
  "I86": {
+  "cost": {
+   "reed": 2,
+   "wood": 2
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Corn Storehouse",
-  "reason": "not yet implemented",
+  "points": 1,
   "text": "Whenever you have empty fields after the field phase of the harvest, you can sow grain in them immediately. Place 1 fewer grain from the supply on these fields.",
   "type": "minor"
  },
  "I87": {
+  "cost": {
+   "clay": 1
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Flagon",
-  "reason": "not yet implemented",
   "text": "Whenever the Well A10 is built or upgraded to a Village Well I66 , you receive 4 food, and the other players receive 1 food each. If the Well has already been built, everyone receives the food when the Flagon is played.",
   "type": "minor"
  },
  "I88": {
+  "cost": {
+   "reed": 1
+  },
   "deck": "I",
-  "implemented": false,
+  "lasso": true,
+  "min_players": 1,
   "name": "Lasso",
-  "reason": "not yet implemented",
   "text": "You can place exactly two people immediately after one another, if at least one of them uses the \"1 Wild Boar\", \"1 Cattle\" or \"1 Sheep\" action space.",
   "type": "minor"
  },
  "I89": {
+  "cost": {
+   "clay": 3
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Clay Path",
-  "reason": "not yet implemented",
+  "points": 1,
   "text": "The player with the most valuable street receives 2 bonus points when scoring.",
   "type": "minor"
  },
  "I90": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Planter Box",
-  "reason": "not yet implemented",
+  "prereq_text": "2 occupations",
   "text": "Whenever you sow, each of the fields you sow that is orthogonally adjacent to a room in your home gets additional goods from the general supply: 2 extra grain on grain fields, and 1 extra vegetable on vegetable fields .",
   "type": "minor"
  },
  "I91": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Ladder",
-  "reason": "not yet implemented",
   "text": "You need 1 less reed to extend or renovate your home or to build the Water Mill I103 , Half-timbered House E21 , Chicken Coop I84 , Holiday House I71 , Mansion K144 , or Corn Storehouse I86 .",
   "type": "minor"
  },
  "I92": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Manure",
-  "reason": "not yet implemented",
+  "prereq_text": "2 animals",
   "text": "At the end of each round that does not end with a harvest, you can take 1 grain or vegetable from each of your fields and place it in your personal supply.",
   "type": "minor"
  },
  "I93": {
+  "cost": {
+   "clay": 2,
+   "stone": 3
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Milking Shed",
-  "reason": "not yet implemented",
+  "points": 2,
   "text": "In each harvest, at the beginning of the field phase, count the total number of sheep and cattle in all the players' farms. You receive 1 food for each fifth sheep and for each third cattle.",
   "type": "minor"
  },
  "I94": {
+  "cost": {
+   "stone": 5
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Paved Road",
-  "reason": "not yet implemented",
+  "points": 2,
   "text": "The player with the most valuable street receives 2 Bonus points when scoring.",
   "type": "minor"
  },
  "I95": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Fish Trap",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"Fishing\" action space or receive reed on an action space, you receive 1 additional food.",
   "type": "minor"
  },
  "I96": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Reed Exchange",
-  "reason": "not yet implemented",
   "text": "When you play this card, you receive 2 reeds. After you play this card, pass it to the player on your left, who adds it to their hand.",
+  "traveling": true,
   "type": "minor"
  },
  "I97": {
   "deck": "I",
   "implemented": false,
   "name": "Slaughterhouse",
-  "reason": "not yet implemented",
+  "reason": "reacts to another player converting an animal to food during feeding, and moves the owner to the end of the feeding turn order; _apply_feed applies conversions directly with no fired event for any card to observe, and there is no mechanism to reorder the feeding sequence.",
   "text": "Whenever another player converts 1 or more animals to food, you receive 1 food from the supply. During the feeding phase of the harvest, you are the last player to take a turn.",
   "type": "minor"
  },
  "I98": {
+  "conversions": [
+   {
+    "get": {
+     "food": 4
+    },
+    "give": {
+     "vegetable": 1
+    },
+    "per_harvest": 1
+   }
+  ],
+  "cost": {
+   "stone": 2,
+   "vegetable": 1
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Schnaps Distillery",
-  "reason": "not yet implemented",
+  "points": 2,
   "text": "During the feeding phase of the harvest, you can use the Schnaps Distillery to convert at most 1 vegetable into 4 food. At the end of the game, you receive 1 bonus point each for your 5th and 6th vegetables.",
   "type": "minor"
  },
  "I99": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Straw-thatched Roof",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "3 grain field(s)",
   "text": "You no longer need reed when you extend or renovate your home.",
   "type": "minor"
  },
@@ -8620,31 +8942,43 @@
   "deck": "K",
   "implemented": false,
   "name": "Acreage",
-  "reason": "not yet implemented",
+  "reason": "Acreage holds 2 independent sowable grain stacks, each harvested separately. The engine's card-field mechanism (inst['crops']) is a single {type,count} slot per card instance, and the harvest field-phase loop reads at most one stack per card field -- there is no way to represent or harvest a second, independently-sown stack.",
   "text": "When you sow, you can plant grain on this card. There can be up to 2 stacks of grain on this card, as shown.",
   "type": "minor"
  },
  "K106": {
+  "bake": [
+   2,
+   5
+  ],
+  "cost": {
+   "stone": 3
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Bakehouse",
-  "reason": "not yet implemented",
+  "points": 5,
+  "prereq_text": "return 1 oven",
   "text": "Whenever you use a bread baking action, you can use the Bakehouse to convert up to 2 grain into 5 food each. When you play this card, you can also bake bread immediately.",
   "type": "minor"
  },
  "K107": {
+  "cost": {
+   "stone": 1
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Lumber",
-  "reason": "not yet implemented",
   "text": "When you play this card, you receive 3 wood. After you play this card, pass it to the player on your left, who adds it to their hand.",
+  "traveling": true,
   "type": "minor"
  },
  "K108": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Beehive",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "2 improvements and 3 occupations",
   "text": "Place 2 food on each remaining even-numbered round space. At the start of these rounds, you receive the food.",
   "type": "minor"
  },
@@ -8652,15 +8986,30 @@
   "deck": "K",
   "implemented": false,
   "name": "Spit Roast",
-  "reason": "not yet implemented",
+  "reason": "requires detecting an animal->food conversion during the feeding phase specifically. Neither _apply_feed's conversion loop nor _apply_accommodate's cook loop fires any card hook (same gap noted for C053 in deck_c_minors.py) -- there is no event to react to.",
   "text": "Whenever you convert at least 1 animal to food during the feeding phase of the harvest, you receive 1 additional food.",
   "type": "minor"
  },
  "K110": {
+  "conversions": [
+   {
+    "get": {
+     "food": 3
+    },
+    "give": {
+     "grain": 1
+    },
+    "per_harvest": 1
+   }
+  ],
+  "cost": {
+   "grain": 2,
+   "stone": 2
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Brewery",
-  "reason": "not yet implemented",
+  "points": 2,
   "text": "During the feeding phase of the harvest, you can use the Brewery to convert at most 1 grain to 3 food. At the end of the game, you receive 1 bonus point for your ninth grain.",
   "type": "minor"
  },
@@ -8668,7 +9017,7 @@
   "deck": "K",
   "implemented": false,
   "name": "Bread Paddle",
-  "reason": "not yet implemented",
+  "reason": "requires triggering a full bake-bread sub-action outside the spaces/moments the engine currently allows one (bake_on_spaces only wires into the farmland/cultivation space handlers, and grain_utilization/bake_on_build cover the rest); 'whenever you play an occupation' has no such hook, and cards cannot invoke the engine's private _do_bake from a deck module.",
   "text": "Whenever you play an occupation, you may also bake bread.",
   "type": "minor"
  },
@@ -8676,95 +9025,133 @@
   "deck": "K",
   "implemented": false,
   "name": "Bookshelf",
-  "reason": "not yet implemented",
+  "reason": "requires granting food to the player BEFORE the occupation's food cost is deducted, so it can enable playing an occupation otherwise unaffordable. _play_occupation calls self._pay(...) before any hook fires (play/occupation_played both fire after payment), so there is no hook point earlier than the deduction.",
   "text": "Whenever you play 1 occupation, you receive 3 food before you pay the costs of the occupation.",
   "type": "minor"
  },
  "K113": {
+  "bake_on_spaces": [
+   "farmland",
+   "cultivation"
+  ],
+  "cost": {
+   "wood": 1
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Flail",
-  "reason": "not yet implemented",
+  "prereq_text": "1 occupations",
   "text": "Whenever you use the \"Plough 1 Field\" or \"Plough Field and Sow\" action spaces, you can additionally bake bread.",
   "type": "minor"
  },
  "K114": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Duck Pond",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "2 occupations",
   "text": "Place 1 food on each of the next 3 round spaces. At the start of these rounds, you receive the food.",
   "type": "minor"
  },
  "K115": {
+  "cost": {
+   "wood": 3
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Swing Plough",
-  "reason": "not yet implemented",
+  "prereq_text": "3 occupations",
   "text": "Twice during the game, when you use the \"Plough 1 Field\" action space, you can plough 3 fields instead of 1.",
   "type": "minor"
  },
  "K116": {
+  "cost": {
+   "wood": 3
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Granary",
-  "reason": "not yet implemented",
+  "points": 1,
   "text": "Place 1 grain on each remaining space for rounds 8, 10 and 12. At the start of these rounds, you receive the grain.",
   "type": "minor"
  },
  "K117": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Greenhouse",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "1 occupations",
   "text": "Add 4 and 7 tothe number of the current round and place 1 vegetable on each corresponding round space. At the start of these rounds, you can pay 1 food to take the vegetable.",
   "type": "minor"
  },
  "K118": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Liquid Manure",
-  "reason": "not yet implemented",
+  "prereq_text": "4 animals",
   "text": "Whenever you sow, place 1 additional grain or vegetable from the general supply on each new stack you sow.",
   "type": "minor"
  },
  "K119": {
+  "cost": {
+   "wood": 3
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Crooked Plough",
-  "reason": "not yet implemented",
+  "prereq_text": "1 occupations",
   "text": "Once during the game, when you use the \"Plough 1 Field\" action space, you can plough 3 fields instead of 1.",
   "type": "minor"
  },
  "K120": {
   "deck": "K",
-  "implemented": false,
+  "house_capacity": -1,
+  "min_players": 1,
   "name": "House Goat",
-  "reason": "not yet implemented",
+  "points": 1,
   "text": "In each feeding phase, you receive 1 food. Apart from the goat, you cannot hold any other animal in your home.",
   "type": "minor"
  },
  "K121": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Sawhorse",
-  "reason": "not yet implemented",
   "text": "The next stable you place in your farmyard, as well as your 3rd, 6th, 9th, 12th and 15th fence, costs you nothing.",
   "type": "minor"
  },
  "K122": {
+  "conversions": [
+   {
+    "get": {
+     "food": 3
+    },
+    "give": {
+     "wood": 1
+    },
+    "per_harvest": 1
+   }
+  ],
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Sawmill",
-  "reason": "not yet implemented",
+  "points": 3,
+  "prereq_text": "return Joinery",
   "text": "Each harvest, you may convert up to 1 wood to 3 food. At the end of the game, you receive 1/2/3 bonus points for 2/4/5 wood.",
   "type": "minor"
  },
  "K123": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Wooden Strongbox",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you get 2 bonus points if your home contains 5 rooms, or 4 bonus points if you have 6 or more rooms.",
   "type": "minor"
  },
@@ -8772,7 +9159,7 @@
   "deck": "K",
   "implemented": false,
   "name": "Yoke",
-  "reason": "not yet implemented",
+  "reason": "the bonus scales with how many 'plough' cards (of any type, played by ANY player, including cards from other compendium decks such as Harrow I68) are in play. No cross-deck registry of which minor/occupation instances count as a 'plough' exists or is exposed to a deck module -- hardcoding only this module's own plough cards (Swing Plough/Crooked Plough) would silently undercount.",
   "text": "When you play this card, you can immediately plough 1 field for each plough or Harrow I68 that has been played by any player.",
   "type": "minor"
  },
@@ -8780,103 +9167,136 @@
   "deck": "K",
   "implemented": false,
   "name": "Broom",
-  "reason": "not yet implemented",
+  "reason": "discards the player's whole minor-improvement hand and deals 7 fresh ones from the undealt reserve, then allows an extra minor-improvement play. The engine deals fixed hands once at setup and keeps no residual draw pile at runtime (state has no 'remaining minors' pool to draw from), so there is nothing to redraw from.",
   "text": "Discard all the remaining minor improvements in your hand, and draw 7 new minor improvements. You can play 1 more minor improvement immediately.",
   "type": "minor"
  },
  "K126": {
+  "cost": {
+   "reed": 1
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Landing Net",
-  "reason": "not yet implemented",
   "text": "Whenever you receive reed on an action space, you receive an additional 2 food. This is reduced to 1 food if you receive other building resources as well as reed.",
   "type": "minor"
  },
  "K127": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Clapper",
-  "reason": "not yet implemented",
   "text": "Whenever you use one of the family growth action spaces (or if you already have used one of these spaces in this round when you play the Clapper), place 1 additional grain on all of your fields that already contains at least 1 grain.",
   "type": "minor"
  },
  "K128": {
+  "bake": [
+   null,
+   3
+  ],
+  "cook": {
+   "boar": 3,
+   "cattle": 4,
+   "sheep": 2,
+   "vegetable": 3
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Cooking Hearth",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "return a Fireplace",
   "text": "At any time, you can convert goods to food as follows: vegetables \u2192 3 food; sheep \u2192 2 food; wild boar \u2192 3 food; cattle \u2192 4 food. Whenever you use a bread baking action, you may convert: grain \u2192 3 food.",
   "type": "minor"
  },
  "K129": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Corn Sheaf",
-  "reason": "not yet implemented",
   "text": "When you play this card, you receive 1 grain. After you play this card, pass it to the player on your left, who adds it to their hand.",
+  "traveling": true,
   "type": "minor"
  },
  "K130": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Herb Garden",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "1 vegetable field(s)",
   "text": "Place 1 food on each of the next 5 round spaces. At the start of each round, you receive the food.",
   "type": "minor"
  },
  "K131": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Clay Pit",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "3 occupations",
   "text": "Whenever you use the \"Day Labourer\" action space, you receive 3 additional clay.",
   "type": "minor"
  },
  "K132": {
+  "cost": {
+   "clay": 4,
+   "reed": 1
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Clay Hut Extension",
-  "reason": "not yet implemented",
   "text": "When you play this card, immediately extend your clay hut by 1 room. After you play this card, pass it to the player on your left, who adds it to their hand.",
+  "traveling": true,
   "type": "minor"
  },
  "K133": {
+  "cost": {
+   "wood": 1
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Milking Stool",
-  "reason": "not yet implemented",
+  "prereq_text": "2 occupations",
   "text": "Whenever you have cattle during the field phase of a harvest, you receive food: 1 food if you have 1 or 2 cattle; 2 food if you have 3 or 4 cattle; 3 food if you have 5 or more cattle. At the end of the game, you receive 1 bonus point for every 2 cattle.",
   "type": "minor"
  },
  "K134": {
+  "cost": {
+   "wood": 3
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Ox Team",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "2 cattle",
   "text": "When you play this card, count how many complete rounds are left to be played. You can plough this many fields, up to a maximum of 3.",
   "type": "minor"
  },
  "K135": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Horse",
-  "reason": "not yet implemented",
   "text": "You receive 2 bonus points for any one type of animal missing from your farm at the end of the game.",
   "type": "minor"
  },
  "K136": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Brushwood Roof",
-  "reason": "not yet implemented",
+  "prereq_text": "2 occupations",
   "text": "Whenever you extend or renovate your home, you can replace 1 or 2 reed with the same amount of wood.",
   "type": "minor"
  },
  "K137": {
   "deck": "K",
-  "implemented": false,
+  "field": {
+   "crops": [
+    "vegetable"
+   ]
+  },
+  "min_players": 1,
   "name": "Turnip Field",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "3 occupations",
   "text": "When you sow, you can plant vegetables on this card as you would on a field. When you play this card, you can also carry out a sowing action.",
   "type": "minor"
  },
@@ -8884,7 +9304,7 @@
   "deck": "K",
   "implemented": false,
   "name": "Reed Hut",
-  "reason": "not yet implemented",
+  "reason": "places an extra, non-scoring family member token that can act and must be fed but isn't part of the family -- the guest-token/extra-people mechanic the guide marks unsupported.",
   "text": "Place one family member token that you have not yet brought into the game onto this card, where it will live for the rest of the game. It can take actions and must be fed, but it is not worth any points while living in the Reed Hut.",
   "type": "minor"
  },
@@ -8892,47 +9312,62 @@
   "deck": "K",
   "implemented": false,
   "name": "Sleeping Corner",
-  "reason": "not yet implemented",
+  "reason": "lets the player use a family-growth action space another player has already placed on this round -- placing on an occupied space is the guide's unsupported mechanic.",
   "text": "You can use any \"Family Growth\" action space, even if another player has already placed a person there.",
   "type": "minor"
  },
  "K140": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Swan Lake",
-  "reason": "not yet implemented",
+  "points": 2,
+  "prereq_text": "4 occupations",
   "text": "Place 1 food each on the next 5 remaining round spaces. At the start of these rounds, you receive the food.",
   "type": "minor"
  },
  "K141": {
+  "cost": {
+   "food": 1
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Boar Breeding",
-  "reason": "not yet implemented",
   "text": "When you play this card,you receive 1 wild boar. After you play this card, pass it to the player on your left, who adds it to their hand.",
+  "traveling": true,
   "type": "minor"
  },
  "K142": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Stone Cart",
-  "reason": "not yet implemented",
+  "prereq_text": "2 occupations",
   "text": "Place 1 stone on each remaining even-numbered round spaces. At the start of these rounds, you receive the stone.",
   "type": "minor"
  },
  "K143": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Stone Exchange",
-  "reason": "not yet implemented",
   "text": "When you play this card, you receive 2 stone. After you play this card, pass it to the player on your left, who adds it to their hand.",
+  "traveling": true,
   "type": "minor"
  },
  "K144": {
+  "cost": {
+   "clay": 3,
+   "reed": 2,
+   "stone": 3,
+   "wood": 3
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Mansion",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you receive 2 bonus points for each room in your stone house. In total, you receive 4 points per room instead of the usual 2 points.",
   "type": "minor"
  },
@@ -8940,39 +9375,40 @@
   "deck": "K",
   "implemented": false,
   "name": "Forest Pasture",
-  "reason": "not yet implemented",
+  "reason": "unlimited card-held boar storage entirely outside house capacity and pasture capacity. Accommodation only consults house_capacity and pasture_capacity_bonus (same gap noted for B012 in deck_b_minors.py) -- there is no card-storage capacity query for animals.",
   "text": "This card can hold an unlimited number of wild boar.",
   "type": "minor"
  },
  "K146": {
+  "cost": {
+   "wood": 2
+  },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Loom",
-  "reason": "not yet implemented",
+  "points": 1,
+  "prereq_text": "2 occupations",
   "text": "Whenever you have sheep during the field phase of a harvest, you receive food: 1 food if you have 1 to 3 sheep; 2 food for 4 to 6 sheep; or 3 food for 7 or more sheep. At the end of the game, you receive 1 bonus point for every 3 sheep.",
   "type": "minor"
  },
  "K266": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 4,
   "name": "Serf",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"Sow and Bake Bread\" action space, you receive 1 grain before taking the action(s). Alternatively, you can exchange 1 grain for 1 vegetable.",
   "type": "occupation"
  },
  "K267": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Adoptive Parents",
-  "reason": "not yet implemented",
   "text": "When you take a family growth action, you can pay 1 food to immediately place the offspring in your home. This allows you to take an action with it this round. If you do this, the offspring does not count as \"newborn\".",
   "type": "occupation"
  },
  "K268": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Pieceworker",
-  "reason": "not yet implemented",
   "text": "Whenever you receive wood, clay, reed, stone or grain on an action space, you can buy one more of the same good for 1 food. Whenever you receive vegetable(s) on an action space, you can buy one more for 2 food.",
   "type": "occupation"
  },
@@ -8980,31 +9416,28 @@
   "deck": "K",
   "implemented": false,
   "name": "Acrobat",
-  "reason": "not yet implemented",
+  "reason": "grants a deferred move of an already-placed person (from \"Traveling Players\") to another space after all players have finished their turns; no hook fires between the end of the work phase and the start of harvest/next round for a card to grant a delayed placement.",
   "text": "Whenever you use the \"Traveling players\" action on an action space, after all of the players have finished their turns you may move that person to one of the \"Take 1 Grain\", \"Plough 1 Field\" and \"Plough Field and Sow\" action spaces, if it's free, and take the action.",
   "type": "occupation"
  },
  "K270": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Wet Nurse",
-  "reason": "not yet implemented",
   "text": "Whenever you build room(s), you may grow your family by up to the number of rooms that you build, if you have the room to house the new family members. This costs 1 food per person.",
   "type": "occupation"
  },
  "K271": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 4,
   "name": "Educator",
-  "reason": "not yet implemented",
   "text": "Whenever another player plays an occupation card, you can pay 3 food to play one yourself. From your 4th occupation, this only costs 2 food.",
   "type": "occupation"
  },
  "K272": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Frame Builder",
-  "reason": "not yet implemented",
   "text": "In each renovation, you may replace exactly 1 clay or 1 stone with 1 wood. In each extension, you may replace exactly 2 clay or 2 stone with 1 wood.",
   "type": "occupation"
  },
@@ -9012,15 +9445,14 @@
   "deck": "K",
   "implemented": false,
   "name": "Basin Maker",
-  "reason": "not yet implemented",
+  "reason": "requires reacting to converting wild boar into food; no event fires when animals are cooked (neither the accommodate-prompt \"cook\" branch nor the feeding \"via: cook\" conversion calls cards.fire/fire_player).",
   "text": "For each wild boar that you convert into food, you can place up to 2 wood from your personal supply on this card. At the end of the game, you receive 1 bonus point for each wood on this card except the 1st, 4th, 7th and 10th.",
   "type": "occupation"
  },
  "K274": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Organic Farmer",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you receive 1 bonus point for each of your pastures that contains at least 1 animal, but could contain at least 3 more animals than it does.",
   "type": "occupation"
  },
@@ -9028,15 +9460,14 @@
   "deck": "K",
   "implemented": false,
   "name": "Perpetual Student",
-  "reason": "not yet implemented",
+  "reason": "requires the normal Lessons-space play-occupation action to accept \"play a random card from my hand\" instead of a specific card id; the only way to add that is editing _play_occupation's parameter handling in engine.py, which per GUIDE.md we don't do per-card.",
   "text": "Whenever you can play an occupation card, you can ask another player to randomly draw one of your occupation cards instead of choosing one yourself. If you do this, you receive 3 food before you pay the costs of the card, but you must play the card that the other player draws.",
   "type": "occupation"
  },
  "K276": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 3,
   "name": "Constable",
-  "reason": "not yet implemented",
   "text": "You receive wood immediately when you play this card: if played in round 12 or 13, take 1 wood; if played in round 9, 10, or 11, take 2 wood; if played in round 6, 7, or 8, take 3 wood; if played before round 6, take 4 wood. At the end of the game, any player who has no negative points receives 5 bonus points.",
   "type": "occupation"
  },
@@ -9044,23 +9475,22 @@
   "deck": "K",
   "implemented": false,
   "name": "Manufacturer",
-  "reason": "not yet implemented",
+  "reason": "requires redirecting specific major improvements (Joinery/Pottery/Basketmaker's Workshop) through the minor-improvement action-space flow, plus a player-chosen 2-resource discount; no hook lets a card change which action-space channel builds an improvement.",
   "text": "Once you have a clay hut or a stone house, the Joinery A7 , Pottery A8 and Basketmaker's Workshop A9 are minor improvements for you and their cost is reduced by 2 building resources of your choice.",
   "type": "occupation"
  },
  "K278": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Forester",
-  "reason": "not yet implemented",
   "text": "Whenever you use a sowing action, you can plant wood on this card. There can be up to 3 stacks of wood on this card, as shown. The wood is treated the same as sown grain and is harvested during the Field phase.",
   "type": "occupation"
  },
  "K279": {
   "deck": "K",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Scholar",
-  "reason": "not yet implemented",
   "text": "Once you have a stone house, at the start of a round you can always either pay 1 food to play an occupation card or play an improvement card by paying its costs.",
   "type": "occupation"
  },
@@ -9068,7 +9498,7 @@
   "deck": "K",
   "implemented": false,
   "name": "Tanner",
-  "reason": "not yet implemented",
+  "reason": "requires reacting to converting wild boar or cattle into food (same gap as K273: no cook/convert event exists).",
   "text": "When you convert wild boar or cattle to food, place them on this card. At the end of the game, you receive bonus points if you have animal markers on this card. For the wild boar on this card, you receive: 6 or more wild boar, 3 points; 4 or 5 wild boar, 2 points; 2 or 3 wild boar, 1 point. For the cattle on this card, you receive: 4 or more cattle, 3 points; 3 cattle, 2 points; 2 cattle, 1 point.",
   "type": "occupation"
  },
@@ -9076,63 +9506,57 @@
   "deck": "K",
   "implemented": false,
   "name": "Traveling Salesman",
-  "reason": "not yet implemented",
+  "reason": "requires letting a \"minor improvement\" action space build a major instead, or a \"major or minor\" space play 2 minors; this needs re-implementing the build/play parameter shapes of _resolve_space outside the normal placement flow (same category of gap as B150 in deck B).",
   "text": "Whenever you select a \"minor improvement\" action on an action space, you can play a major instead of a minor improvement. If you select a \"major or minor improvement\" action on an action space, you can play 2 minor improvements.",
   "type": "occupation"
  },
  "K282": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 3,
   "name": "House Steward",
-  "reason": "not yet implemented",
   "text": "You receive wood immediately when you play this card: if played in round 12 or 13, take 1 wood; if played in round 9, 10, or 11, take 2 wood; if played in round 6, 7, or 8, take 3 wood; if played before round 6, take 4 wood. At the end of the game, the player(s) with the most rooms in their home receive 3 bonus points each.",
   "type": "occupation"
  },
  "K283": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Wood Deliveryman",
-  "reason": "not yet implemented",
   "text": "Place 1 wood on each remaining space for rounds 8 to 14. At the start of these rounds, you receive the wood.",
   "type": "occupation"
  },
  "K284": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Wood Distributor",
-  "reason": "not yet implemented",
   "text": "At the start of the work phase of each round, you can distribute the wood from the \"3 Wood\" action space as evenly as possible onto the neighbouring \"1 Clay\", \"1 Reed\" and \"Fishing\" spaces. When you play this card, you receive 2 wood.",
   "type": "occupation"
  },
  "K285": {
   "deck": "K",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 3,
   "name": "Tinsmith",
-  "reason": "not yet implemented",
   "text": "You can convert clay into food at any time. You receive 1 food per clay. If any player has built a Well A10 , you receive 3 food for each 2 clay instead.",
   "type": "occupation"
  },
  "K286": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Smallholder",
-  "reason": "not yet implemented",
   "text": "Your pastures that can hold 2 animals can hold 3 animals. While you have at most 2 fields, add 1 extra grain or vegetable from the general supply to each field you sow.",
   "type": "occupation"
  },
  "K287": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 4,
   "name": "Storehouse Clerk",
-  "reason": "not yet implemented",
   "text": "Whenever you have at least 5 stone at the start of a round, you receive 1 extra stone. If you have at least 6 reed, you receive 1 reed. If you have at least 7 clay, you receive 1 clay. If you have at least 8 wood, you receive 1 wood.",
   "type": "occupation"
  },
  "K288": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 4,
   "name": "Storehouse Keeper",
-  "reason": "not yet implemented",
   "text": "Whenever you use a person's action to take reed and stone at the same time, you also receive your choice of 1 clay or 1 grain.",
   "type": "occupation"
  },
@@ -9140,79 +9564,72 @@
   "deck": "K",
   "implemented": false,
   "name": "Countryman",
-  "reason": "not yet implemented",
+  "reason": "grants a deferred move of an already-placed person (from \"Take 1 Grain\"/\"Take 1 Vegetable\") to a sow space after all players have finished their turns; same missing post-work-phase hook as K269 Acrobat.",
   "text": "After all players have placed their people, you may move one of your people from a \"Take 1 Grain\" or \"Take 1 Vegetable\" action space to a free action space with a \"sow\" action.",
   "type": "occupation"
  },
  "K290": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Clay Worker",
-  "reason": "not yet implemented",
   "text": "Whenever you use an action of a person to take wood or clay, you also receive 1 additional clay.",
   "type": "occupation"
  },
  "K291": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 3,
   "name": "Lover",
-  "reason": "not yet implemented",
+  "prereq_text": "at least 4 food",
   "text": "When you play this card, immediately carry out a \"Family growth even without room\" action (similar to the round card from stage 5). Playing this card costs you an additional 4 food.",
   "type": "occupation"
  },
  "K292": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Market Woman",
-  "reason": "not yet implemented",
   "text": "Whenever you receive vegetables through a person's action or through a minor improvement, you receive an additional 2 grain.",
   "type": "occupation"
  },
  "K293": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Ploughman",
-  "reason": "not yet implemented",
   "text": "Add 4, 7 and 10 to the number of the current round and place 1 field on each corresponding round space. At the start of these rounds, you can plough that field by paying 1 food.",
   "type": "occupation"
  },
  "K294": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 3,
   "name": "Brushwood Collector",
-  "reason": "not yet implemented",
   "text": "You may replace the required reed with a total of 1 wood for any renovation or for each new room. (You use brushwood to make the roof.)",
   "type": "occupation"
  },
  "K295": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 4,
   "name": "Cattle Breeder",
-  "reason": "not yet implemented",
   "text": "Your cattle breed at the end of round 12, if there is space for the calf. When you play this card, you receive 1 cattle.",
   "type": "occupation"
  },
  "K296": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 3,
   "name": "Seed Seller",
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"Take 1 Grain\" action space, you receive 1 additional grain. When you play this card, you receive 1 grain.",
   "type": "occupation"
  },
  "K297": {
   "deck": "K",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 3,
   "name": "Sheep Farmer",
-  "reason": "not yet implemented",
   "text": "Whenever you take sheep with one of your people, you receive an additional sheep from the general supply. You can exchange 3 sheep for 1 cattle and 1 wild boar at any time (except during the breeding phase).",
   "type": "occupation"
  },
  "K298": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 4,
   "name": "Shepherd Boy",
-  "reason": "not yet implemented",
   "text": "Once you live in a stone house, place 1 sheep on each remaining round space. At the start of these rounds, you receive the sheep.",
   "type": "occupation"
  },
@@ -9220,15 +9637,25 @@
   "deck": "K",
   "implemented": false,
   "name": "Slaughterman",
-  "reason": "not yet implemented",
+  "reason": "requires reacting to any player converting animals to food (no cook/convert event, as K273/K280) and reordering the feeding turn sequence; this engine's feeding phase has no turn order at all (get_waiting_for returns every not-yet-fed player at once), so \"feed last\" has no mechanical meaning here.",
   "text": "Whenever another player converts 1 or more animals into food, you receive 1 food from the general supply. In the feeding phase of the harvest, you are the last player to feed your family (so you can benefit if other players slaughter).",
   "type": "occupation"
  },
  "K300": {
+  "conversions": [
+   {
+    "get": {
+     "food": 5
+    },
+    "give": {
+     "vegetable": 1
+    },
+    "per_harvest": 1
+   }
+  ],
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Schnaps Distiller",
-  "reason": "not yet implemented",
   "text": "In the feeding phase of each harvest, you can convert up to 1 vegetable to 5 food.",
   "type": "occupation"
  },
@@ -9236,55 +9663,51 @@
   "deck": "K",
   "implemented": false,
   "name": "Wood Carver",
-  "reason": "not yet implemented",
+  "reason": "the wood discount applies once per ROUND across any qualifying purchase (not once per item, unlike Stonecutter's unconditional per-item discount); cost_mod is a pure function queried speculatively for validity checks as well as at actual payment, so a stateful \"already used this round\" flag can't be consumed safely there without also corrupting cost previews.",
   "text": "In each round, you pay 1 wood less for one of the following: an improvement, a room of a wooden hut, a stable or a fence.",
   "type": "occupation"
  },
  "K302": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 4,
   "name": "Pig Whisperer",
-  "reason": "not yet implemented",
   "text": "Add 4, 7 and 10 to the number of the current round and place 1 wild boar on each corresponding round space. At the start of these rounds, you receive the wild boar.",
   "type": "occupation"
  },
  "K303": {
   "deck": "K",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 4,
   "name": "Stone Breaker",
-  "reason": "not yet implemented",
   "text": "At any time, you can renovate your clay hut to a stone house without using a \"Renovation\" action space.",
   "type": "occupation"
  },
  "K304": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 4,
   "name": "Veterinarian",
-  "reason": "not yet implemented",
   "text": "When you play this card, place 4 sheep cubes, 3 wild boar cubes and 2 cattle cubes in a container. At the start of each round, draw two animals. If they are the same, keep one. Return the 1 or 2 animals to the container.",
   "type": "occupation"
  },
  "K305": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 4,
   "name": "Animal Handler",
-  "reason": "not yet implemented",
   "text": "Place 1 sheep on the space for round 7, 1 wild boar on round 10 and 1 cattle on round 14. At the start of these rounds, you can buy the animal for 1 food.",
   "type": "occupation"
  },
  "K306": {
   "deck": "K",
-  "implemented": false,
+  "house_capacity": "per_room",
+  "min_players": 1,
   "name": "Animal Tamer",
-  "reason": "not yet implemented",
   "text": "You can keep 1 animal in each room of your home. You may keep more than 1 type of animal in your home.",
   "type": "occupation"
  },
  "K307": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 4,
   "name": "Animal Breeder",
-  "reason": "not yet implemented",
   "text": "Whenever you fence unused spaces to create at least one new pasture, you can buy a pair of animals: 2 sheep for 1 food, 2 wild boar for 2 food, or 2 cattle for 3 food.",
   "type": "occupation"
  },
@@ -9292,15 +9715,14 @@
   "deck": "K",
   "implemented": false,
   "name": "Foreman",
-  "reason": "not yet implemented",
+  "reason": "grants \"place 1 food on an action space of your choice\" at the start of each round; round_start hooks must not prompt (a prompt pending at round start blocks every player's placements per GUIDE.md), and there is no sane default space to auto-select -- the whole value of the card is the open-ended choice.",
   "text": "At the start of the work phase of each round, you can place 1 food from the general supply on an action space of your choice.",
   "type": "occupation"
  },
  "K309": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 4,
   "name": "Weaver",
-  "reason": "not yet implemented",
   "text": "Whenever you have at least 2 sheep at the start of the work phase of a round, you receive 1 food.",
   "type": "occupation"
  },
@@ -9308,23 +9730,21 @@
   "deck": "K",
   "implemented": false,
   "name": "Resource Seller",
-  "reason": "not yet implemented",
+  "reason": "requires reacting to gaining stone/clay/reed/wood from ANY source (action spaces, occupations, improvements, round-start effects) in a fixed sequence; only space_used exposes goods (via ctx[\"goods\"]), so gains from cards or round-start hooks are invisible to this card.",
   "text": "Pile (from bottom to top) 1 stone, clay, stone, clay, reed, clay, wood on this card. You receive the top marker when you receive that type of building resource.",
   "type": "occupation"
  },
  "K311": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 4,
   "name": "Magician",
-  "reason": "not yet implemented",
   "text": "Whenever you use your last person to choose the \"Traveling Players\" action on an action space, you receive an additional 1 grain and 1 food.",
   "type": "occupation"
  },
  "K312": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Fence Overseer",
-  "reason": "not yet implemented",
   "text": "Once each round, for a cost of 1 food, you can immediately fence a pasture of 1 farmyard space around a stable that you have just built. You do not need to pay wood for the fences.",
   "type": "occupation"
  },
@@ -9332,15 +9752,14 @@
   "deck": "K",
   "implemented": false,
   "name": "Pelts",
-  "reason": "not yet implemented",
+  "reason": "requires detecting each individual animal->food conversion during feeding (same unfired-hook gap as K109/C053) AND a novel per-room food-storage mechanic (max 1 food token per room, scored as bonus points) that nothing in the engine tracks.",
   "text": "For each animal that you convert to food and return to the general supply, you may place 1 food from your personal supply in 1 of your rooms. You may have a maximum of 1 food in each room. You cannot use these food any more, but each is worth 1 bonus point at the end of the game.",
   "type": "minor"
  },
  "K342": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 4,
   "name": "Animal Trainer",
-  "reason": "not yet implemented",
   "text": "Whenever you take food from a \"Traveling players\" space, you may immediately use it to buy animals: Pay 2 food for each sheep or wild boar and 3 food for each cattle.",
   "type": "occupation"
  },
