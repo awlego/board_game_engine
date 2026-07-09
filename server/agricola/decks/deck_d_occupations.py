@@ -1,0 +1,933 @@
+"""Deck D occupations (codes D085..D167 from the compendium DB).
+
+Data-quality note: several deck-D compendium entries have their `text` (and
+especially `rulings`) fields corrupted by a PDF-parsing artifact — a
+subsequent card's meta/body got appended to the previous card's `text` or
+`ruling_items` list when the parser's code-line detection missed a
+boundary (see tools/parse_compendium.py, the "name_stash"/"ruling_items"
+fallback paths). The tell is a clean sentence, then a *repeated*
+"(N-M players)" tag mid-string introducing an unrelated mechanic. Where
+that happens, only the text up to the first such embedded tag is treated
+as this card's real effect; everything after is discarded as bleed from a
+neighboring entry, not implemented under this code. This is called out
+per-card below wherever it applies.
+
+FotM-only rulings (Farmers of the Moor variants) are ignored per
+GUIDE.md (deck M / FotM content is out of scope).
+"""
+
+from server.agricola.cards import (
+    compendium_card, card, CARDS, new_instance, spec, in_play,
+    add_goods, goods_str, prompt_choice, parse_cost,
+    take_bonus, space_bonus, round_income, schedule_on_play,
+    harvest_food, on_play_gain, animal_totals_of,
+    needs_occupations, exact_occupations, needs_grain_field, combine,
+)
+from server.agricola import cards
+from server.agricola.state import (
+    ANIMAL_TYPES, BUILDING_RESOURCES, MAX_PEOPLE, MAX_STABLES, TOTAL_ROUNDS,
+    table_score, compute_pastures, animal_counts,
+)
+
+UNIMPLEMENTED = {
+    "D085": "Reader: extra_rooms is a static per-card value in this engine; "
+            "it can't express a conditional ('once you have 6 occupations') "
+            "room grant.",
+    "D086": "Sheep Agent: 'keep 1 sheep on each occupation card' needs a "
+            "per-occupation-card animal-capacity mode; house_capacity only "
+            "supports a flat int or 'per_room'.",
+    "D088": "Millwright: 'replace up to 2 building resources of any type "
+            "with 1 grain each' is an optional per-build substitution with "
+            "no parameter channel in cost_mod (which is automatic-only).",
+    "D093": "Sheep Inspector: 'return another person you placed home' "
+            "requires vacating an occupied action space mid-round -- the "
+            "replacement-effect gap noted in CARDS.md as a known future "
+            "engine feature, not yet supported.",
+    "D094": "Henpecked Husband: same 'return a placed person home' gap "
+            "as D093 -- no way to vacate an occupied action space.",
+    "D095": "Site Manager: on-play major-improvement build with 'replace "
+            "up to 1 resource of each type with 1 food' has the same "
+            "no-parameter-channel substitution problem as D088/D117.",
+    "D102": "Sample Stable Maker: fires 'at the start of each returning "
+            "home phase', a phase this engine has no hook for (only "
+            "round_start/harvest_field/etc.), and requires removing a "
+            "built stable, akin to the unsupported removal of built "
+            "structures.",
+    "D103": "Canal Boatman: 'place another person on this card' is an "
+            "extra person placement -- explicitly unsupported (guest "
+            "tokens / extra people).",
+    "D112": "Young Farmer: 'afterward you can take a Sow action' needs an "
+            "extra-action-after-this-space mechanism; only bake_on_spaces "
+            "is wired for that (Threshing Board's shape), no analogous "
+            "sow-on-spaces hook exists.",
+    "D113": "Food Merchant: 'for each grain you harvest, you can buy 1 "
+            "vegetable for food' is an interactive per-harvest purchase "
+            "decision with no clean hook (not a trigger->gain shape).",
+    "D116": "Tree Inspector: 'this card is an accumulation space for you "
+            "only' is a private per-player action space; the engine's "
+            "action spaces are a single shared/global list.",
+    "D117": "Wood Expert: 'each improvement costs up to 2 wood less, if "
+            "you pay 1 food instead' is the same optional-substitution "
+            "problem as D088 (cost_mod has no parameter channel for the "
+            "player's choice of how much to substitute).",
+    "D126": "Field Cultivator: 'each time you harvest a field tile, take "
+            "the top good from the pile' needs the count of field tiles "
+            "harvested this phase, but the harvest_field hook fires after "
+            "crops are already applied with no such count in ctx, and no "
+            "baseline to diff against.",
+    "D127": "Hardworking Man: 'this card is an action space for you only' "
+            "-- same private-action-space gap as D116.",
+    "D128": "Building Tycoon: reacts to *another* player building rooms, "
+            "but rooms_built fires via fire_player (owner-only) -- other "
+            "players' cards never see it.",
+    "D129": "Lumber Virtuoso: grants an extra Build Stables/Wood Rooms "
+            "action during harvest outside the normal action-space "
+            "dispatch; faithfully replicating cell-adjacency/cost-by-"
+            "house-type validation outside the engine's private build "
+            "methods risks diverging from the real rules.",
+    "D130": "Recreational Carpenter: same as D129 -- a free Build Rooms "
+            "action outside the action-space dispatch, replicating "
+            "private room-building validation.",
+    "D131": "Craftsmanship Promoter: 'build majors from the bottom row "
+            "even via a Minor Improvement action' assumes an original-"
+            "edition major-improvement-row / minor-vs-major action "
+            "distinction this engine doesn't model (majors and minors "
+            "already share one action space here).",
+    "D138": "Pet Lover: 'leave it on the space and get one from the "
+            "supply instead' requires rescinding the space's automatic "
+            "animal grant -- hooks can only add via ctx['extra'], there's "
+            "no veto/cancel of the base grant.",
+    "D142": "Potato Planter: needs an end-of-work-phase snapshot of who "
+            "occupies Clay Pit vs Reed Bank, but action-space occupancy "
+            "is reset before round_start fires, and there's no "
+            "end-of-work-phase hook.",
+    "D144": "Water Worker: 'the three orthogonally adjacent action "
+            "spaces' needs a 2-D board-adjacency model between action "
+            "spaces that this engine doesn't have.",
+    "D147": "Trap Builder: schedules a future round's wild boar via the "
+            "round_goods mechanism, but round_goods delivers straight "
+            "into player resources (bypassing accommodation) -- unsafe "
+            "for animals, so the wild-boar half of the reward can't be "
+            "scheduled faithfully.",
+    "D148": "Domestician Expert: 'keep 2 sheep on the border between "
+            "each pair of orthogonally adjacent rooms' needs a per-"
+            "adjacent-room-pair capacity model; house_capacity only "
+            "supports a flat int or 'per_room'.",
+    "D150": "Godly Spouse: 'return the first person you placed home' -- "
+            "same replacement-effect gap as D093/D094.",
+    "D151": "Spin Doctor: 'place another person on an action space of "
+            "your choice' is an extra person placement -- explicitly "
+            "unsupported.",
+    "D159": "Reed Seller: lets *other* players counter-offer to buy the "
+            "reed before the conversion happens -- no engine mechanism "
+            "for cross-player intervention on a card ability.",
+    "D161": "Cabbage Buyer: reacts to *any* player's renovation, but "
+            "renovate fires via fire_player (owner-only, not visible to "
+            "other players' cards); it also needs to know what's built "
+            "*after* renovate resolves, which isn't known at hook time.",
+    "D163": "Journeyman Bricklayer: reacts to *another* player's "
+            "renovate-to-stone/stone-room build, but renovate and "
+            "rooms_built both fire owner-only (fire_player) -- not "
+            "visible to other players' cards.",
+    "D164": "Pet Grower: 'if afterward you have no animal in your house' "
+            "depends on state *after* accommodation resolves, but "
+            "space_used fires before the just-gained animal is "
+            "accommodated -- no hook exists post-accommodation.",
+    "D165": "Pig Stalker: 'the action space immediately above or below' "
+            "needs 2-D board adjacency between action spaces, not "
+            "modeled by this engine.",
+    "D167": "Pure Breeder: 'breed exactly one type of animal' after each "
+            "non-harvest round needs a player choice at round_start; "
+            "queuing a prompt there (before _advance_work's placement "
+            "loop resumes) is an untested combination that risks the "
+            "engine treating every player as unable to place and "
+            "forfeiting the round -- and there's no action-parameter "
+            "channel at round_start to take the choice up front instead.",
+}
+
+GOOD_TYPES = BUILDING_RESOURCES + ("food", "grain", "vegetable") + ANIMAL_TYPES
+
+
+def _remove_one_animal(player, animal_type):
+    """Remove exactly 1 animal of `animal_type` from wherever it lives
+    (house pets first, then the first matching pasture/stable cell)."""
+    if player["pets"].get(animal_type, 0) > 0:
+        player["pets"][animal_type] -= 1
+        if player["pets"][animal_type] == 0:
+            del player["pets"][animal_type]
+        return True
+    for c in player["cells"]:
+        a = c.get("animal")
+        if a and a["type"] == animal_type:
+            a["count"] -= 1
+            if a["count"] <= 0:
+                c["animal"] = None
+            return True
+    return False
+
+
+# ── D089 Stablehand ──────────────────────────────────────────────────
+# "Each time you build at least 1 fence, you can also build a stable
+# without paying wood for the stable." (trailing ruling text is bleed
+# from a different Stablehand printing (E207) -- ignored.)
+
+def _stablehand_fences(state, player, inst, ctx):
+    if ctx["actor"] != player["index"]:
+        return
+    stables = sum(1 for c in player["cells"] if c["stable"])
+    cells = [i for i, c in enumerate(player["cells"])
+             if c["type"] == "empty" and not c["stable"]]
+    if stables < MAX_STABLES and cells:
+        opts = [f"Cell {i}" for i in cells] + ["Skip"]
+        prompt_choice(state, player, inst["id"],
+                     "Stablehand: build a free stable?", opts,
+                     data={"cells": cells})
+
+
+def _stablehand_resolve(state, player, inst, ctx):
+    data = ctx["data"]
+    if ctx["index"] >= len(data["cells"]):
+        return
+    cell = data["cells"][ctx["index"]]
+    c = player["cells"][cell]
+    if c["type"] != "empty" or c["stable"]:
+        return
+    c["stable"] = True
+    ctx["log"].append(f"{player['name']}'s Stablehand builds a free stable")
+    cards.fire_player(state, player, "stable_built",
+                      {"cells": [cell], "log": ctx["log"],
+                       "actor": player["index"], "extra": ctx["extra"]})
+
+
+compendium_card("D089", hooks={"fences_built": _stablehand_fences},
+                resolve_choice=_stablehand_resolve)
+
+
+# ── D092 Child Ombudsman ─────────────────────────────────────────────
+# "From round 5 on, if you have room in your house, at the end of each
+# person action, you can take a Family Growth action with that person.
+# If you do, you get 2 negative points." Modeled as a card_action
+# (usable any time on your work turn rather than strictly "right after a
+# person action" -- card_action has no narrower timing hook, but it
+# never consumes a placement or advances the turn, matching the spirit).
+
+def _child_ombudsman_available(state, player, inst):
+    if state["round"] < 5:
+        return False
+    if player["people_total"] >= MAX_PEOPLE:
+        return False
+    rooms = (sum(1 for c in player["cells"] if c["type"] == "room")
+             + cards.extra_rooms(player))
+    return rooms > player["people_total"]
+
+
+def _child_ombudsman_apply(state, player, inst, ctx):
+    player["people_total"] += 1
+    player["people_placed"] += 1
+    player["newborns"] += 1
+    inst["data"]["uses"] = inst["data"].get("uses", 0) + 1
+    ctx["log"].append(f"{player['name']}'s Child Ombudsman grows the "
+                      "family (-2 points)")
+    cards.fire(state, "family_growth",
+              {"log": ctx["log"], "actor": player["index"], "extra": ctx["extra"]})
+
+
+compendium_card("D092", card_action={
+    "available": _child_ombudsman_available,
+    "apply": _child_ombudsman_apply,
+    "description": "Free Family Growth (-2 points)",
+}, score_bonus=lambda s, p, i: -2 * i["data"].get("uses", 0))
+
+
+# ── D099 Earthenware Potter ──────────────────────────────────────────
+# "If you play this card in round 4 or before, after the final harvest,
+# you get 1 bonus point for each person for which you then pay 1 clay."
+
+def _earthenware_potter_play(state, player, inst, ctx):
+    inst["data"]["round_played"] = state["round"]
+
+
+def _earthenware_potter_score(state, player, inst):
+    if inst["data"].get("round_played", 99) > 4:
+        return 0
+    return min(player["people_total"], player["resources"]["clay"])
+
+
+compendium_card("D099", hooks={"play": _earthenware_potter_play},
+                score_bonus=_earthenware_potter_score)
+
+
+# ── D100 Lord of the Manor ───────────────────────────────────────────
+# "During scoring, you get 1 bonus point for each scoring category in
+# which you score the maximum 4 points. (Also awarded for 4 fenced
+# stables.)"
+
+def _lord_of_the_manor_score(state, player, inst):
+    cells = player["cells"]
+    pastures = compute_pastures(player)
+    pasture_cells = {i for p in pastures for i in p}
+    animals = animal_counts(player)
+    fields = sum(1 for c in cells if c["type"] == "field")
+    grain = player["resources"]["grain"]
+    vegetable = player["resources"]["vegetable"]
+    for c in cells:
+        if c["crops"]:
+            if c["crops"]["type"] == "grain":
+                grain += c["crops"]["count"]
+            else:
+                vegetable += c["crops"]["count"]
+    for fi in cards.card_fields(player):
+        if fi["crops"]:
+            if fi["crops"]["type"] == "grain":
+                grain += fi["crops"]["count"]
+            else:
+                vegetable += fi["crops"]["count"]
+    fenced_stables = sum(1 for i in pasture_cells if cells[i]["stable"])
+    values = [
+        table_score("fields", fields), table_score("pastures", len(pastures)),
+        table_score("grain", grain), table_score("vegetable", vegetable),
+        table_score("sheep", animals["sheep"]), table_score("boar", animals["boar"]),
+        table_score("cattle", animals["cattle"]), min(fenced_stables, 4),
+    ]
+    return sum(1 for v in values if v == 4)
+
+
+compendium_card("D100", score_bonus=_lord_of_the_manor_score)
+
+
+# ── D105 Sculptor ─────────────────────────────────────────────────────
+# "Each time you use a clay accumulation space, you also get 1 food.
+# Each time you use a stone accumulation space, you also get 1 grain."
+
+_CLAY_ACC_SPACES = ("clay_pit", "hollow_3p", "hollow_4p")
+_STONE_ACC_SPACES = ("western_quarry", "eastern_quarry")
+
+
+def _sculptor_hook(state, player, inst, ctx):
+    if ctx["actor"] != player["index"]:
+        return
+    if ctx["space_id"] in _CLAY_ACC_SPACES:
+        add_goods(ctx["extra"], {"food": 1})
+        ctx["log"].append(f"{player['name']}'s Sculptor adds 1 food")
+    elif ctx["space_id"] in _STONE_ACC_SPACES:
+        add_goods(ctx["extra"], {"grain": 1})
+        ctx["log"].append(f"{player['name']}'s Sculptor adds 1 grain")
+
+
+compendium_card("D105", hooks={"space_used": _sculptor_hook})
+
+
+# ── D106 Whisky Distiller ─────────────────────────────────────────────
+# "At any time, you can pay 1 grain. If you do, add 2 to the current
+# round and place 4 food on the corresponding round space. At the start
+# of that round, you get the food."
+
+def _whisky_distiller_available(state, player, inst):
+    return (player["resources"]["grain"] >= 1
+            and state["round"] + 2 <= TOTAL_ROUNDS)
+
+
+def _whisky_distiller_apply(state, player, inst, ctx):
+    player["resources"]["grain"] -= 1
+    target = state["round"] + 2
+    slot = state["round_goods"].setdefault(str(target), {}) \
+        .setdefault(str(player["index"]), {})
+    add_goods(slot, {"food": 4})
+    ctx["log"].append(f"{player['name']}'s Whisky Distiller schedules "
+                      f"4 food for round {target}")
+
+
+compendium_card("D106", card_action={
+    "available": _whisky_distiller_available,
+    "apply": _whisky_distiller_apply,
+    "description": "Pay 1 grain: 4 food in 2 rounds",
+})
+
+
+# ── D109 Sowing Master ────────────────────────────────────────────────
+# "When you play this card, you immediately get 1 wood. Each time after
+# you use an action space with the Sow action, you get 2 food."
+
+def _sowing_master_sow(state, player, inst, ctx):
+    player["resources"]["food"] += 2
+    ctx["log"].append(f"{player['name']}'s Sowing Master grants 2 food")
+
+
+compendium_card("D109", hooks={"play": on_play_gain({"wood": 1}),
+                               "sow": _sowing_master_sow})
+
+
+# ── D110 Fish Farmer ──────────────────────────────────────────────────
+# "Each time there is 1/2/3+ food on the Fishing accumulation space, you
+# get an additional 2 food on Reed Bank/Clay Pit/Grove(->Forest, per the
+# card's own errata) accumulation spaces." Read as: whenever Fishing
+# currently holds >=1 food, using Reed Bank/Clay Pit/Forest also grants a
+# flat 2 food (the "1/2/3+" enumerates Fishing's possible food counts,
+# not a tiered reward -- only one reward value is given).
+
+_FISH_FARMER_SPACES = ("forest", "grove", "copse",
+                       "clay_pit", "hollow_3p", "hollow_4p", "reed_bank")
+
+
+def _fish_farmer_hook(state, player, inst, ctx):
+    if ctx["actor"] != player["index"] or ctx["space_id"] not in _FISH_FARMER_SPACES:
+        return
+    fishing = next((s for s in state["action_spaces"] if s["id"] == "fishing"), None)
+    if fishing and fishing["supply"].get("food", 0) >= 1:
+        add_goods(ctx["extra"], {"food": 2})
+        ctx["log"].append(f"{player['name']}'s Fish Farmer adds 2 food")
+
+
+compendium_card("D110", hooks={"space_used": _fish_farmer_hook})
+
+
+# ── D122 Clay Seller ──────────────────────────────────────────────────
+# "When you play this card, you immediately get 2 clay. At any time, but
+# only once per round, you can buy 2 clay for 2 food."
+
+def _clay_seller_reset(state, player, inst, ctx):
+    inst["data"]["bought_this_round"] = False
+
+
+def _clay_seller_available(state, player, inst):
+    return (not inst["data"].get("bought_this_round")
+            and player["resources"]["food"] >= 2)
+
+
+def _clay_seller_apply(state, player, inst, ctx):
+    player["resources"]["food"] -= 2
+    player["resources"]["clay"] += 2
+    inst["data"]["bought_this_round"] = True
+    ctx["log"].append(f"{player['name']}'s Clay Seller buys 2 clay")
+
+
+compendium_card("D122", hooks={"play": on_play_gain({"clay": 2}),
+                               "round_start": _clay_seller_reset},
+                card_action={"available": _clay_seller_available,
+                             "apply": _clay_seller_apply,
+                             "description": "Buy 2 clay for 2 food"})
+
+
+# ── D123 Renovation Preparer ──────────────────────────────────────────
+# "For each new wood/clay room you build, you get 2 clay/2 stone."
+
+def _renovation_preparer_hook(state, player, inst, ctx):
+    n = len(ctx["cells"])
+    if player["house_type"] == "wood":
+        player["resources"]["clay"] += 2 * n
+        ctx["log"].append(f"{player['name']}'s Renovation Preparer grants "
+                          f"{2 * n} clay")
+    elif player["house_type"] == "clay":
+        player["resources"]["stone"] += 2 * n
+        ctx["log"].append(f"{player['name']}'s Renovation Preparer grants "
+                          f"{2 * n} stone")
+
+
+compendium_card("D123", hooks={"rooms_built": _renovation_preparer_hook})
+
+
+# ── D124 Emissary ─────────────────────────────────────────────────────
+# "At any time, you can place a good from your supply on this card to
+# get 1 stone. You must place different goods on this card. (Food is
+# also considered a good.)"
+
+def _emissary_available(state, player, inst):
+    placed = inst["data"].get("placed", [])
+    totals = animal_totals_of(player)
+    for good in GOOD_TYPES:
+        if good in placed:
+            continue
+        have = totals[good] if good in ANIMAL_TYPES else player["resources"][good]
+        if have >= 1:
+            return True
+    return False
+
+
+def _emissary_apply(state, player, inst, ctx):
+    good = (ctx.get("params") or {}).get("good")
+    placed = inst["data"].setdefault("placed", [])
+    if good not in GOOD_TYPES or good in placed:
+        raise ValueError("Emissary: choose a not-yet-placed good (params.good)")
+    if good in ANIMAL_TYPES:
+        if not _remove_one_animal(player, good):
+            raise ValueError(f"Emissary: no {good} to place")
+    else:
+        if player["resources"][good] < 1:
+            raise ValueError(f"Emissary: no {good} to place")
+        player["resources"][good] -= 1
+    placed.append(good)
+    player["resources"]["stone"] += 1
+    ctx["log"].append(f"{player['name']}'s Emissary trades 1 {good} for 1 stone")
+
+
+compendium_card("D124", card_action={
+    "available": _emissary_available,
+    "apply": _emissary_apply,
+    "description": "Place a good (once per type) for 1 stone",
+})
+
+
+# ── D125 Forest Trader ────────────────────────────────────────────────
+# "Each time you use a wood or clay accumulation space, you can also buy
+# exactly 1 building resource. Wood, clay, and reed cost 1 food each;
+# stone costs 2 food."
+
+_FOREST_TRADER_SPACES = ("forest", "grove", "copse",
+                         "clay_pit", "hollow_3p", "hollow_4p")
+_FOREST_TRADER_COSTS = {"wood": 1, "clay": 1, "reed": 1, "stone": 2}
+
+
+def _forest_trader_hook(state, player, inst, ctx):
+    if ctx["actor"] != player["index"] or ctx["space_id"] not in _FOREST_TRADER_SPACES:
+        return
+    food = player["resources"]["food"]
+    opts, goods = [], []
+    for good, cost in _FOREST_TRADER_COSTS.items():
+        if food >= cost:
+            opts.append(f"Buy 1 {good} ({cost} food)")
+            goods.append(good)
+    if not opts:
+        return
+    opts.append("Skip")
+    goods.append(None)
+    prompt_choice(state, player, inst["id"], "Forest Trader: buy a building "
+                 "resource?", opts, data={"goods": goods})
+
+
+def _forest_trader_resolve(state, player, inst, ctx):
+    good = ctx["data"]["goods"][ctx["index"]]
+    if good is None:
+        return
+    cost = _FOREST_TRADER_COSTS[good]
+    player["resources"]["food"] -= cost
+    add_goods(ctx["extra"], {good: 1})
+    ctx["log"].append(f"{player['name']}'s Forest Trader buys 1 {good}")
+
+
+compendium_card("D125", hooks={"space_used": _forest_trader_hook},
+                resolve_choice=_forest_trader_resolve)
+
+
+# ── D133 Beer Tent Operator ───────────────────────────────────────────
+# "In the feeding phase of each harvest, you can use this card to turn
+# 1 wood plus 1 grain into 1 bonus point and 2 food."
+
+def _beer_tent_available(state, player, inst):
+    return (state["phase"] == "feeding" and player["resources"]["wood"] >= 1
+            and player["resources"]["grain"] >= 1)
+
+
+def _beer_tent_apply(state, player, inst, ctx):
+    player["resources"]["wood"] -= 1
+    player["resources"]["grain"] -= 1
+    player["resources"]["food"] += 2
+    inst["data"]["bonus"] = inst["data"].get("bonus", 0) + 1
+    ctx["log"].append(f"{player['name']}'s Beer Tent Operator turns 1 wood + "
+                      "1 grain into 2 food and 1 bonus point")
+
+
+compendium_card("D133", card_action={
+    "available": _beer_tent_available,
+    "apply": _beer_tent_apply,
+    "description": "1 wood + 1 grain -> 2 food + 1 bonus point",
+}, score_bonus=lambda s, p, i: i["data"].get("bonus", 0))
+
+
+# ── D134 Oyster Eater ─────────────────────────────────────────────────
+# "Each time the Fishing accumulation space is used, you get 1 bonus
+# point and must skip placing your next person that round."
+
+def _oyster_eater_hook(state, player, inst, ctx):
+    if ctx["space_id"] != "fishing":
+        return
+    inst["data"]["bonus"] = inst["data"].get("bonus", 0) + 1
+    player["people_placed"] = min(player["people_total"],
+                                  player["people_placed"] + 1)
+    ctx["log"].append(f"{player['name']}'s Oyster Eater scores a bonus point "
+                      "and skips a placement")
+
+
+compendium_card("D134", hooks={"space_used": _oyster_eater_hook},
+                score_bonus=lambda s, p, i: i["data"].get("bonus", 0))
+
+
+# ── D135 Gardening Head Official ──────────────────────────────────────
+# "If there are still 3/6/9 complete rounds left to play, you
+# immediately get 2/3/4 wood. During scoring, each player with the most
+# vegetables in their fields gets 2 bonus points."
+
+def _rounds_remaining_wood_play(state, player, inst, ctx):
+    remaining = TOTAL_ROUNDS - state["round"]
+    wood = 4 if remaining >= 9 else 3 if remaining >= 6 else 2 if remaining >= 3 else 0
+    if wood:
+        player["resources"]["wood"] += wood
+        ctx["log"].append(f"{player['name']}'s {spec(inst)['name']} grants "
+                          f"{wood} wood")
+
+
+def _veg_in_fields(player):
+    total = 0
+    for c in player["cells"]:
+        if c["type"] == "field" and c["crops"] and c["crops"]["type"] == "vegetable":
+            total += c["crops"]["count"]
+    for fi in cards.card_fields(player):
+        if fi["crops"] and fi["crops"]["type"] == "vegetable":
+            total += fi["crops"]["count"]
+    return total
+
+
+def _gardening_head_score(state, player, inst):
+    mine = _veg_in_fields(player)
+    if mine > 0 and all(_veg_in_fields(p) <= mine for p in state["players"]):
+        return 2
+    return 0
+
+
+compendium_card("D135", hooks={"play": _rounds_remaining_wood_play},
+                score_bonus=_gardening_head_score)
+
+
+# ── D136 Animal Activist ──────────────────────────────────────────────
+# "If there are still 3/6/9 complete rounds left to play, you
+# immediately get 2/3/4 wood. During scoring, each player with the most
+# fenced stables gets 2 bonus points."
+
+def _fenced_stables_count(player):
+    pasture_cells = {i for p in compute_pastures(player) for i in p}
+    return sum(1 for i in pasture_cells if player["cells"][i]["stable"])
+
+
+def _animal_activist_score(state, player, inst):
+    mine = _fenced_stables_count(player)
+    if mine > 0 and all(_fenced_stables_count(p) <= mine for p in state["players"]):
+        return 2
+    return 0
+
+
+compendium_card("D136", hooks={"play": _rounds_remaining_wood_play},
+                score_bonus=_animal_activist_score)
+
+
+# ── D137 Trade Teacher ────────────────────────────────────────────────
+# "Each time after you use a Lessons action space, you can buy up to 2
+# different goods: grain, stone, sheep, and wild boar for 1 food each;
+# cattle and vegetable for 2 food each."
+
+_TRADE_TEACHER_COSTS = {"grain": 1, "stone": 1, "sheep": 1, "boar": 1,
+                        "cattle": 2, "vegetable": 2}
+
+
+def _trade_teacher_prompt(state, player, inst, stage, bought):
+    food = player["resources"]["food"]
+    opts, goods = [], []
+    for good, cost in _TRADE_TEACHER_COSTS.items():
+        if good in bought or food < cost:
+            continue
+        opts.append(f"1 {good} ({cost} food)")
+        goods.append(good)
+    if not opts:
+        return
+    opts.append("Skip")
+    goods.append(None)
+    prompt_choice(state, player, inst["id"], "Trade Teacher: buy a good?",
+                 opts, data={"stage": stage, "bought": bought, "goods": goods})
+
+
+def _trade_teacher_hook(state, player, inst, ctx):
+    if ctx["actor"] != player["index"] or ctx["space_id"] not in ("lessons", "lessons_b"):
+        return
+    _trade_teacher_prompt(state, player, inst, 1, [])
+
+
+def _trade_teacher_resolve(state, player, inst, ctx):
+    data = ctx["data"]
+    good = data["goods"][ctx["index"]]
+    if good is None:
+        return
+    cost = _TRADE_TEACHER_COSTS[good]
+    player["resources"]["food"] -= cost
+    add_goods(ctx["extra"], {good: 1})
+    ctx["log"].append(f"{player['name']}'s Trade Teacher buys 1 {good}")
+    if data["stage"] < 2:
+        _trade_teacher_prompt(state, player, inst, data["stage"] + 1,
+                              data["bought"] + [good])
+
+
+compendium_card("D137", hooks={"space_used": _trade_teacher_hook},
+                resolve_choice=_trade_teacher_resolve)
+
+
+# ── D139 Chairman ─────────────────────────────────────────────────────
+# "Each time another player uses the Meeting Place action space, both
+# they and you get 1 food (before taking the actions). If you use it,
+# you get 1 food."
+
+def _chairman_hook(state, player, inst, ctx):
+    if ctx["space_id"] != "meeting_place":
+        return
+    if ctx["actor"] == player["index"]:
+        add_goods(ctx["extra"], {"food": 1})
+        ctx["log"].append(f"{player['name']}'s Chairman grants 1 food")
+    else:
+        player["resources"]["food"] += 1
+        state["players"][ctx["actor"]]["resources"]["food"] += 1
+        ctx["log"].append(f"{player['name']}'s Chairman grants 1 food to "
+                          "both players")
+
+
+compendium_card("D139", hooks={"space_used": _chairman_hook})
+
+
+# ── D140 Loudmouth ────────────────────────────────────────────────────
+# "Each time you take at least 4 building resources or 4 animals from an
+# accumulation space, you also get 1 food." (Trailing "(3-5 players)
+# When you play this card, you immediately get 1 grain..." duplicates
+# the already-implemented base Grain Farmer occupation -- bleed from a
+# different card, ignored.)
+
+def _loudmouth_hook(state, player, inst, ctx):
+    if ctx["actor"] != player["index"]:
+        return
+    for good, amount in ctx["goods"].items():
+        if amount >= 4 and (good in BUILDING_RESOURCES or good in ANIMAL_TYPES):
+            add_goods(ctx["extra"], {"food": 1})
+            ctx["log"].append(f"{player['name']}'s Loudmouth adds 1 food")
+            break
+
+
+compendium_card("D140", hooks={"space_used": _loudmouth_hook})
+
+
+# ── D143 Tree Cutter ──────────────────────────────────────────────────
+# "Each time you use an accumulation space providing at least 3 goods of
+# the same type except wood, you get 1 additional wood."
+
+def _tree_cutter_hook(state, player, inst, ctx):
+    if ctx["actor"] != player["index"]:
+        return
+    for good, amount in ctx["goods"].items():
+        if good != "wood" and amount >= 3:
+            add_goods(ctx["extra"], {"wood": 1})
+            ctx["log"].append(f"{player['name']}'s Tree Cutter adds 1 wood")
+            break
+
+
+compendium_card("D143", hooks={"space_used": _tree_cutter_hook})
+
+
+# ── D145 Roof Examiner ────────────────────────────────────────────────
+# "When you play this card, if you have 1/2/3/4 major improvements, you
+# immediately get 2/3/4/5 reed." (Trailing "(3-5 players) Each time you
+# take at least 4 of the same building resource..." is bleed from a
+# different card -- ignored.)
+
+def _roof_examiner_play(state, player, inst, ctx):
+    n = len(player["improvements"])
+    reed = 5 if n >= 4 else 4 if n >= 3 else 3 if n >= 2 else 2 if n >= 1 else 0
+    if reed:
+        player["resources"]["reed"] += reed
+        ctx["log"].append(f"{player['name']}'s Roof Examiner grants {reed} reed")
+
+
+compendium_card("D145", hooks={"play": _roof_examiner_play})
+
+
+# ── D149 Casual Worker ────────────────────────────────────────────────
+# "Each time another player uses a Quarry accumulation space, you can
+# choose to get 1 food or build a stable without paying wood."
+
+_QUARRY_SPACES = ("western_quarry", "eastern_quarry")
+
+
+def _casual_worker_hook(state, player, inst, ctx):
+    if ctx["space_id"] not in _QUARRY_SPACES or ctx["actor"] == player["index"]:
+        return
+    stables = sum(1 for c in player["cells"] if c["stable"])
+    empty_cells = [i for i, c in enumerate(player["cells"])
+                   if c["type"] == "empty" and not c["stable"]]
+    if stables < MAX_STABLES and empty_cells:
+        prompt_choice(state, player, inst["id"],
+                     "Casual Worker: 1 food or a free stable?",
+                     ["1 food", "Build a free stable"], data={})
+    else:
+        player["resources"]["food"] += 1
+        ctx["log"].append(f"{player['name']}'s Casual Worker grants 1 food")
+
+
+def _casual_worker_resolve(state, player, inst, ctx):
+    data = ctx["data"]
+    if "cells" in data:
+        cell = data["cells"][ctx["index"]]
+        c = player["cells"][cell]
+        if c["type"] != "empty" or c["stable"]:
+            return
+        c["stable"] = True
+        ctx["log"].append(f"{player['name']}'s Casual Worker builds a free "
+                          "stable")
+        cards.fire_player(state, player, "stable_built",
+                          {"cells": [cell], "log": ctx["log"],
+                           "actor": player["index"], "extra": ctx["extra"]})
+        return
+    if ctx["option"] == "1 food":
+        player["resources"]["food"] += 1
+        ctx["log"].append(f"{player['name']}'s Casual Worker grants 1 food")
+    else:
+        cells = [i for i, c in enumerate(player["cells"])
+                 if c["type"] == "empty" and not c["stable"]]
+        opts = [f"Cell {i}" for i in cells]
+        prompt_choice(state, player, inst["id"],
+                     "Choose a space for the free stable", opts,
+                     data={"cells": cells})
+
+
+compendium_card("D149", hooks={"space_used": _casual_worker_hook},
+                resolve_choice=_casual_worker_resolve)
+
+
+# ── D153 Wealthy Man ──────────────────────────────────────────────────
+# "At the start of each of the 1st/2nd/3rd/4th/5th/6th harvest, if you
+# have at least 1/2/3/4/5/6 grain fields, you get 1 bonus point."
+
+def _grain_field_count(player):
+    n = sum(1 for c in player["cells"]
+            if c["crops"] and c["crops"]["type"] == "grain")
+    n += sum(1 for i in cards.card_fields(player)
+            if i["crops"] and i["crops"]["type"] == "grain")
+    return n
+
+
+def _wealthy_man_hook(state, player, inst, ctx):
+    if _grain_field_count(player) >= ctx["harvest_index"]:
+        inst["data"]["bonus"] = inst["data"].get("bonus", 0) + 1
+        ctx["log"].append(f"{player['name']}'s Wealthy Man scores a bonus "
+                          "point")
+
+
+compendium_card("D153", hooks={"harvest_field": _wealthy_man_hook},
+                score_bonus=lambda s, p, i: i["data"].get("bonus", 0))
+
+
+# ── D154 Chimney Sweep ────────────────────────────────────────────────
+# "Renovating to stone costs you 2 stone less. During scoring, you get
+# 1 bonus point for each other player living in a stone house."
+
+def _chimney_sweep_mod(state, player, kind, cost, ctx):
+    if kind == "renovation" and cost.get("stone"):
+        cost = dict(cost)
+        cost["stone"] = max(0, cost["stone"] - 2)
+    return cost
+
+
+def _chimney_sweep_score(state, player, inst):
+    return sum(1 for p in state["players"]
+               if p["index"] != player["index"] and p["house_type"] == "stone")
+
+
+compendium_card("D154", cost_mod=_chimney_sweep_mod,
+                score_bonus=_chimney_sweep_score)
+
+
+# ── D155 Ebonist ──────────────────────────────────────────────────────
+# "Each harvest, you can use this card to turn exactly 1 wood into 1
+# food and 1 grain."
+
+def _ebonist_available(state, player, inst):
+    return (player["resources"]["wood"] >= 1
+            and inst["data"].get("used_harvest") != state.get("harvest_index"))
+
+
+def _ebonist_apply(state, player, inst, ctx):
+    player["resources"]["wood"] -= 1
+    player["resources"]["food"] += 1
+    player["resources"]["grain"] += 1
+    inst["data"]["used_harvest"] = state.get("harvest_index")
+    ctx["log"].append(f"{player['name']}'s Ebonist turns 1 wood into 1 food "
+                      "and 1 grain")
+
+
+compendium_card("D155", card_action={
+    "available": _ebonist_available,
+    "apply": _ebonist_apply,
+    "description": "1 wood -> 1 food + 1 grain (once per harvest)",
+})
+
+
+# ── D156 Retail Dealer ────────────────────────────────────────────────
+# "Place 3 grain and 3 food on this card. Each time you use the Resource
+# Market action space, you also get 1 grain and 1 food from this card."
+
+def _retail_dealer_play(state, player, inst, ctx):
+    inst["data"]["grain"] = 3
+    inst["data"]["food"] = 3
+
+
+def _retail_dealer_hook(state, player, inst, ctx):
+    if ctx["actor"] != player["index"] or \
+            ctx["space_id"] not in ("resource_market_3p", "resource_market_4p"):
+        return
+    d = inst["data"]
+    if d.get("grain", 0) > 0 and d.get("food", 0) > 0:
+        d["grain"] -= 1
+        d["food"] -= 1
+        add_goods(ctx["extra"], {"grain": 1, "food": 1})
+        ctx["log"].append(f"{player['name']}'s Retail Dealer provides 1 "
+                          "grain and 1 food")
+
+
+compendium_card("D156", hooks={"play": _retail_dealer_play,
+                               "space_used": _retail_dealer_hook})
+
+
+# ── D157 Party Organizer ──────────────────────────────────────────────
+# "As soon as the next player but you gains their 5th person, you
+# immediately get 8 food (not retroactively). During scoring, if only
+# you have 5 people, you get 3 bonus points."
+
+def _party_organizer_hook(state, player, inst, ctx):
+    if ctx["actor"] == player["index"] or inst["data"].get("triggered"):
+        return
+    if state["players"][ctx["actor"]]["people_total"] == 5:
+        inst["data"]["triggered"] = True
+        player["resources"]["food"] += 8
+        ctx["log"].append(f"{player['name']}'s Party Organizer grants 8 food")
+
+
+def _party_organizer_score(state, player, inst):
+    if player["people_total"] != 5:
+        return 0
+    others_have_5 = any(p["people_total"] == 5 for p in state["players"]
+                        if p["index"] != player["index"])
+    return 0 if others_have_5 else 3
+
+
+compendium_card("D157", hooks={"family_growth": _party_organizer_hook},
+                score_bonus=_party_organizer_score)
+
+
+# ── D160 Midwife ──────────────────────────────────────────────────────
+# "Each time another player uses the first person they place in a round
+# to take a Family Growth action, you get 1 grain from the general
+# supply."
+
+def _midwife_hook(state, player, inst, ctx):
+    if ctx["actor"] == player["index"]:
+        return
+    if state["players"][ctx["actor"]]["people_placed"] == 1:
+        player["resources"]["grain"] += 1
+        ctx["log"].append(f"{player['name']}'s Midwife grants 1 grain")
+
+
+compendium_card("D160", hooks={"family_growth": _midwife_hook})
+
+
+# ── D166 Stable Milker ────────────────────────────────────────────────
+# "Each time you build at least 2 stables on the same turn, you also
+# get 1 cattle."
+
+def _stable_milker_hook(state, player, inst, ctx):
+    if len(ctx["cells"]) >= 2:
+        add_goods(ctx["extra"], {"cattle": 1})
+        ctx["log"].append(f"{player['name']}'s Stable Milker adds 1 cattle")
+
+
+compendium_card("D166", hooks={"stable_built": _stable_milker_hook})

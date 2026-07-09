@@ -54,6 +54,7 @@ through the accommodation prompt automatically):
 | `space_used` | any player finishes an action space | `space_id`, `goods` the space provided |
 | `occupation_played` / `minor_played` | any player plays a card | `card_id` |
 | `round_start` | preparation phase (own cards only) | `round` |
+| `improvement_built` | any player builds/upgrades a major improvement | `improvement` id |
 | `harvest_field` | field phase of each harvest (own) | `harvest_index` (1..6) |
 | `fences_built` | after fences built | `new_pastures` (lists of cells) |
 | `stable_built` | after own stables built | `cells` |
@@ -63,7 +64,11 @@ through the accommodation prompt automatically):
 | `bake` | after own bake | `grain` count baked |
 | `renovate` | after own renovation | `free_stable_cell` param |
 | `family_growth` | own family growth | — |
-| `resolve_choice` | answer to `prompt_choice` | `index`, `option`, `data` |
+
+`resolve_choice` is **not** a hook: pass it as a top-level spec key
+(`compendium_card(..., resolve_choice=fn)`); the engine reads
+`spec.get("resolve_choice")` directly. Same signature, ctx carries
+`index`, `option`, `data`.
 
 **Static ability keys** (data on the spec, queried by the engine):
 
@@ -92,8 +97,15 @@ through the accommodation prompt automatically):
 
 **Mid-effect choices**: from any hook,
 `prompt_choice(state, player, inst["id"], "Take wood or clay?",
-["1 wood", "1 clay"], data={...})`, then define
-`hooks["resolve_choice"]` and read `ctx["index"]`.
+["1 wood", "1 clay"], data={...})`, then define the top-level
+`resolve_choice=fn` spec key and read `ctx["index"]`.
+
+**Do not prompt (or grant animals via `ctx["extra"]`) from a
+`round_start` hook**: `_start_round` clears `state["prompts"]` before
+firing the event, and a prompt pending at round start blocks every
+player's placements, so the effect is silently discarded or the round
+is forfeited. Auto-apply the effect instead (pick a sane default, or
+place animals best-effort like the breeding phase does).
 
 **Scheduled goods on round spaces**:
 `state["round_goods"][str(round)][str(pidx)][good] += n` (see
