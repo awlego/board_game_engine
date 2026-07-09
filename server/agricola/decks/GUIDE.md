@@ -40,6 +40,7 @@ from server.agricola.cards import (
     take_bonus, space_bonus, round_income, schedule_on_play,
     harvest_food, on_play_gain, animal_totals_of,
     needs_occupations, exact_occupations, needs_grain_field, combine,
+    card_space_owner,
 )
 ```
 
@@ -335,6 +336,9 @@ mechanism.
    "apply": fn(state, player, inst, ctx),
    "description": "..."}` — an activated ability offered on your turn
   (work phase) and during feeding; `ctx["params"]` carries client input.
+- `card_space={...}` — the card itself becomes an additional action
+  space once played; see the dedicated `card_space` section below for
+  the full contract.
 - Card-local storage: `inst["data"]` (dict), e.g. once-per-game flags.
 
 **Card-aware animal capacity (engine phase 8):** the flat "2 per pasture
@@ -623,6 +627,128 @@ def _my_resolve_choice(state, player, inst, ctx):
     cid = ctx["data"]["cids"][ctx["index"]]
     sub_actions.play_minor(state, player, cid, ctx["log"], cost_override="free")
 ```
+
+## `card_space`: cards that ARE action spaces (engine phase 9)
+
+Some cards (A039 Chapel, B042 Forest Inn, D023 Pioneering Spirit, D051
+Archway, E164 Master Forester, I100 Tavern, I337 Clay Deposit, ...)
+don't just react to action spaces or modify their cost/capacity — the
+card itself becomes an additional action space once played, usable by
+some or all players for the rest of the game. Spec key `card_space`
+(a dict), on either an occupation or a minor improvement:
+
+```python
+card("i337_clay_deposit", "Clay Deposit", "minor", cost={"food": 1},
+     text="An additional action space. A player who uses it must pay "
+          "you 1 food and receives 5 clay.",
+     card_space={"resolve": _i337_resolve})
+```
+
+- `"name"`, `"desc"` — display strings for the space; default to the
+  card's own `name`/`text` if omitted.
+- `"owner_only"` — bool, default `False`. `True` restricts placement to
+  the card's own owner (D023: "an action space FOR YOU ONLY").
+- `"acc"` — `None` (default), a goods dict replenished every
+  `round_start` like any other accumulation space, or
+  `fn(state, owner_player, inst) -> dict` for a computed amount (always
+  evaluated for the card's OWNER, regardless of who ends up placing
+  there). E164 Master Forester: `{"acc": {"wood": 2}}`. All 7 motivating
+  cards use `"acc"` XOR `"resolve"`, never both — `"usable"`'s default
+  supply-non-empty gate (see below) is written assuming that split; a
+  future card combining both would need its own `"usable"` override if
+  the resolve fn doesn't actually depend on `space["supply"]`.
+- `"usable"` — `fn(state, player, inst) -> bool`, optional, an extra
+  gate beyond the defaults (e.g. D023's round-3-through-8 window).
+  `player` is whoever is trying to PLACE there, not necessarily the
+  owner (when `owner_only` is also set, by the time `usable` runs
+  `player` already IS the owner — the owner_only check happens first).
+- `"resolve"` — `fn(state, player, inst, action, log) -> goods dict`,
+  optional (an accumulation-only card space like E164 can omit it
+  entirely and just falls through to the normal accumulation-space
+  handling). Performs the space's own effect for the placing `player`
+  (who may not be the owner): do the card's special mechanics here —
+  tolls paid to the owner (direct debit from `player["resources"]`,
+  credited to the owner via `cards.grant_goods` — the owner isn't the
+  acting player, so `ctx["extra"]` isn't available to them), bonus
+  points, choices read from `action` (the same client-supplied action
+  dict a normal space's dispatch sees), `ValueError` on invalid input
+  — and **return only the goods the fn wants credited to `player`**.
+
+  **The contract is exact**: the resolve fn must NOT itself write the
+  returned goods into `player["resources"]` (or route an animal
+  through accommodation) — it only returns them. The engine credits the
+  return value the normal way goods from any other space are credited:
+  non-animal goods go straight into `player["resources"]`, animal goods
+  are queued for accommodation, `gained(source="space")` fires for the
+  total, and `space_used` fires with that same total as its `goods`
+  field. Side effects that AREN'T "goods credited to the placing
+  player" — a toll paid to the owner, bonus points, a queued prompt —
+  stay entirely inside the resolve fn and are not part of the return
+  value. Returning `{}` (or nothing) is fine, including for a resolve
+  fn that only queues a prompt (see below) and grants everything once
+  the choice is answered.
+
+  Find the space's owner from inside a resolve/usable fn with
+  `cards.card_space_owner(state, inst)` (looks up `state[
+  "action_spaces"]`'s `"card:<cid>"` entry's `owner` index — `resolve`/
+  `usable` only receive the PLACING player, not the owner).
+
+**Worked example** (I337 Clay Deposit: toll to the owner, 5 clay to the
+placer, no toll for the owner's own placement):
+```python
+def _i337_resolve(state, player, inst, action, log):
+    owner = cards.card_space_owner(state, inst)
+    if player is not owner:
+        if player["resources"]["food"] < 1:
+            raise ValueError("You must pay 1 food to use this space")
+        player["resources"]["food"] -= 1
+        cards.grant_goods(state, owner, {"food": 1}, log)
+        log.append(f"{player['name']} pays {owner['name']} 1 food")
+    log.append(f"{player['name']} takes 5 clay")
+    return {"clay": 5}
+```
+
+**Prompts**: a `resolve` fn may call `prompt_choice` exactly like any
+other space resolution (mid-effect choices are always safe — see
+above) and return `{}`; the card's `resolve_choice` then credits
+whatever the choice implies once it's answered. Because the prompted
+player may not be the card's owner, `_apply_choice`'s card-instance
+lookup searches every player's in-play cards by id (not just the
+prompted player's) — safe since card ids are unique per game.
+
+**Space creation**: `play_minor`/`play_occupation` (in
+`sub_actions.py`) both call a shared `_add_card_space` helper once the
+card instance joins `player["minors"]`/`["occupations"]`, appending
+`{"id": f"card:{cid}", "name", "desc", "occupied_by": None,
+"extra_occupants": [], "supply": {}, "accumulates": bool(acc),
+"card_space": True, "card": cid, "owner": player["index"]}` to
+`state["action_spaces"]`. One space per played card (an `assert`
+matches the CARDS registry's per-game uniqueness assumption). A
+`traveling=True` card can never declare `card_space` — asserted at
+registration in `cards.card` — since a traveling card's instance never
+settles into `player["minors"]` for an "owner" to point at.
+
+**Everything else about a card_space is a normal action space**:
+occupancy (`occupied_by`/`extra_occupants`, reset every round),
+`occupied_ok`, the Lasso's animal-market check (a card_space is never
+an animal market), `returning_home`'s `spaces` list, `space_used`'s
+`occupants`, and listing in `get_valid_actions` all fall out of the
+existing generic handling over `state["action_spaces"]` — no special
+case needed anywhere else. A card_space appended mid-round lands at the
+end of the list, same as a freshly revealed stage card; the two kinds
+of appends don't interact, only affecting cosmetic display order.
+
+**Client note:** `client/games/Agricola_MP.jsx`'s `ActionBoard` sorts
+`state.action_spaces` generically into "Permanent" (`s.stage === 0`)
+and "Round cards" (`s.stage > 0`) — it does not hardcode ids, so a
+card_space's `supply`/`occupied_by` render fine once it's in one of
+those groups. But a card_space entry has no `"stage"` key at all (not
+part of its dict, unlike PERMANENT_SPACES' `0` or STAGE_CARDS' own
+per-card stage number), so `undefined === 0` and `undefined > 0` are
+both false — a card_space currently renders in NEITHER group and is
+invisible on the board, even though it's fully placeable server-side.
+A future client pass needs a third group (or to fold it into "Round
+cards") once a real card uses this mechanism.
 
 ## Not supported (mark UNIMPLEMENTED, cite the mechanic)
 

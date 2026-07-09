@@ -504,6 +504,37 @@ def build_improvement(state, player, imp, log, upgrade=False,
 
 # ── Play occupation / minor improvement ────────────────────────────────
 
+def _add_card_space(state, player, inst):
+    """If `inst`'s card declares `card_space` (item 15: a card that IS an
+    action space -- Chapel, Forest Inn, Master Forester, ...), append its
+    action space to state["action_spaces"] now that the card has entered
+    play. Shared by play_occupation and play_minor -- a card_space card
+    is never `traveling=True` (asserted at registration in cards.card),
+    so both call sites append exactly once, right after the instance
+    joins player["occupations"]/["minors"]."""
+    card_spec = cards.spec(inst).get("card_space")
+    if not card_spec:
+        return
+    sid = f"card:{inst['id']}"
+    # Every card is unique per game (the CARDS registry itself is keyed
+    # by id, and a player's hand/in-play cards never repeat one), so this
+    # can only fire if _add_card_space were ever called twice for the
+    # same instance -- a bug, not a legal game state.
+    assert not any(s["id"] == sid for s in state["action_spaces"]), sid
+    state["action_spaces"].append({
+        "id": sid,
+        "name": card_spec.get("name", cards.spec(inst)["name"]),
+        "desc": card_spec.get("desc", cards.spec(inst)["text"]),
+        "occupied_by": None,
+        "extra_occupants": [],
+        "supply": {},
+        "accumulates": bool(card_spec.get("acc")),
+        "card_space": True,
+        "card": inst["id"],
+        "owner": player["index"],
+    })
+
+
 def lessons_occupation_cost(state, player, space_id):
     """The Lessons/Lessons(3-4p) action spaces' own escalating occupation
     cost (0/1 or 1/2 food, depending on how many occupations this player
@@ -580,6 +611,7 @@ def play_occupation(state, player, cid, log, params=None, cost_override=None, ct
     inst = cards.new_instance(cid)
     player["occupations"].append(inst)
     player["occs_played"] += 1
+    _add_card_space(state, player, inst)
     # Occupations are always priced in food; report the total even when
     # it's 0 (matches the Lessons space's escalating-cost log lines).
     cost_str = "free" if cost_override == "free" else f"{cost.get('food', 0)} food"
@@ -654,6 +686,7 @@ def play_minor(state, player, cid, log, params=None, cost_override=None, ctx=Non
             log.append(f"\"{spec['name']}\" is removed from play (solo)")
     else:
         player["minors"].append(inst)
+        _add_card_space(state, player, inst)
     _fire_broadcast(state, "minor_played", player, {"card_id": cid}, log)
     return inst
 

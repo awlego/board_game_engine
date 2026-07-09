@@ -260,6 +260,17 @@ class AgricolaEngine(GameEngine):
                 return s
         return None
 
+    def _card_space_inst(self, state, space):
+        """The live card instance behind a `card_space` action space, or
+        None if the card has since left play. No removal path exists yet
+        (see CARDS.md), but `_space_usable`/`_resolve_space`/
+        `_accumulation_of` all go through this so a future one degrades
+        gracefully (space unusable / accumulation skipped / placement
+        rejected) instead of crashing."""
+        owner = state["players"][space["owner"]]
+        return next((i for i in cards.in_play(owner) if i["id"] == space["card"]),
+                    None)
+
     def _capacity(self, player):
         """Placements a player may make this round: people plus any
         guest tokens. Never people_total itself -- feeding, scoring, and
@@ -412,7 +423,7 @@ class AgricolaEngine(GameEngine):
 
         # Replenish accumulation spaces.
         for space in state["action_spaces"]:
-            acc = self._accumulation_of(state, space["id"])
+            acc = self._accumulation_of(state, space)
             if acc:
                 for good, amount in acc.items():
                     space["supply"][good] = space["supply"].get(good, 0) + amount
@@ -436,7 +447,21 @@ class AgricolaEngine(GameEngine):
         state["round_first_player"] = state["starting_player"]
         self._advance_work(state, log, state["starting_player"])
 
-    def _accumulation_of(self, state, space_id):
+    def _accumulation_of(self, state, space):
+        """Goods to add to `space` in a replenish pass. For a `card_space`,
+        the card's own spec's "acc" (a dict, or fn(state, owner_player,
+        inst) -> dict) is always evaluated for the card's OWNER,
+        regardless of who ends up placing there; unaffected by the
+        Forest-only solo halving rule below, which is keyed on the literal
+        "forest" id."""
+        space_id = space["id"]
+        if space.get("card_space"):
+            inst = self._card_space_inst(state, space)
+            if inst is None:
+                return None
+            owner = state["players"][space["owner"]]
+            acc = cards.spec(inst)["card_space"].get("acc")
+            return acc(state, owner, inst) if callable(acc) else acc
         for spec in PERMANENT_SPACES:
             if spec["id"] == space_id:
                 acc = spec.get("acc")
@@ -701,6 +726,8 @@ class AgricolaEngine(GameEngine):
 
     def _space_usable(self, state, p, space):
         sid = space["id"]
+        if space.get("card_space"):
+            return self._card_space_usable(state, p, space)
         if space["accumulates"]:
             return True  # taking the goods is always a valid action
         if sid in ("grain_seeds", "day_laborer", "vegetable_seeds",
@@ -740,6 +767,29 @@ class AgricolaEngine(GameEngine):
         if sid == "house_redevelopment" or sid == "farm_redevelopment":
             return self._renovation_possible(state, p)
         return False
+
+    def _card_space_usable(self, state, p, space):
+        """A `card_space` is usable if: its card is still in play, the
+        owner_only gate (if set) is satisfied, the spec's own `usable`
+        gate (if any) passes, and -- for an accumulation card space --
+        its supply is non-empty (unlike the flat "always True" every
+        OTHER accumulation space gets: those are guaranteed non-empty by
+        the time anyone can place, since _start_round replenishes before
+        the first placement of the round; a card_space can be appended
+        mid-round, after that round's replenish already ran, with an
+        empty supply until the next round_start)."""
+        inst = self._card_space_inst(state, space)
+        if inst is None:
+            return False
+        card_spec = cards.spec(inst)["card_space"]
+        if card_spec.get("owner_only") and p["index"] != space["owner"]:
+            return False
+        usable_fn = card_spec.get("usable")
+        if usable_fn and not usable_fn(state, p, inst):
+            return False
+        if space["accumulates"]:
+            return any(v > 0 for v in space["supply"].values())
+        return True
 
     def _apply_place(self, state, pidx, action):
         if state["phase"] != "work":
@@ -797,6 +847,34 @@ class AgricolaEngine(GameEngine):
     def _resolve_space(self, state, p, space, action, log):
         sid = space["id"]
         provided = {}
+
+        if space.get("card_space"):
+            inst = self._card_space_inst(state, space)
+            if inst is None:
+                raise ValueError("That space is no longer available")
+            resolve_fn = cards.spec(inst)["card_space"].get("resolve")
+            if resolve_fn:
+                # The resolve fn does its own special mechanics (tolls to
+                # the owner via cards.grant_goods, choices via `action`,
+                # ValueError on invalid input) and returns only the goods
+                # it wants credited to the placing player `p` -- the
+                # engine credits those the normal way (see GUIDE.md's
+                # card_space section for the exact contract).
+                provided = {g: v for g, v in
+                           (resolve_fn(state, p, inst, action, log) or {}).items()
+                           if v}
+                animals_gained = {g: v for g, v in provided.items()
+                                  if g in ANIMAL_TYPES}
+                for good, amount in provided.items():
+                    if good not in ANIMAL_TYPES:
+                        p["resources"][good] += amount
+                cards.fire_gained(state, p, provided, "space", log, space_id=sid)
+                self._fire_space_used(state, p, sid, provided, log,
+                                      animals=animals_gained)
+                return
+            # No resolve fn: a pure accumulation card space (E164-style)
+            # -- falls through to the generic accumulation branch below,
+            # identical to every other accumulation space.
 
         # Accumulation spaces (including the animal markets).
         if space["accumulates"]:
@@ -1311,7 +1389,14 @@ class AgricolaEngine(GameEngine):
         if not isinstance(index, int) or not (0 <= index < len(prompt["options"])):
             raise ValueError("Invalid choice")
         p = state["players"][pidx]
-        inst = next((i for i in cards.in_play(p)
+        # Every other prompt_choice caller is a card's own hook reacting
+        # to its owner's turn, so the card lives in the prompted player's
+        # own in_play list -- but a card_space's "resolve" fn may prompt
+        # the PLACING player (who may not be the card's owner) about a
+        # choice tied to the space's own card. Card ids are unique per
+        # game (CARDS.md), so search every player's in_play list, not
+        # just the prompted one's.
+        inst = next((i for pl in state["players"] for i in cards.in_play(pl)
                      if i["id"] == prompt["card"]), None)
         if inst is None:
             raise ValueError("Card no longer in play")

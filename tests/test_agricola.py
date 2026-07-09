@@ -3494,3 +3494,410 @@ def test_callable_extra_rooms_gates_family_growth(engine, temp_card):
 
     s = place(engine, s, {"kind": "place", "space": "basic_wish"})
     assert s["players"][first]["people_total"] == 3
+
+
+# ── Card action spaces (card_space, engine phase 9) ───────────────────
+# A card whose spec declares `card_space={...}` IS an action space: once
+# played, it's appended to state["action_spaces"] as
+# {"id": "card:<cid>", ..., "card_space": True, "card": cid,
+#  "owner": <owner index>}. See decks/GUIDE.md's "card_space" section.
+
+def test_card_space_for_all_resolve(engine, temp_card):
+    """A card_space open to everyone (owner_only defaults False): another
+    player places on it and gets the resolve fn's goods; both space_used
+    and gained fire with the card's own space id. The owner can use it
+    too, in a later placement."""
+    events = []
+
+    def resolve(state, player, inst, action, log):
+        log.append(f"{player['name']} takes 2 stone from the card space")
+        return {"stone": 2}
+
+    def on_space_used(state, player, inst, ctx):
+        # space_used is broadcast to every player's cards (unlike
+        # gained, which is owner-only) -- one instance (the card_space
+        # itself, in `first`'s minors) sees every placer's use.
+        if ctx["space_id"] == "card:test_stone_deposit":
+            events.append(("space_used", ctx["actor"], dict(ctx["goods"])))
+
+    def on_gained(state, player, inst, ctx):
+        events.append(("gained", ctx["actor"], ctx["source"], dict(ctx["goods"])))
+
+    temp_card("test_stone_deposit", "Test Stone Deposit", "minor", "test",
+              cost={}, card_space={"resolve": resolve},
+              hooks={"space_used": on_space_used})
+    # `gained` only fires a player's OWN cards (see cards.fire_gained),
+    # so observing it for whichever player places (owner or not) needs
+    # an observer card in EACH player's own in_play, not just the
+    # card_space's own card.
+    temp_card("test_gained_observer", "Test Gained Observer", "minor",
+              "test", cost={}, hooks={"gained": on_gained})
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    give_card(s, first, "test_stone_deposit")
+    put_in_play(s, first, "test_gained_observer")
+    put_in_play(s, other, "test_gained_observer")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "test_stone_deposit"}})
+    space = next(sp for sp in s["action_spaces"]
+                if sp["id"] == "card:test_stone_deposit")
+    assert space["owner"] == first
+    assert space["card"] == "test_stone_deposit"
+
+    assert s["current_player"] == other  # other's turn next
+    stone_before = s["players"][other]["resources"]["stone"]
+    s = place(engine, s, {"kind": "place", "space": "card:test_stone_deposit"})
+    assert s["players"][other]["resources"]["stone"] == stone_before + 2
+    assert ("space_used", other, {"stone": 2}) in events
+    assert ("gained", other, "space", {"stone": 2}) in events
+
+    # The owner can use it too (force it to be their turn again, same
+    # round -- both players still have a second placement available).
+    space = next(sp for sp in s["action_spaces"]
+                if sp["id"] == "card:test_stone_deposit")
+    space["occupied_by"] = None
+    space["extra_occupants"] = []
+    s["current_player"] = first
+    stone_before = s["players"][first]["resources"]["stone"]
+    s = place(engine, s, {"kind": "place", "space": "card:test_stone_deposit"})
+    assert s["players"][first]["resources"]["stone"] == stone_before + 2
+    assert ("space_used", first, {"stone": 2}) in events
+    assert ("gained", first, "space", {"stone": 2}) in events
+
+
+def test_card_space_owner_only(engine, temp_card):
+    """D023-style owner_only=True: no other player sees or may use it."""
+    def resolve(state, player, inst, action, log):
+        return {"food": 1}
+
+    temp_card("test_owner_only_space", "Test Owner Only Space", "minor",
+              "test", cost={},
+              card_space={"owner_only": True, "resolve": resolve})
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    give_card(s, first, "test_owner_only_space")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "test_owner_only_space"}})
+
+    other_pid = s["players"][other]["player_id"]
+    valid = engine.get_valid_actions(s, other_pid)
+    assert not any(a["kind"] == "place"
+                  and a["space"] == "card:test_owner_only_space"
+                  for a in valid)
+    with pytest.raises(ValueError):
+        engine.apply_action(
+            s, other_pid,
+            {"kind": "place", "space": "card:test_owner_only_space"})
+
+    first_pid = s["players"][first]["player_id"]
+    s["current_player"] = first
+    food_before = s["players"][first]["resources"]["food"]
+    s = engine.apply_action(
+        s, first_pid,
+        {"kind": "place", "space": "card:test_owner_only_space"}).new_state
+    assert s["players"][first]["resources"]["food"] == food_before + 1
+
+
+def test_card_space_toll_to_owner(engine, temp_card):
+    """I337-style: a non-owner placer pays the owner 1 food and gets 5
+    clay -- exact resource flow both sides. The owner pays no toll."""
+    def resolve(state, player, inst, action, log):
+        owner = cards.card_space_owner(state, inst)
+        if player is not owner:
+            if player["resources"]["food"] < 1:
+                raise ValueError("You must pay 1 food to use this space")
+            player["resources"]["food"] -= 1
+            cards.grant_goods(state, owner, {"food": 1}, log)
+            log.append(f"{player['name']} pays {owner['name']} 1 food")
+        log.append(f"{player['name']} takes 5 clay")
+        return {"clay": 5}
+
+    temp_card("test_clay_deposit_space", "Test Clay Deposit Space", "minor",
+              "test", cost={}, card_space={"resolve": resolve})
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    give_card(s, first, "test_clay_deposit_space")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "test_clay_deposit_space"}})
+    give(s, other, food=1)
+    other_food = s["players"][other]["resources"]["food"]
+    owner_food = s["players"][first]["resources"]["food"]
+
+    s = place(engine, s, {"kind": "place", "space": "card:test_clay_deposit_space"})
+    assert s["players"][other]["resources"]["clay"] == 5
+    assert s["players"][other]["resources"]["food"] == other_food - 1
+    assert s["players"][first]["resources"]["food"] == owner_food + 1
+
+
+def test_card_space_toll_insufficient_food_raises_atomically(engine, temp_card):
+    """Placing on the I337-style toll space without the toll raises, and
+    the whole action rolls back cleanly (apply_action deep-copies state
+    before mutating it, so a raise anywhere -- even after occupied_by
+    was already set -- leaves the caller's state object untouched)."""
+    def resolve(state, player, inst, action, log):
+        owner = cards.card_space_owner(state, inst)
+        if player is not owner:
+            if player["resources"]["food"] < 1:
+                raise ValueError("You must pay 1 food to use this space")
+            player["resources"]["food"] -= 1
+            cards.grant_goods(state, owner, {"food": 1}, log)
+        return {"clay": 5}
+
+    temp_card("test_clay_deposit_space2", "Test Clay Deposit Space", "minor",
+              "test", cost={}, card_space={"resolve": resolve})
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    give_card(s, first, "test_clay_deposit_space2")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "test_clay_deposit_space2"}})
+    s["players"][other]["resources"]["food"] = 0
+    other_pid = s["players"][other]["player_id"]
+    space = next(sp for sp in s["action_spaces"]
+                if sp["id"] == "card:test_clay_deposit_space2")
+    people_placed_before = s["players"][other]["people_placed"]
+    owner_food_before = s["players"][first]["resources"]["food"]
+
+    with pytest.raises(ValueError):
+        engine.apply_action(
+            s, other_pid,
+            {"kind": "place", "space": "card:test_clay_deposit_space2"})
+
+    # Nothing changed: the mutations happened on apply_action's internal
+    # deepcopy, discarded when it raised instead of returning.
+    assert space["occupied_by"] is None
+    assert space["extra_occupants"] == []
+    assert s["players"][other]["resources"]["clay"] == 0
+    assert s["players"][other]["resources"]["food"] == 0
+    assert s["players"][other]["people_placed"] == people_placed_before
+    assert s["players"][first]["resources"]["food"] == owner_food_before
+
+
+def test_card_space_accumulation(engine, temp_card):
+    """E164-style: a pure accumulation card_space (no resolve fn)
+    replenishes at round_start and empties on use, same as any other
+    accumulation space -- and is NOT usable the round it's played
+    (its supply starts empty, and only the next round_start fills it)."""
+    temp_card("test_extra_forest", "Test Extra Forest", "occupation",
+              "test", cost={}, card_space={"acc": {"wood": 2}})
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "test_extra_forest")
+    s = place(engine, s, {"kind": "place", "space": "lessons",
+                          "card": "test_extra_forest"})
+    space = next(sp for sp in s["action_spaces"]
+                if sp["id"] == "card:test_extra_forest")
+    assert space["accumulates"]
+    assert space["supply"] == {}
+    valid = engine.get_valid_actions(s, current_pid(engine, s))
+    assert not any(a["kind"] == "place" and a["space"] == "card:test_extra_forest"
+                  for a in valid)
+
+    # Finish round 1; the space should not be pickable (empty supply).
+    while s["round"] == 1:
+        pid = current_pid(engine, s)
+        act = next(a for a in engine.get_valid_actions(s, pid)
+                  if a["kind"] == "place" and a["space"] in SAFE_SPACES)
+        s = place(engine, s, {"kind": "place", "space": act["space"]})
+
+    space = next(sp for sp in s["action_spaces"]
+                if sp["id"] == "card:test_extra_forest")
+    assert space["supply"] == {"wood": 2}
+
+    pid = current_pid(engine, s)
+    pidx = engine._player_idx(s, pid)
+    wood_before = s["players"][pidx]["resources"]["wood"]
+    s = place(engine, s, {"kind": "place", "space": "card:test_extra_forest"})
+    assert s["players"][pidx]["resources"]["wood"] == wood_before + 2
+    space = next(sp for sp in s["action_spaces"]
+                if sp["id"] == "card:test_extra_forest")
+    assert space["supply"] == {}  # taken, empties like any accumulation space
+
+
+def test_card_space_accumulation_solo_not_halved(engine, temp_card):
+    """A card_space's own "acc" is unaffected by the Forest-only solo
+    halving rule (that special case is keyed on the literal id "forest",
+    never on a "card:..." id) -- it replenishes its declared amount in
+    solo play just like any multiplayer game."""
+    temp_card("test_extra_forest_solo", "Test Extra Forest Solo",
+              "occupation", "test", cost={}, card_space={"acc": {"wood": 2}})
+
+    s = make_state(engine, 1)
+    give_card(s, 0, "test_extra_forest_solo")
+    s = place(engine, s, {"kind": "place", "space": "lessons",
+                          "card": "test_extra_forest_solo"})
+    while s["round"] == 1:
+        pid = current_pid(engine, s)
+        act = next(a for a in engine.get_valid_actions(s, pid)
+                  if a["kind"] == "place" and a["space"] in SAFE_SPACES)
+        s = place(engine, s, {"kind": "place", "space": act["space"]})
+
+    space = next(sp for sp in s["action_spaces"]
+                if sp["id"] == "card:test_extra_forest_solo")
+    assert space["supply"] == {"wood": 2}
+
+
+def test_card_space_usable_gate_by_round(engine, temp_card):
+    """D023-style: owner_only plus a round-window `usable` gate, both
+    enforced at once."""
+    def usable(state, player, inst):
+        return 3 <= state["round"] <= 5
+
+    def resolve(state, player, inst, action, log):
+        return {"reed": 1}
+
+    temp_card("test_pioneering", "Test Pioneering", "minor", "test",
+              cost={}, card_space={"owner_only": True, "usable": usable,
+                                   "resolve": resolve})
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    give_card(s, first, "test_pioneering")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "test_pioneering"}})
+    first_pid = s["players"][first]["player_id"]
+    other_pid = s["players"][other]["player_id"]
+
+    # Round 1: outside the usable window -- unavailable even to the owner.
+    s["current_player"] = first
+    valid = engine.get_valid_actions(s, first_pid)
+    assert not any(a["kind"] == "place" and a["space"] == "card:test_pioneering"
+                  for a in valid)
+
+    # Round 3: in the window, but still owner_only.
+    s["round"] = 3
+    s["current_player"] = other
+    valid = engine.get_valid_actions(s, other_pid)
+    assert not any(a["kind"] == "place" and a["space"] == "card:test_pioneering"
+                  for a in valid)
+    s["current_player"] = first
+    valid = engine.get_valid_actions(s, first_pid)
+    assert any(a["kind"] == "place" and a["space"] == "card:test_pioneering"
+              for a in valid)
+    s = engine.apply_action(
+        s, first_pid,
+        {"kind": "place", "space": "card:test_pioneering"}).new_state
+    assert s["players"][first]["resources"]["reed"] == 1
+
+
+def test_card_space_resolve_animals_route_through_accommodation(engine, temp_card):
+    """A resolve fn returning an animal type routes it through the
+    normal accommodation prompt, same as any other space's goods."""
+    def resolve(state, player, inst, action, log):
+        return {"sheep": 1}
+
+    temp_card("test_sheep_space", "Test Sheep Space", "minor", "test",
+              cost={}, card_space={"resolve": resolve})
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    give_card(s, first, "test_sheep_space")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "test_sheep_space"}})
+    other_pid = s["players"][other]["player_id"]
+    s = engine.apply_action(
+        s, other_pid,
+        {"kind": "place", "space": "card:test_sheep_space"}).new_state
+
+    assert engine.get_waiting_for(s) == [other_pid]
+    prompt = s["prompts"][0]
+    assert prompt["type"] == "accommodate"
+    assert prompt["gained"] == {"sheep": 1}
+    s = engine.apply_action(s, other_pid, {
+        "kind": "accommodate", "placements": [], "pets": {"sheep": 1},
+    }).new_state
+    assert s["players"][other]["pets"]["sheep"] == 1
+    assert not s["prompts"]
+
+
+def test_card_space_resolve_choice_prompt(engine, temp_card):
+    """A resolve fn may queue a mid-effect choice like any other space
+    resolution -- placement stalls on the prompt and resumes once it's
+    answered (same mechanism GUIDE.md documents for round_start/
+    returning_home/harvest_start prompts)."""
+    def resolve(state, player, inst, action, log):
+        cards.prompt_choice(state, player, inst["id"], "Wood or clay?",
+                            ["wood", "clay"])
+        return {}
+
+    def resolve_choice(state, player, inst, ctx):
+        good = ctx["option"]
+        player["resources"][good] += 3
+        ctx["log"].append(f"{player['name']} takes 3 {good}")
+
+    temp_card("test_choice_space", "Test Choice Space", "minor", "test",
+              cost={}, card_space={"resolve": resolve},
+              resolve_choice=resolve_choice)
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    give_card(s, first, "test_choice_space")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "test_choice_space"}})
+    other_pid = s["players"][other]["player_id"]
+    s = engine.apply_action(
+        s, other_pid,
+        {"kind": "place", "space": "card:test_choice_space"}).new_state
+
+    assert engine.get_waiting_for(s) == [other_pid]
+    assert s["prompts"][0]["type"] == "choice"
+    first_pid = s["players"][first]["player_id"]
+    assert engine.get_valid_actions(s, first_pid) == []
+
+    s = engine.apply_action(s, other_pid, {"kind": "choice", "index": 1}).new_state
+    assert s["players"][other]["resources"]["clay"] == 3
+    assert not s["prompts"]
+
+
+def test_card_space_occupancy_blocks_and_resets(engine, temp_card):
+    """A card_space occupied this round blocks a second placement (the
+    standard occupied-space semantics -- no occupied_ok on this card),
+    and resets to unoccupied next round like any other space."""
+    def resolve(state, player, inst, action, log):
+        return {"food": 1}
+
+    temp_card("test_occupancy_space", "Test Occupancy Space", "minor",
+              "test", cost={}, card_space={"resolve": resolve})
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    give_card(s, first, "test_occupancy_space")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "test_occupancy_space"}})
+    s = place(engine, s, {"kind": "place", "space": "card:test_occupancy_space"})
+    space = next(sp for sp in s["action_spaces"]
+                if sp["id"] == "card:test_occupancy_space")
+    assert space["occupied_by"] == other
+
+    first_pid = s["players"][first]["player_id"]
+    s["current_player"] = first
+    valid = engine.get_valid_actions(s, first_pid)
+    assert not any(a["kind"] == "place" and a["space"] == "card:test_occupancy_space"
+                  for a in valid)
+    with pytest.raises(ValueError):
+        engine.apply_action(
+            s, first_pid,
+            {"kind": "place", "space": "card:test_occupancy_space"})
+
+    while s["round"] == 1:
+        pid = current_pid(engine, s)
+        act = next(a for a in engine.get_valid_actions(s, pid)
+                  if a["kind"] == "place" and a["space"] in SAFE_SPACES)
+        s = place(engine, s, {"kind": "place", "space": act["space"]})
+
+    space = next(sp for sp in s["action_spaces"]
+                if sp["id"] == "card:test_occupancy_space")
+    assert space["occupied_by"] is None
+    assert space["extra_occupants"] == []

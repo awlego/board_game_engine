@@ -80,8 +80,14 @@ def card(cid, name, ctype, text, deck="base", min_players=1, cost=None,
     bake, raw_values, bake_bonus, cost_mod, occ_cost_delta,
     pasture_capacity_bonus, pasture_capacity_mod, unfenced_stable_capacity_mod,
     pasture_secondary_types, holds_animals, house_capacity, extra_rooms,
-    field, bake_on_spaces, lasso, score_bonus)."""
+    field, bake_on_spaces, lasso, score_bonus, card_space)."""
     assert cid not in CARDS, cid
+    # A traveling card is handed to the left neighbor (or removed, solo)
+    # right after its `play` hook runs and never sits in `player["minors"]`
+    # -- there's nowhere for `state["action_spaces"]` to point an "owner"
+    # at, so a card_space can never also be traveling (see GUIDE.md).
+    assert not (traveling and abilities.get("card_space")), \
+        f"{cid}: a traveling card cannot declare card_space"
     CARDS[cid] = {
         "id": cid, "name": name, "type": ctype, "text": text,
         "deck": deck, "min_players": min_players, "cost": cost or {},
@@ -420,6 +426,17 @@ def occupied_ok(state, player, space):
         if fn and fn(state, player, inst, space):
             return True
     return False
+
+
+def card_space_owner(state, inst):
+    """The player who played the card behind a `card_space` action space
+    (`state["action_spaces"]`'s `id="card:<cid>"` entry's `owner` index).
+    A card_space's `resolve`/`usable` fn only receives the PLACING player
+    (who may not be the owner), so this is how it finds whoever should be
+    paid a toll or credited a bonus -- see GUIDE.md's `card_space` section."""
+    space = next(s for s in state["action_spaces"]
+                 if s["id"] == f"card:{inst['id']}")
+    return state["players"][space["owner"]]
 
 
 def card_fields(player):

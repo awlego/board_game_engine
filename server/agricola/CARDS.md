@@ -418,3 +418,40 @@ Known remaining gaps, and how they'd fit if a future card needs them:
   this pass (`temp_card`-only tests in `tests/test_agricola.py` exercise
   the mechanism); registering them with `compendium_card` is still a
   separate pass.
+- **Cards that ARE action spaces (item 15)** are now supported (engine
+  phase 9). Previously there was no way for a card to become an
+  additional space on the board that other players (or only the owner)
+  could place a person on. Now: spec key `card_space={"name", "desc",
+  "owner_only", "acc", "usable", "resolve"}` on either an occupation or
+  a minor improvement appends `{"id": "card:<cid>", ..., "card_space":
+  True, "card": cid, "owner": <index>}` to `state["action_spaces"]`
+  once the card is played (`sub_actions.play_minor`/`play_occupation`
+  share an `_add_card_space` helper); `resolve=fn(state, player, inst,
+  action, log) -> goods` performs the space's own effect for whichever
+  player places there (who may not be the owner) and returns only the
+  goods to credit -- the engine credits them the normal way (resources,
+  accommodation for animals, `gained(source="space")`, `space_used`),
+  so a toll paid to the owner (`cards.card_space_owner` finds them) or
+  bonus points stay inside the fn and never touch the return value; an
+  `"acc"` dict/fn makes it a normal accumulation space instead (E164-
+  style, no `resolve` needed); `"owner_only"` and `"usable"` gate who
+  may place there and when. Every other action-space mechanic
+  (occupancy, `occupied_ok`, `returning_home`, `space_used`'s
+  `occupants`, round replenishment, listing) falls out of the existing
+  generic handling with no special-casing needed. One incidental fix
+  fell out of this pass: `_apply_choice`'s card-instance lookup now
+  searches every player's in-play cards (not just the prompted
+  player's), since a `card_space`'s `resolve` fn may prompt the placing
+  player about a choice tied to a card owned by someone else -- safe
+  since card ids are unique per game. See `decks/GUIDE.md`'s
+  `card_space` section for the full contract and a worked I337 example.
+  This unblocks the motivating compendium cards: A039 Chapel, B042
+  Forest Inn, D023 Pioneering Spirit, D051 Archway, E164 Master
+  Forester, I100 Tavern, I337 Clay Deposit. (C039 Studio Boat is not
+  part of this mechanism -- it just aliases an existing action space.
+  D051 Archway's second clause, "may use an unoccupied action space
+  before returning home," still needs the not-yet-built item-17
+  extra-action machinery.) None of the motivating cards are registered
+  by this pass (`temp_card`-only tests in `tests/test_agricola.py`
+  exercise the mechanism); registering them with `compendium_card` is
+  still a separate pass.
