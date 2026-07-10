@@ -531,3 +531,54 @@ Known remaining gaps, and how they'd fit if a future card needs them:
   K269, K289) are registered by this pass (`temp_card`-only tests in
   `tests/test_agricola.py` exercise each mechanism); registering them
   with `compendium_card` is still a separate pass.
+- **Hand/deck manipulation (item 18)** is now supported (engine phase
+  12). Previously a dealt hand's leftover cards were simply discarded
+  (`deal_hands` sliced hands off a shuffled list and threw the rest
+  away), and no card could react while still sitting unplayed in a
+  hand. Now: `cards.deal_hands` also returns the shuffled leftovers,
+  which `initial_state` stores as persistent `state["occupation_draw"]`/
+  `["minor_draw"]` piles (top = index 0) plus empty `state["occupation_
+  discard"]`/`["minor_discard"]` piles -- `cards.draw_minors`/
+  `draw_occupations`/`discard_hand_minors`/`discard_hand_occupations`
+  are the card-facing helpers (deliberately in `cards.py`, not
+  `sub_actions.py`: no cost/transaction involved, so no reason to route
+  through that module, and no import-cycle risk either way); there is
+  NO reshuffle-when-empty, matching the physical game. `get_player_view`/
+  `get_spectator_view` hide all four piles' contents (count only) from
+  EVERY player, not just opponents (`engine._hide_draw_piles`), since
+  nobody should see the future draw order or discard history. Separately,
+  a new top-level spec key `hand_react={"event", "fn(state, hand_player,
+  ctx)"}` (no `inst` -- the card hasn't been played) lets a card react
+  from inside a hand; it's wired ONLY into the two broadcast card-play
+  events (`occupation_played`/`minor_played`, via `sub_actions._fire_
+  broadcast` -> `cards.fire_hand_react`), not every `fire()` call.
+  Answering "yes" to a `hand_react`-queued choice needs a card spec's
+  `resolve_choice` reachable with no instance to look up -- `prompt_
+  choice` gained a `from_hand=True` flag; `_apply_choice`'s instance
+  search now falls back to the CARDS registry spec (calling `resolve_
+  choice` with `inst=None`) when the search comes up empty and the
+  prompt says `from_hand`. See `decks/GUIDE.md`'s "Hand and deck"
+  section for the full contracts, the K125 Broom discard/redraw recipe,
+  and a worked E173-style `hand_react`/`from_hand` example (including a
+  termination argument for the reactive play's own re-fired
+  `occupation_played`/`minor_played`). This unblocks the motivating
+  compendium cards: K125 Broom (draw piles), E173 Chief's Daughter
+  (`hand_react`/`from_hand`). B023 Final Scenario is assessed as
+  expressible TODAY with existing `card_space` + `sub_actions` plumbing
+  and no new engine change -- but only because this engine's stage 6
+  currently has exactly one card (`farm_redevelopment`), making
+  `state["deck"][13]` deterministic rather than a genuine random reveal;
+  GUIDE.md's recipe documents that coupling explicitly so a future
+  second stage-6 card doesn't silently break it. Incidental finding
+  (fixed in review): `get_player_view`/`get_spectator_view` used to
+  `deepcopy` and return `state["deck"]` (the future round-card order)
+  unredacted to everyone, contradicting item 17's description; views
+  now carry only a count for it, same treatment as the draw/discard
+  piles. B023's "reveal round 14" needs no view exception anyway -- the
+  sole stage-6 card makes `state["deck"][13]` deterministic, and its
+  `card_space` entry carries the public name. An I238-style selective
+  reveal still needs a per-player view exception (item 17).
+  None of K125/E173/B023 are registered by this
+  pass (`temp_card`-only tests in `tests/test_agricola.py` exercise each
+  mechanism, plus a `card_space`-based proof of the B023 recipe);
+  registering them with `compendium_card` is still a separate pass.

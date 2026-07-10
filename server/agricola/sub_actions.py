@@ -187,16 +187,29 @@ def _fire_owner_and_any(state, event, player, fields, log):
     fire_any(state, event, player, fields, log)
 
 
+_HAND_REACT_EVENTS = ("occupation_played", "minor_played")
+
+
 def _fire_broadcast(state, event, player, fields, log):
     """Events every player's cards see immediately (not just the owner's
     plus a delayed twin) -- fences_built, improvement_built,
-    occupation_played, minor_played."""
+    occupation_played, minor_played.
+
+    For the two card-play events, this is also the single choke point
+    for `hand_react` (item 18/engine phase 12: a card still IN HAND
+    reacting to another card being played, e.g. E173 Chief's Daughter)
+    -- see cards.fire_hand_react and decks/GUIDE.md's "Hand reactions"
+    section. Deliberately narrow (not every fire() call) since scanning
+    every player's hand on every event would cost more than any card so
+    far needs."""
     ctx = dict(fields)
     ctx["log"] = log
     ctx["actor"] = player["index"]
     ctx["extra"] = {}
     cards.fire(state, event, ctx)
     apply_extras(state, player, ctx["extra"], log)
+    if event in _HAND_REACT_EVENTS:
+        cards.fire_hand_react(state, event, ctx)
 
 
 # ── Build rooms ────────────────────────────────────────────────────────

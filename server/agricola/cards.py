@@ -146,18 +146,28 @@ def compendium_card(code, hooks=None, prereq=None, cost=None, points=None,
 
 # ── Prompts (mid-effect choices) ─────────────────────────────────────
 
-def prompt_choice(state, player, card_id, prompt, options, data=None):
+def prompt_choice(state, player, card_id, prompt, options, data=None,
+                  from_hand=False):
     """Queue a blocking choice for `player`. The card's spec must define
     resolve_choice(state, player, inst, ctx) — ctx carries "index" (the
-    chosen option), "data", "log", and "extra"."""
-    state["prompts"].append({
+    chosen option), "data", "log", and "extra". `from_hand=True` marks a
+    choice about a card still sitting in `player`'s hand (an E173-style
+    `hand_react` prompt, e.g. "play this card now at no cost?") rather
+    than one about a card already in play -- there is no instance yet,
+    so `engine._apply_choice` falls back to the CARDS registry spec and
+    calls resolve_choice with inst=None (see decks/GUIDE.md's "Hand
+    reactions" section for the full contract)."""
+    entry = {
         "type": "choice",
         "player": player["index"] if isinstance(player, dict) else player,
         "card": card_id,
         "prompt": prompt,
         "options": list(options),
         "data": data or {},
-    })
+    }
+    if from_hand:
+        entry["from_hand"] = True
+    state["prompts"].append(entry)
 
 
 # ── Event firing ─────────────────────────────────────────────────────
@@ -180,6 +190,33 @@ def fire_player(state, player, event, ctx):
         fn = spec(inst)["hooks"].get(event)
         if fn:
             fn(state, player, inst, ctx)
+
+
+def fire_hand_react(state, event, ctx):
+    """Scan every player's HAND (occupations then minors), actor first,
+    for a card spec declaring `hand_react = {"event": <name>, "fn": fn}`
+    matching `event`, calling `fn(state, hand_player, ctx)` for each
+    match. Unlike fire()/fire_player(), there is no card instance (the
+    card hasn't been played yet), so `fn` gets no `inst` argument --
+    E173-style reactions ("if another player plays X, you may play this
+    from hand") typically call `fn(state, hand_player, ctx)` -> check
+    `ctx["card_id"]`/`ctx["actor"]` and, if it matches, `prompt_choice(...,
+    from_hand=True)`.
+
+    Only wired to the two broadcast card-play events (occupation_played,
+    minor_played) from sub_actions._fire_broadcast -- not a general
+    per-event hook (scanning every hand on every fire() would cost more
+    than any card so far needs; see decks/GUIDE.md's "Hand reactions"
+    section)."""
+    n = state["player_count"]
+    actor = ctx.get("actor", 0)
+    for step in range(n):
+        p = state["players"][(actor + step) % n]
+        for cid in list(p["hand_occupations"]) + list(p["hand_minors"]):
+            s = CARDS.get(cid)
+            hr = s.get("hand_react") if s else None
+            if hr and hr.get("event") == event:
+                hr["fn"](state, p, ctx)
 
 
 # ── Modifier queries (pull) ──────────────────────────────────────────
@@ -1319,8 +1356,15 @@ def deck_for(ctype, player_count, decks):
 
 
 def deal_hands(player_count, rng, decks, hand_size=7):
-    """Returns (occ_hands, minor_hands, hand_size). If the selected decks
-    cannot cover 7+7 per player, the hand size shrinks to fit."""
+    """Returns (occ_hands, minor_hands, hand_size, occ_draw, minor_draw).
+    If the selected decks cannot cover 7+7 per player, the hand size
+    shrinks to fit. `occ_draw`/`minor_draw` are whatever's left of the
+    shuffled decks after every hand is dealt (in shuffled order, index 0
+    = top of the pile) -- callers (today, only `engine.initial_state`)
+    store these as the persistent `state["occupation_draw"]`/
+    ["minor_draw"] piles that `draw_occupations`/`draw_minors` below
+    draw from; together, every dealt hand plus its draw pile accounts
+    for the FULL implemented deck with no overlap or duplicates."""
     occs = deck_for("occupation", player_count, decks)
     minors = deck_for("minor", player_count, decks)
     rng.shuffle(occs)
@@ -1331,4 +1375,69 @@ def deal_hands(player_count, rng, decks, hand_size=7):
         raise ValueError("Not enough implemented cards in the selected decks")
     occ_hands = [occs[i * size:(i + 1) * size] for i in range(player_count)]
     minor_hands = [minors[i * size:(i + 1) * size] for i in range(player_count)]
-    return occ_hands, minor_hands, size
+    occ_draw = occs[player_count * size:]
+    minor_draw = minors[player_count * size:]
+    return occ_hands, minor_hands, size, occ_draw, minor_draw
+
+
+# ── Draw piles (engine phase 12: hand/deck manipulation) ─────────────
+#
+# `state["occupation_draw"]`/["minor_draw"] are the persistent remainder
+# of the shuffled decks after the opening deal (see deal_hands above);
+# `state["occupation_discard"]`/["minor_discard"] start empty and only
+# grow as hand cards are discarded (discard_hand_* below). There is
+# deliberately NO reshuffle-when-empty -- the physical game never
+# reshuffles a spent draw pile, so draw_minors/draw_occupations simply
+# return fewer than requested (down to zero) once the pile runs out.
+# Every access below uses .setdefault()/.get() so a state dict missing
+# these keys (an old save from before this phase) doesn't crash.
+
+def draw_minors(state, player, n, log):
+    """Draw up to `n` minor improvements from the top of state[
+    "minor_draw"] into player["hand_minors"] (fewer if the pile is
+    short, zero if it's empty). Returns the drawn card ids."""
+    pile = state.setdefault("minor_draw", [])
+    n = max(0, min(n, len(pile)))
+    drawn = pile[:n]
+    del pile[:n]
+    player["hand_minors"].extend(drawn)
+    if drawn:
+        log.append(f"{player['name']} draws {len(drawn)} minor "
+                  f"improvement(s)")
+    return drawn
+
+
+def draw_occupations(state, player, n, log):
+    """Occupation twin of draw_minors -- see its docstring."""
+    pile = state.setdefault("occupation_draw", [])
+    n = max(0, min(n, len(pile)))
+    drawn = pile[:n]
+    del pile[:n]
+    player["hand_occupations"].extend(drawn)
+    if drawn:
+        log.append(f"{player['name']} draws {len(drawn)} occupation(s)")
+    return drawn
+
+
+def discard_hand_minors(state, player, log):
+    """Discard all of `player`'s hand_minors to state["minor_discard"]
+    (no reshuffle-when-empty; see draw_minors). Returns the discarded
+    card ids."""
+    discarded = list(player["hand_minors"])
+    state.setdefault("minor_discard", []).extend(discarded)
+    player["hand_minors"] = []
+    if discarded:
+        log.append(f"{player['name']} discards {len(discarded)} minor "
+                  f"improvement(s)")
+    return discarded
+
+
+def discard_hand_occupations(state, player, log):
+    """Occupation twin of discard_hand_minors -- see its docstring."""
+    discarded = list(player["hand_occupations"])
+    state.setdefault("occupation_discard", []).extend(discarded)
+    player["hand_occupations"] = []
+    if discarded:
+        log.append(f"{player['name']} discards {len(discarded)} "
+                  f"occupation(s)")
+    return discarded

@@ -75,7 +75,8 @@ class AgricolaEngine(GameEngine):
         decks = [d for d in decks if d in known] or list(self.DEFAULT_DECKS)
 
         rng = random.Random(random.randrange(2 ** 31))
-        occ_hands, minor_hands, hand_size = cards.deal_hands(n, rng, decks)
+        occ_hands, minor_hands, hand_size, occ_draw, minor_draw = \
+            cards.deal_hands(n, rng, decks)
         for p in players:
             p["hand_occupations"] = occ_hands[p["index"]]
             p["hand_minors"] = minor_hands[p["index"]]
@@ -87,6 +88,14 @@ class AgricolaEngine(GameEngine):
             "players": players,
             "decks": decks,
             "hand_size": hand_size,
+            # Persistent draw/discard piles (engine phase 12) -- see
+            # cards.deal_hands/draw_minors/draw_occupations/
+            # discard_hand_minors/discard_hand_occupations. Top of a draw
+            # pile is index 0; there is no reshuffle-when-empty.
+            "occupation_draw": occ_draw,
+            "minor_draw": minor_draw,
+            "occupation_discard": [],
+            "minor_discard": [],
             "action_spaces": create_action_spaces(n),
             "deck": build_stage_deck(rng),
             "revealed": [],
@@ -107,6 +116,20 @@ class AgricolaEngine(GameEngine):
         self._start_round(state, [])
         return state
 
+    # Draw/discard piles are shuffled/hidden state for EVERY player, not
+    # just opponents (unlike hands, where only the owner may see their
+    # own) -- see decks/GUIDE.md's "Hand and deck" section. The stage
+    # deck (future round-card order) is hidden the same way: only
+    # "revealed" is public knowledge. (An I238 Chamberlain-style card
+    # that reveals it to one player will need a per-player exception.)
+    _PILE_KEYS = ("occupation_draw", "minor_draw",
+                 "occupation_discard", "minor_discard", "deck")
+
+    def _hide_draw_piles(self, view):
+        for key in self._PILE_KEYS:
+            if key in view:
+                view[key] = len(view[key])
+
     def get_player_view(self, state, player_id):
         view = deepcopy(state)
         pidx = self._player_idx(state, player_id)
@@ -117,6 +140,7 @@ class AgricolaEngine(GameEngine):
             if p["index"] != pidx:
                 p["hand_occupations"] = len(p["hand_occupations"])
                 p["hand_minors"] = len(p["hand_minors"])
+        self._hide_draw_piles(view)
         if pidx is not None:
             me = state["players"][pidx]
             view["playable_minors"] = [
@@ -138,6 +162,7 @@ class AgricolaEngine(GameEngine):
         for p in view["players"]:
             p["hand_occupations"] = len(p["hand_occupations"])
             p["hand_minors"] = len(p["hand_minors"])
+        self._hide_draw_piles(view)
         return view
 
     def get_valid_actions(self, state, player_id):
@@ -1511,9 +1536,20 @@ class AgricolaEngine(GameEngine):
         # just the prompted one's.
         inst = next((i for pl in state["players"] for i in cards.in_play(pl)
                      if i["id"] == prompt["card"]), None)
-        if inst is None:
+        if inst is not None:
+            fn = cards.spec(inst).get("resolve_choice")
+        elif prompt.get("from_hand"):
+            # E173-style `hand_react` prompt: the card hasn't been played
+            # yet, so there's no instance to find -- fall back to the
+            # CARDS registry spec directly. resolve_choice then receives
+            # inst=None and must play the card itself (typically
+            # sub_actions.play_occupation/play_minor with
+            # cost_override="free") if the player accepts; declining
+            # just leaves it in hand. See decks/GUIDE.md's "Hand
+            # reactions" section for the full contract.
+            fn = (cards.CARDS.get(prompt["card"]) or {}).get("resolve_choice")
+        else:
             raise ValueError("Card no longer in play")
-        fn = cards.spec(inst).get("resolve_choice")
         if fn is None:
             raise ValueError("Card cannot resolve choices")
         log = []

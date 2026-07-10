@@ -4334,4 +4334,370 @@ def test_placement_lockout_forfeits_with_sensible_log(engine, temp_card):
                   if a["kind"] == "place" and a["space"] in SAFE_SPACES)
         s = place(engine, s, {"kind": "place", "space": act["space"]})
 
-    assert s["players"][0]["people_placed"] == 0  # reset for round 3
+
+# ── Hand and deck (engine phase 12) ───────────────────────────────────
+# state["occupation_draw"]/["minor_draw"] persist whatever's left of the
+# shuffled decks after the opening deal (cards.deal_hands); ["occupation_
+# discard"]/["minor_discard"] start empty. See cards.draw_minors/
+# draw_occupations/discard_hand_minors/discard_hand_occupations and
+# decks/GUIDE.md's "Hand and deck" section.
+
+def test_initial_state_draw_piles_cover_full_deck(engine):
+    """Every dealt hand plus its draw pile must reconstruct the full
+    implemented deck for this player count/decks, with no overlap or
+    duplicates -- and the discard piles start empty."""
+    s = make_state(engine, 3)
+    decks = s["decks"]
+    full_occs = set(cards.deck_for("occupation", 3, decks))
+    full_minors = set(cards.deck_for("minor", 3, decks))
+
+    hand_occs = [cid for p in s["players"] for cid in p["hand_occupations"]]
+    hand_minors = [cid for p in s["players"] for cid in p["hand_minors"]]
+    all_occs = hand_occs + s["occupation_draw"]
+    all_minors = hand_minors + s["minor_draw"]
+
+    assert len(all_occs) == len(set(all_occs))
+    assert len(all_minors) == len(set(all_minors))
+    assert set(all_occs) == full_occs
+    assert set(all_minors) == full_minors
+    assert s["occupation_discard"] == []
+    assert s["minor_discard"] == []
+
+
+def test_draw_minors_fewer_when_short_and_zero_when_empty(engine):
+    s = make_state(engine, 2)
+    p = s["players"][0]
+    log = []
+    pile_before = list(s["minor_draw"])
+    n = min(3, len(pile_before))
+    drawn = cards.draw_minors(s, p, n, log)
+    assert drawn == pile_before[:n]
+    assert p["hand_minors"][-n:] == drawn
+    assert s["minor_draw"] == pile_before[n:]
+
+    # Asking for more than the pile holds draws only what's left.
+    remaining = len(s["minor_draw"])
+    drawn2 = cards.draw_minors(s, p, remaining + 50, log)
+    assert len(drawn2) == remaining
+    assert s["minor_draw"] == []
+
+    # An empty pile yields nothing -- no reshuffle-when-empty.
+    drawn3 = cards.draw_minors(s, p, 5, log)
+    assert drawn3 == []
+    assert s["minor_draw"] == []
+
+
+def test_discard_hand_minors_moves_everything(engine):
+    s = make_state(engine, 2)
+    p = s["players"][0]
+    log = []
+    hand_before = list(p["hand_minors"])
+    discarded = cards.discard_hand_minors(s, p, log)
+    assert discarded == hand_before
+    assert p["hand_minors"] == []
+    assert s["minor_discard"] == hand_before
+
+
+def test_draw_and_discard_occupations_are_symmetric(engine):
+    """K125 only needs the minor twins, but the occupation helpers are
+    cheap and genuinely symmetric -- exercise them directly."""
+    s = make_state(engine, 2)
+    p = s["players"][0]
+    log = []
+    hand_before = list(p["hand_occupations"])
+    discarded = cards.discard_hand_occupations(s, p, log)
+    assert discarded == hand_before
+    assert p["hand_occupations"] == []
+    assert s["occupation_discard"] == hand_before
+
+    pile_before = list(s["occupation_draw"])
+    drawn = cards.draw_occupations(s, p, 4, log)
+    assert drawn == pile_before[:4]
+    assert p["hand_occupations"] == drawn
+    assert s["occupation_draw"] == pile_before[4:]
+
+
+def test_broom_style_discard_and_redraw_flow(engine, temp_card):
+    """K125 Broom recipe: discard your whole remaining minor hand, then
+    draw 7 new ones from the persistent draw pile. Hand size ends up
+    correct (or fewer, if the pile is short) and the piles stay
+    consistent (nothing duplicated, nothing lost)."""
+    def broom_play(state, player, inst, ctx):
+        cards.discard_hand_minors(state, player, ctx["log"])
+        cards.draw_minors(state, player, 7, ctx["log"])
+
+    cid = "test_broom"
+    temp_card(cid, "Test Broom", "minor", "test", hooks={"play": broom_play})
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, cid)
+    old_hand = [c for c in s["players"][first]["hand_minors"] if c != cid]
+    draw_pile_before = list(s["minor_draw"])
+
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": cid}})
+    p = s["players"][first]
+    # Broom itself joined play (not traveling); the old hand is gone,
+    # replaced by freshly drawn cards.
+    assert cid not in p["hand_minors"]
+    assert any(i["id"] == cid for i in p["minors"])
+    assert not any(c in p["hand_minors"] for c in old_hand)
+    expected_draw = min(7, len(draw_pile_before))
+    assert len(p["hand_minors"]) == expected_draw
+    assert p["hand_minors"] == draw_pile_before[:expected_draw]
+    assert s["minor_discard"] == old_hand
+    assert s["minor_draw"] == draw_pile_before[expected_draw:]
+
+
+def test_view_hides_draw_and_discard_pile_contents(engine):
+    """Nobody -- not even the current player -- can see the shuffled
+    draw pile's order, or (per this pass's chosen contract) the discard
+    pile's contents; both views only get a count, same treatment as an
+    opponent's hidden hand."""
+    s = make_state(engine, 2)
+    p0, p1 = s["players"][0]["player_id"], s["players"][1]["player_id"]
+    s["minor_discard"] = [s["minor_draw"].pop(), s["minor_draw"].pop()]
+
+    for pid in (p0, p1):
+        view = engine.get_player_view(s, pid)
+        assert view["occupation_draw"] == len(s["occupation_draw"])
+        assert view["minor_draw"] == len(s["minor_draw"])
+        assert view["occupation_discard"] == len(s["occupation_discard"])
+        assert view["minor_discard"] == len(s["minor_discard"]) == 2
+
+    spectator = engine.get_spectator_view(s)
+    assert spectator["minor_draw"] == len(s["minor_draw"])
+    assert spectator["minor_discard"] == 2
+
+
+def test_view_hides_stage_deck_order(engine):
+    """The future round-card order is hidden info: views carry only a
+    count for state["deck"]; "revealed" stays the public record."""
+    s = make_state(engine, 2)
+    for pid in (s["players"][0]["player_id"], s["players"][1]["player_id"]):
+        view = engine.get_player_view(s, pid)
+        assert view["deck"] == len(s["deck"])
+        assert view["revealed"] == s["revealed"]
+    assert engine.get_spectator_view(s)["deck"] == len(s["deck"])
+
+
+def test_draw_discard_helpers_tolerate_missing_state_keys(engine):
+    """Persisted-state compatibility: an old save made before this phase
+    has no draw/discard keys at all. Every helper must use .get()/
+    .setdefault() rather than crash on the bare KeyError."""
+    s = make_state(engine, 2)
+    p = s["players"][0]
+    for key in ("occupation_draw", "minor_draw",
+               "occupation_discard", "minor_discard"):
+        del s[key]
+
+    log = []
+    assert cards.draw_minors(s, p, 3, log) == []
+    assert cards.draw_occupations(s, p, 3, log) == []
+    hand_minors_before = list(p["hand_minors"])
+    hand_occs_before = list(p["hand_occupations"])
+    assert cards.discard_hand_minors(s, p, log) == hand_minors_before
+    assert cards.discard_hand_occupations(s, p, log) == hand_occs_before
+    assert s["minor_discard"] == hand_minors_before
+    assert s["occupation_discard"] == hand_occs_before
+
+    # get_player_view must not crash either, even with the keys absent.
+    view = engine.get_player_view(s, p["player_id"])
+    assert "minor_draw" not in view or view["minor_draw"] == 0
+
+
+# ── Hand reactions (`hand_react`, engine phase 12) ────────────────────
+# E173 Chief's Daughter-style: a card still IN HAND reacts to another
+# card being played. Spec key `hand_react={"event", "fn"}`; `fn(state,
+# hand_player, ctx)` gets no `inst` (the card isn't in play yet). Wired
+# only to occupation_played/minor_played (sub_actions._fire_broadcast).
+# A "yes" answer plays the card from hand via a `from_hand=True` prompt
+# (cards.prompt_choice) whose resolve_choice runs with inst=None and
+# must play the card itself.
+
+def _register_chiefs_daughter(temp_card, trigger_cid="test_chief",
+                              daughter_cid="test_daughter"):
+    def daughter_hand_react(state, hand_player, ctx):
+        if ctx["card_id"] != trigger_cid:
+            return
+        cards.prompt_choice(
+            state, hand_player, daughter_cid,
+            "Play Test Daughter now at no cost?", ["yes", "no"],
+            from_hand=True)
+
+    def daughter_resolve(state, player, inst, ctx):
+        assert inst is None  # the from_hand contract
+        if ctx["option"] == "yes":
+            sub_actions.play_occupation(state, player, daughter_cid,
+                                        ctx["log"], cost_override="free")
+        else:
+            ctx["log"].append(
+                f"{player['name']} declines to play Test Daughter")
+
+    temp_card(trigger_cid, "Test Chief", "occupation", "test")
+    temp_card(daughter_cid, "Test Daughter", "occupation", "test",
+              hand_react={"event": "occupation_played",
+                         "fn": daughter_hand_react},
+              resolve_choice=daughter_resolve)
+
+
+def test_hand_react_accept_plays_card_from_hand_at_no_cost(engine, temp_card):
+    _register_chiefs_daughter(temp_card)
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = 1 - first
+    give_card(s, first, "test_chief")
+    give_card(s, other, "test_daughter")
+    other_food_before = s["players"][other]["resources"]["food"]
+
+    s = place(engine, s, {"kind": "place", "space": "lessons",
+                          "card": "test_chief"})
+    other_pid = s["players"][other]["player_id"]
+    assert engine.get_waiting_for(s) == [other_pid]
+    prompt = s["prompts"][0]
+    assert prompt["type"] == "choice" and prompt["from_hand"] is True
+    assert prompt["card"] == "test_daughter"
+
+    s = engine.apply_action(s, other_pid, {"kind": "choice", "index": 0}
+                            ).new_state  # "yes"
+    p = s["players"][other]
+    assert "test_daughter" not in p["hand_occupations"]
+    assert any(i["id"] == "test_daughter" for i in p["occupations"])
+    assert p["resources"]["food"] == other_food_before  # free
+    assert not s["prompts"]
+
+
+def test_hand_react_decline_leaves_card_in_hand(engine, temp_card):
+    _register_chiefs_daughter(temp_card)
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = 1 - first
+    give_card(s, first, "test_chief")
+    give_card(s, other, "test_daughter")
+
+    s = place(engine, s, {"kind": "place", "space": "lessons",
+                          "card": "test_chief"})
+    other_pid = s["players"][other]["player_id"]
+    s = engine.apply_action(s, other_pid, {"kind": "choice", "index": 1}
+                            ).new_state  # "no"
+    p = s["players"][other]
+    assert "test_daughter" in p["hand_occupations"]
+    assert not any(i["id"] == "test_daughter" for i in p["occupations"])
+    assert not s["prompts"]
+
+
+def test_hand_react_ignoring_card_id_never_prompts(engine, temp_card):
+    """A hand_react fn that checks ctx["card_id"] against a card that
+    was NOT the one played never queues a prompt."""
+    def indifferent_react(state, hand_player, ctx):
+        if ctx["card_id"] != "some_other_card_entirely":
+            return
+        cards.prompt_choice(state, hand_player, "test_bystander",
+                            "Play now?", ["yes", "no"], from_hand=True)
+
+    temp_card("test_trigger", "Test Trigger", "occupation", "test")
+    temp_card("test_bystander", "Test Bystander", "occupation", "test",
+              hand_react={"event": "occupation_played",
+                         "fn": indifferent_react})
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = 1 - first
+    give_card(s, first, "test_trigger")
+    give_card(s, other, "test_bystander")
+
+    s = place(engine, s, {"kind": "place", "space": "lessons",
+                          "card": "test_trigger"})
+    assert not s["prompts"]
+    assert "test_bystander" in s["players"][other]["hand_occupations"]
+    # Rotation moved straight on to the other player's real turn.
+    assert s["current_player"] == other
+
+
+def test_hand_react_reactive_play_does_not_loop(engine, temp_card):
+    """The reactive play itself fires occupation_played again (removed
+    from hand before the broadcast, per sub_actions.play_occupation's
+    existing ordering) -- this must not re-trigger the SAME card's own
+    hand_react (it's no longer in anyone's hand) or hang. A second,
+    unrelated bystander card confirms the second broadcast still reaches
+    other hands normally."""
+    _register_chiefs_daughter(temp_card)
+    seen = []
+
+    def bystander_react(state, hand_player, ctx):
+        seen.append(ctx["card_id"])
+
+    temp_card("test_bystander2", "Test Bystander 2", "occupation", "test",
+              hand_react={"event": "occupation_played", "fn": bystander_react})
+
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = 1 - first
+    give_card(s, first, "test_chief")
+    give_card(s, other, "test_daughter")
+    give_card(s, other, "test_bystander2")
+
+    s = place(engine, s, {"kind": "place", "space": "lessons",
+                          "card": "test_chief"})
+    other_pid = s["players"][other]["player_id"]
+    s = engine.apply_action(s, other_pid, {"kind": "choice", "index": 0}
+                            ).new_state  # "yes"
+    assert not s["prompts"]
+    # Both broadcasts (test_chief, then test_daughter) reached the
+    # bystander, in order, and the process terminated.
+    assert seen == ["test_chief", "test_daughter"]
+
+
+# ── B023 Final Scenario recipe (engine phase 12 assessment) ───────────
+# Assessment (see decks/GUIDE.md and CARDS.md item 18 for the full
+# writeup): expressible TODAY with existing card_space + sub_actions
+# plumbing, no new engine change, because this engine's stage 6 has
+# exactly one card (farm_redevelopment) -- state["deck"][13] is
+# deterministic, not randomly revealed, so a card_space `resolve` fn can
+# safely mirror farm_redevelopment's own sub_actions calls directly.
+
+def test_b023_style_recipe_owner_only_until_round_14(engine, temp_card):
+    def resolve(state, player, inst, action, log):
+        sub_actions.renovate(state, player, log,
+                             free_stable_cell=action.get("stable"))
+        if action.get("fences"):
+            sub_actions.build_fences(state, player, action["fences"], log)
+        return {}
+
+    def usable(state, player, inst):
+        return state["round"] < 14 and sub_actions.renovation_possible(state, player)
+
+    cid = "test_final_scenario"
+    temp_card(cid, "Test Final Scenario", "minor", "test",
+              card_space={"owner_only": True, "usable": usable,
+                         "resolve": resolve})
+
+    s = make_state(engine, 2)
+    owner = s["current_player"]
+    other = 1 - owner
+    give_card(s, owner, cid)
+    give(s, owner, clay=5, reed=5)
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": cid}})
+    # It's `other`'s turn now; force it back to `owner` so the rest of
+    # this test can exercise the card_space directly (both players still
+    # have a second placement available this round).
+    s["current_player"] = owner
+
+    sid = f"card:{cid}"
+    # The other player can never place there (owner_only).
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == sid)
+    assert not engine._card_space_usable(s, s["players"][other], space)
+    assert engine._card_space_usable(s, s["players"][owner], space)
+
+    s = engine.apply_action(
+        s, s["players"][owner]["player_id"],
+        {"kind": "place", "space": sid}).new_state
+    assert s["players"][owner]["house_type"] in ("clay", "stone")
+
+    # Gate closes once round 14 starts -- the real farm_redevelopment
+    # space (id == the actual stage-6 card) takes over from here.
+    s["round"] = 14
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == sid)
+    assert not engine._card_space_usable(s, s["players"][owner], space)

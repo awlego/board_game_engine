@@ -1050,6 +1050,224 @@ the fact), but a future card whose target space cares about who's
 "still standing there" would need a real fidelity check before reusing
 this recipe.
 
+## Hand and deck (engine phase 12)
+
+Previously a dealt hand's leftover cards were simply discarded (deal_
+hands sliced hands off a shuffled list and threw the remainder away),
+and a card could never react from inside a hand, or reach into another
+card's hand mechanics. Now: persistent draw/discard piles, plus a
+narrow `hand_react` mechanism for a card that reacts while still unplayed.
+
+### Draw and discard piles (K125 Broom)
+
+`cards.deal_hands` now returns `(occ_hands, minor_hands, hand_size,
+occ_draw, minor_draw)` -- `occ_draw`/`minor_draw` are whatever's left of
+the shuffled decks after every hand is dealt, in shuffled order.
+`engine.initial_state` stores these as `state["occupation_draw"]`/
+`["minor_draw"]` (top of the pile = **index 0**), plus
+`state["occupation_discard"]`/`["minor_discard"]` (start empty). There
+is deliberately **no reshuffle-when-empty** -- the physical game never
+reshuffles a spent draw pile, so drawing from an empty one just yields
+fewer cards, never an error.
+
+Helpers live in `cards.py` (not `sub_actions.py`): they only touch
+`state`/`player` dicts directly (no cost, no `gained` event, no
+in-play-card query), so there's no reason to route them through
+`sub_actions`'s cost/transaction machinery, and putting them in
+`cards.py` means both `sub_actions.py` and `engine.py` can call them
+without any import-cycle risk (`cards.py` imports neither).
+
+```python
+cards.draw_minors(state, player, n, log)          # -> drawn card ids
+cards.draw_occupations(state, player, n, log)     # occupation twin
+cards.discard_hand_minors(state, player, log)     # -> discarded card ids
+cards.discard_hand_occupations(state, player, log)  # occupation twin
+```
+
+`draw_minors`/`draw_occupations` draw `min(n, len(pile))` from the top
+into `player["hand_minors"]`/`["hand_occupations"]` -- fewer than
+requested once the pile runs short, `[]` from an empty pile.
+`discard_hand_minors`/`discard_hand_occupations` move the player's
+ENTIRE current hand (of that kind) to the matching discard pile and
+empty the hand. Every access uses `.setdefault()`/`.get()`, so a state
+dict missing these keys entirely (an old save from before this phase)
+does not crash -- it behaves as if the pile were empty.
+
+**K125 Broom recipe** ("discard all remaining minor improvements in
+your hand, draw 7 new ones"):
+
+```python
+def _broom_play(state, player, inst, ctx):
+    cards.discard_hand_minors(state, player, ctx["log"])
+    cards.draw_minors(state, player, 7, ctx["log"])
+```
+
+Broom's own `play` hook runs (and this fires) AFTER
+`sub_actions.play_minor` has already removed Broom's own card id from
+`player["hand_minors"]` and BEFORE it's appended to `player["minors"]`
+-- so `discard_hand_minors` only sees the REST of the hand, never Broom
+itself, with no special-casing needed. ("You can play 1 more minor
+improvement immediately" is separate, per-card follow-up work -- not
+part of this pass, same as every other motivating card's fidelity
+pass.)
+
+**View safety**: draw/discard piles are shuffled/hidden state for
+EVERY player, not just opponents (unlike a hand, which only its owner
+may see) -- nobody should be able to read the future draw order or the
+discard history off the wire. `get_player_view`/`get_spectator_view`
+replace all four pile lists with their `len()` (same "count only"
+treatment opponents' hands already get); `engine._hide_draw_piles` is
+the shared helper both views call.
+
+### Hand reactions (`hand_react`, E173 Chief's Daughter)
+
+Some cards react while still sitting in a player's hand, unplayed --
+E173: "If another player plays the Chief [E172], you can play this card
+immediately at no cost." There is no card instance for a hand card (it
+hasn't been played), so this can't be an ordinary hook (which always
+gets `inst`). New TOP-LEVEL spec key (like `resolve_choice`, not inside
+`hooks`):
+
+```python
+hand_react = {"event": "<event name>", "fn": fn}
+# fn(state, hand_player, ctx) -> None   -- no `inst` argument
+```
+
+**Narrow by design**: only the two BROADCAST card-play events,
+`occupation_played` and `minor_played`, are wired up -- from
+`sub_actions._fire_broadcast`, right after the normal in-play firing:
+```python
+if event in ("occupation_played", "minor_played"):
+    cards.fire_hand_react(state, event, ctx)
+```
+`cards.fire_hand_react` scans every player's hand (occupations then
+minors, actor first -- same convention as `fire()`), calling `fn` for
+every card spec whose `hand_react["event"]` matches. This is
+deliberately NOT wired into every `fire()`/`fire_player()` call --
+scanning every hand on every event (harvest, gained, space_used, ...)
+would cost far more than any card so far needs; extend the event list
+only when a real motivating card needs a different trigger. `fn` must
+check `ctx["card_id"]` (and/or `ctx["actor"]`) itself -- a `hand_react`
+that ignores it fires for every card play, which is almost never what a
+real card's text wants.
+
+**The `from_hand` prompt pattern.** E173 says "you CAN" -- it's a
+choice, so the natural shape is `prompt_choice`, exactly like any other
+mid-effect decision. But `resolve_choice` specs are normally looked up
+on the card INSTANCE named by the prompt's `"card"` field (`_apply_
+choice` searches every player's `in_play` list) -- a hand card has no
+instance to find. `prompt_choice` takes a new `from_hand=True` flag for
+this case; when `_apply_choice`'s instance search comes up empty AND
+the prompt says `from_hand`, it falls back to the CARDS registry spec
+directly and calls `resolve_choice` with **`inst=None`** -- document
+this contract wherever a `from_hand` `resolve_choice` is written, since
+every other `resolve_choice` in the codebase can assume a real
+instance. A fn accepting the offer must play the card itself
+(`sub_actions.play_occupation`/`play_minor`, typically with
+`cost_override="free"`); declining just does nothing, leaving the card
+in hand untouched -- there's no other bookkeeping to undo since nothing
+happened yet.
+
+**Worked example** (E173-style, a temp occupation reacting to a chosen
+trigger card):
+
+```python
+def _daughter_hand_react(state, hand_player, ctx):
+    if ctx["card_id"] != "e172_the_chief":
+        return
+    cards.prompt_choice(
+        state, hand_player, "e173_chiefs_daughter",
+        "Play Chief's Daughter now at no cost?", ["yes", "no"],
+        from_hand=True)
+
+def _daughter_resolve(state, player, inst, ctx):
+    # inst is ALWAYS None here -- the from_hand contract.
+    if ctx["option"] == "yes":
+        sub_actions.play_occupation(state, player, "e173_chiefs_daughter",
+                                    ctx["log"], cost_override="free")
+    # "no": nothing to do, the card is still in hand.
+
+compendium_card("E173",
+    hand_react={"event": "occupation_played", "fn": _daughter_hand_react},
+    resolve_choice=_daughter_resolve)
+```
+
+**Termination**: the reactive play itself fires `occupation_played`/
+`minor_played` again (via the SAME `_fire_broadcast` choke point), which
+scans hands again -- but `sub_actions.play_occupation`/`play_minor`
+both remove the card from its hand BEFORE firing the broadcast, so the
+just-played card can never re-trigger its OWN `hand_react` in that same
+scan. A second, unrelated card's `hand_react` CAN still see this second
+broadcast (as it should -- "any occupation played" includes one played
+via a hand reaction) -- each such further reaction can only happen by
+playing another card out of a hand, and every hand is finite and only
+shrinks, so the chain always terminates; it never free-runs without a
+player answering a new prompt at every step (see
+`tests/test_agricola.py`'s `test_hand_react_reactive_play_does_not_loop`
+for a worked two-hop chain).
+
+### B023 Final Scenario: engine assessment
+
+B023: "Place the action space card for round 14 face up in front of
+you. Only you can use it until it is placed on the game board [at round
+14]." Two things to check: (1) can a card reveal/host a FUTURE round
+space early, and (2) can hosting it reuse that round card's own
+resolution logic rather than reimplementing it.
+
+**(1) is a non-issue in this engine as built.** `state["deck"]` is
+hidden from every view (views carry only a count -- a pre-existing
+leak of the full reveal order was fixed in this phase's review), but
+B023 doesn't need a view exception: this engine has exactly one
+stage-6 card, so round 14's identity is deterministic (see (2)), and
+the `card_space` entry the recipe creates carries the card's name and
+description publicly -- "placed face up in front of you" for free.
+
+**(2) is expressible today with existing `card_space` + `sub_actions`
+plumbing, no new engine change** -- but only because of a specific fact
+about how THIS engine's stage decks are built: `state.STAGE_CARDS` has
+exactly ONE stage-6 entry (`farm_redevelopment`), so `build_stage_deck`
+always puts it last -- `state["deck"][13]` is deterministic, not a
+random reveal, at the moment the game starts. That means a B023
+`card_space` can safely hardcode a mirror of `farm_redevelopment`'s own
+sid-dispatch logic (in `engine._resolve_space`) using the same
+`sub_actions` calls that dispatch already uses, instead of needing a
+generic "resolve whatever round 14 turns out to be" mechanism (which
+the engine does NOT have: `_resolve_space`'s per-sid branches are
+private to `engine.py`, some are trivial one-offs with no `sub_actions`
+equivalent at all, and a card_space's `resolve` fn has no way to invoke
+them by id):
+
+```python
+def _b023_resolve(state, player, inst, action, log):
+    sub_actions.renovate(state, player, log,
+                         free_stable_cell=action.get("stable"))
+    if action.get("fences"):
+        sub_actions.build_fences(state, player, action["fences"], log)
+    return {}
+
+def _b023_usable(state, player, inst):
+    # Gate closes the moment round 14 starts -- the real
+    # farm_redevelopment space (state["deck"][13]) takes over from here.
+    return state["round"] < 14 and sub_actions.renovation_possible(state, player)
+
+compendium_card("B023", card_space={
+    "owner_only": True, "usable": _b023_usable, "resolve": _b023_resolve})
+```
+
+**Caveat, worth re-checking before this recipe is ever actually used**:
+this hardcodes farm_redevelopment's mechanics because that's the ONLY
+possible round-14 card TODAY. If a future deck module ever adds a
+second stage-6 card, `state["deck"][13]` stops being deterministic and
+this recipe would silently mirror the wrong mechanics whenever a
+different card is revealed there -- a real B023 registration should
+assert `STAGE_CARDS` still has exactly one stage-6 entry (or otherwise
+confirm `state["deck"][13] == "farm_redevelopment"` at resolve time)
+rather than assume it forever. None of K125/E173/B023 are registered by
+this pass (`temp_card`-only tests in `tests/test_agricola.py` exercise
+each mechanism, including a `test_b023_style_recipe_owner_only_until_
+round_14` proof of the recipe above); registering them with
+`compendium_card` is still a separate pass, same as every other item.
+
 ## Not supported (mark UNIMPLEMENTED, cite the mechanic)
 
 - Affecting other players' hands, people, or farms directly (guest
