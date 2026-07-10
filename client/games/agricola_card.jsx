@@ -374,13 +374,21 @@ const V2_FRAMES = {
     arc: "M 80 320 Q 505 130 930 320",
     bandTop: "45%", textTop: "57%",
     placeholder: "#cadd6e", ink: "#241a05",
+    prereqSlot: { left: "6.5%", top: "4.5%", width: "26%", plate: true },
+    costSlot: { right: "6.5%", top: "4.5%", width: "24%", plate: true },
   },
   minor: {
-    frame: "minor", aspect: 1536 / 1024,
-    window: { cx: 0.4990, cy: 0.3604, r: 0.2581, shape: "hex" },
-    arc: "M 80 320 Q 505 130 930 320",
-    bandTop: "45%", textTop: "57%",
-    placeholder: "#e8a04a", ink: "#241a05",
+    frame: "minor", aspect: 1559 / 1009,
+    window: { cx: 0.5050, cy: 0.3515, r: 0.2941, shape: "hex" },
+    // straight title across the trapezoid plate
+    arc: "M 250 175 L 760 175",
+    titleSteps: [[10, 76], [15, 64], [20, 54], [26, 46], [999, 40]],
+    bandTop: "45%", textTop: "57.5%",
+    placeholder: "#e8b558", ink: "#241a05",
+    // the frame has a built-in angled prereq plate and amber cost
+    // corner, so these slots draw text only
+    prereqSlot: { left: "4.5%", top: "6%", width: "17%" },
+    costSlot: { right: "4%", top: "5.5%", width: "17%" },
   },
   major: {
     frame: "major", aspect: 1536 / 1024,
@@ -388,6 +396,8 @@ const V2_FRAMES = {
     arc: "M 80 320 Q 505 130 930 320",
     bandTop: "45%", textTop: "57%",
     placeholder: "#c98a63", ink: "#f5e7c8",
+    prereqSlot: { left: "6.5%", top: "4.5%", width: "26%", plate: true },
+    costSlot: { right: "6.5%", top: "4.5%", width: "24%", plate: true },
   },
 };
 
@@ -427,10 +437,10 @@ function Badge({ asset, label, size, fontSize, title, dark }) {
 // Card name arched along the top plate, matching the official
 // occupation title treatment. Rendered as SVG text on a path so
 // it scales with the card.
-function TitleArc({ name, arc, ink }) {
+function TitleArc({ name, arc, ink, steps }) {
   const arcId = useId();
   const size = fitSize((name || "").length,
-    [[12, 92], [17, 78], [22, 66], [28, 56], [999, 48]]);
+    steps || [[12, 92], [17, 78], [22, 66], [28, 56], [999, 48]]);
   return (
     <svg viewBox="0 0 1010 1558" preserveAspectRatio="none" style={{
       position: "absolute", inset: 0, width: "100%", height: "100%",
@@ -447,19 +457,22 @@ function TitleArc({ name, arc, ink }) {
   );
 }
 
-// Small parchment plate with content overlaid — the cost and
-// prerequisite slots at the top corners of minors/majors.
-function PlateSlot({ children, side, title }) {
+// Cost / prerequisite slot at a configured spot. Draws the small
+// parchment plate asset behind the text unless the frame artwork
+// already provides a plate there (slot.plate falsy).
+function PlateSlot({ slot, children, title }) {
+  const { plate, ...pos } = slot;
   return (
     <span title={title} style={{
-      position: "absolute", top: "4.5%", [side]: "6.5%",
-      maxWidth: "30%", minWidth: "12%", minHeight: "2.2em",
+      position: "absolute", ...pos, minHeight: "2.2em",
       display: "inline-flex", alignItems: "center", justifyContent: "center",
-      padding: "0.35em 0.6em",
+      padding: "0.35em 0.5em",
     }}>
-      <img src={frameUrl("badge_plate")} alt="" draggable={false} style={{
-        position: "absolute", inset: 0, width: "100%", height: "100%",
-      }} />
+      {plate ? (
+        <img src={frameUrl("badge_plate")} alt="" draggable={false} style={{
+          position: "absolute", inset: 0, width: "100%", height: "100%",
+        }} />
+      ) : null}
       <span style={{
         position: "relative", fontFamily: "Alegreya, Georgia, serif",
         fontWeight: 700, color: "#241a05", textAlign: "center", lineHeight: 1.1,
@@ -517,7 +530,7 @@ export function CardV2({ spec, cid, width = 250, artUrl, playable, selected, onC
       }} />
 
       {/* 3 — title, code, corner slots, badges, rules text */}
-      <TitleArc name={c.name} arc={geo.arc} ink={geo.ink} />
+      <TitleArc name={c.name} arc={geo.arc} ink={geo.ink} steps={geo.titleSteps} />
 
       {/* official-style card code — only short codes fit the plate */}
       {cid && cid.length <= 6 ? (
@@ -530,15 +543,15 @@ export function CardV2({ spec, cid, width = 250, artUrl, playable, selected, onC
 
       {/* top corner slots: prerequisite left, cost right */}
       {c.prereq ? (
-        <PlateSlot side="left" title={`Prerequisite: ${c.prereq}`}>
+        <PlateSlot slot={geo.prereqSlot} title={`Prerequisite: ${c.prereq}`}>
           <span style={{ fontSize: fitSize(c.prereq.length, [[16, "0.8em"], [30, "0.68em"], [999, "0.58em"]]) }}>
             {c.prereq}
           </span>
         </PlateSlot>
       ) : null}
       {costLabel ? (
-        <PlateSlot side="right" title={`Cost: ${costLabel}`}>
-          <span style={{ fontSize: fitSize(costLabel.length, [[8, "0.9em"], [16, "0.75em"], [999, "0.6em"]]) }}>
+        <PlateSlot slot={geo.costSlot} title={`Cost: ${costLabel}`}>
+          <span style={{ fontSize: fitSize(costLabel.length, [[4, "1.2em"], [9, "0.95em"], [16, "0.75em"], [999, "0.6em"]]) }}>
             {costLabel}
           </span>
         </PlateSlot>
