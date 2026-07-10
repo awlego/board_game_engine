@@ -299,6 +299,14 @@ function useGameConnection() {
       } catch {
         sessionStorage.removeItem("pending_action");
       }
+    } else if (!tokenRef.current) {
+      // Rejoin an existing seat (e.g. after a page reload) — the token
+      // survives in sessionStorage and connect() auths with tokenRef.
+      const saved = sessionStorage.getItem("game_token");
+      if (saved) {
+        tokenRef.current = saved;
+        connect();
+      }
     }
   }, []);
 
