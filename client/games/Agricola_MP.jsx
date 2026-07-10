@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 import { WS_URL } from "../ws.js";
 import CARD_CATALOG from "./agricola_cards.json";
+import { AgricolaCard } from "./agricola_card.jsx";
 
 // ============================================================
 // CONSTANTS (mirrored from server/agricola/state.py)
@@ -534,32 +535,39 @@ function PlayerPanel({ player, color, isYou, isCurrent, isStarting, state, child
 
 // ── Hand panel (own cards) ──────────────────────────────────
 
-function HandCard({ cid, playable, selected, onClick, extra }) {
-  const spec = cardSpec(cid);
-  const isOcc = spec.type === "occupation";
+const HAND_CARD_W = 150;
+const ZOOM_CARD_W = 290;
+
+// Hover-zoom preview of a card, pinned next to the hovered hand card
+// and clamped to the viewport. Pointer-transparent so it never
+// interferes with clicking the card underneath.
+function CardZoom({ rect, cid, spec }) {
+  const h = Math.round(ZOOM_CARD_W * 1.545);
+  const left = rect.right + 8 + ZOOM_CARD_W <= window.innerWidth
+    ? rect.right + 8 : Math.max(4, rect.left - 8 - ZOOM_CARD_W);
+  const top = Math.min(Math.max(4, rect.top - (h - rect.height) / 2), window.innerHeight - h - 4);
   return (
-    <div onClick={onClick}
-      title={`${spec.text}${spec.prereq_text ? `\nPrereq: ${spec.prereq_text}` : ""}`}
-      style={{
-        border: selected ? "2px solid #d97706" : `1px solid ${isOcc ? "#eab308" : "#fb923c"}`,
-        background: playable === false ? "#f5f5f4" : isOcc ? "#fefce8" : "#fff7ed",
-        opacity: playable === false ? 0.55 : 1,
-        borderRadius: 8, padding: "5px 7px", cursor: onClick ? "pointer" : "default",
-        width: 148, flexShrink: 0,
-      }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 4, fontSize: 11 }}>
-        <b>{spec.name}</b>
-        <span>{spec.points ? `⭐${spec.points}` : ""}{spec.traveling ? "↩" : ""}</span>
-      </div>
-      <div style={{ fontSize: 9, color: "#78716c", margin: "1px 0" }}>
-        {isOcc ? `Occupation${spec.min_players > 1 ? ` (${spec.min_players}+)` : ""}` : `Minor · ${costStr(spec.cost)}`}
-        {spec.deck === "custom" ? " · custom" : ""}
-        {spec.prereq_text ? ` · needs ${spec.prereq_text}` : ""}
-      </div>
-      <div style={{ fontSize: 9.5, color: "#44403c", lineHeight: 1.35, maxHeight: 52, overflow: "hidden" }}>
-        {spec.text}
-      </div>
+    <div style={{ position: "fixed", left, top, zIndex: 1000, pointerEvents: "none" }}>
+      <AgricolaCard cid={cid} spec={spec} width={ZOOM_CARD_W} />
+    </div>
+  );
+}
+
+function HandCard({ cid, playable, selected, onClick, extra }) {
+  const [zoomRect, setZoomRect] = useState(null);
+  const zoomTimer = useRef(null);
+  const spec = cardSpec(cid);
+  return (
+    <div style={{ position: "relative", flexShrink: 0 }}
+      onMouseEnter={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        zoomTimer.current = setTimeout(() => setZoomRect(rect), 250);
+      }}
+      onMouseLeave={() => { clearTimeout(zoomTimer.current); setZoomRect(null); }}>
+      <AgricolaCard cid={cid} spec={spec} width={HAND_CARD_W}
+        playable={playable} selected={selected} onClick={onClick} />
       {extra}
+      {zoomRect && <CardZoom rect={zoomRect} cid={cid} spec={spec} />}
     </div>
   );
 }

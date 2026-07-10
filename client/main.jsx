@@ -328,4 +328,10 @@ function MainApp() {
   );
 }
 
-createRoot(document.getElementById("root")).render(<MainApp />);
+// Dev card gallery: /?cardlab renders the Agricola card lab instead of the app.
+const CardLabLazy = React.lazy(() => import("./games/agricola_cardlab.jsx"));
+const root = new URLSearchParams(window.location.search).has("cardlab")
+  ? <React.Suspense fallback={null}><CardLabLazy /></React.Suspense>
+  : <MainApp />;
+
+createRoot(document.getElementById("root")).render(root);

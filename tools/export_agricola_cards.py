@@ -8,6 +8,7 @@ Writes client/games/agricola_cards.json. Run after changing cards.py
 
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -63,12 +64,45 @@ def build_catalog():
             # Deck A majors are the 10 built-in major improvements,
             # listed under both original and revised numbering.
             reason = "available as the built-in major improvement"
-        catalog[code] = {
+        entry = {
             "name": db["name"], "type": db["type"], "deck": db["deck"],
             "text": db["text"], "implemented": False,
             "reason": reason or "not yet implemented",
         }
+        if db.get("vp"):
+            entry["points"] = db["vp"]
+        if db.get("prereq"):
+            entry["prereq_text"] = db["prereq"]
+        players = re.match(r"(\d)", db.get("players") or "")
+        if players and int(players.group(1)) > 1:
+            entry["min_players"] = int(players.group(1))
+        cost = parse_cost(db.get("cost") or "")
+        if cost:
+            entry["cost"] = cost
+        elif db.get("cost"):
+            entry["cost_text"] = db["cost"]
+        catalog[code] = entry
     return catalog
+
+
+# Compendium costs are strings like "2W 1C". Parse the regular ones
+# into {resource: count}; anything else (e.g. "1W or 1C", "1 Grain")
+# stays a cost_text string for the client to show verbatim.
+COST_LETTERS = {"W": "wood", "C": "clay", "S": "stone", "R": "reed", "F": "food"}
+
+
+def parse_cost(text):
+    parts = text.split()
+    if not parts:
+        return None
+    cost = {}
+    for part in parts:
+        m = re.fullmatch(r"(\d+)([WCSRF])", part)
+        if not m:
+            return None
+        good = COST_LETTERS[m.group(2)]
+        cost[good] = cost.get(good, 0) + int(m.group(1))
+    return cost
 
 
 def main():
