@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 
 // ============================================================
 // Agricola card renderer — official-style card frames composed
@@ -82,12 +82,26 @@ const SERIF = `Georgia, 'Times New Roman', serif`;
 // text always degrades gracefully.
 const TOKEN_RE = /\{([a-z>-]+)(?::(-?\d+))?\}/gi;
 
+// Official cards set parenthetical clarifications in italic.
+function withItalics(str, key) {
+  const out = [];
+  let last = 0, m;
+  const re = /\([^)]*\)/g;
+  while ((m = re.exec(str))) {
+    if (m.index > last) out.push(str.slice(last, m.index));
+    out.push(<i key={`i${key}-${m.index}`}>{m[0]}</i>);
+    last = m.index + m[0].length;
+  }
+  if (last < str.length) out.push(str.slice(last));
+  return out;
+}
+
 export function CardText({ text, style }) {
   const parts = [];
   let last = 0, m, key = 0;
   TOKEN_RE.lastIndex = 0;
   while ((m = TOKEN_RE.exec(text || ""))) {
-    if (m.index > last) parts.push(text.slice(last, m.index));
+    if (m.index > last) parts.push(...withItalics(text.slice(last, m.index), key++));
     const name = m[1].toLowerCase();
     if (ICONS[name]) {
       parts.push(<span key={key++} title={ICONS[name].label}>{ICONS[name].icon}</span>);
@@ -104,7 +118,7 @@ export function CardText({ text, style }) {
     }
     last = m.index + m[0].length;
   }
-  if (last < (text || "").length) parts.push(text.slice(last));
+  if (last < (text || "").length) parts.push(...withItalics(text.slice(last), key++));
   return <span style={style}>{parts}</span>;
 }
 
@@ -333,6 +347,177 @@ export function defaultArtUrl(cid) {
   return `${import.meta.env.BASE_URL}agricola/art/${cid}.jpg`;
 }
 
+// ============================================================
+// Asset-layered card (v2) — real frame/badge artwork with text
+// blocks positioned over it, instead of CSS-drawn plates.
+//
+// Layer stack (bottom to top):
+//   1. art image, circle-cropped, slightly larger than the
+//      frame's transparent window so it tucks under the ring
+//   2. frame WebP (transparent exterior + art window)
+//   3. badge images (min-players plaque, deck disc) with text
+//      overlaid, plus the title (SVG textPath along the plate
+//      arch), card code, and rules text block
+//
+// All geometry is in fractions of the frame image (1010x1558),
+// measured from the asset during processing.
+// ============================================================
+
+const FRAME_ASPECT = 1558 / 1010;             // height / width
+const WINDOW = { cx: 0.4985, cy: 0.3479, r: 0.2597 };  // r as fraction of width
+
+function frameUrl(name) {
+  return `${import.meta.env.BASE_URL}agricola/frames/${name}.webp`;
+}
+
+// A badge asset with text centered on it (e.g. "1+" on the
+// purple plaque, the deck letter on the disc).
+function Badge({ asset, label, size, fontSize, title, dark }) {
+  return (
+    <span title={title} style={{
+      position: "relative", width: size, height: size,
+      display: "inline-flex", alignItems: "center", justifyContent: "center",
+      flexShrink: 0,
+    }}>
+      <img src={frameUrl(asset)} alt="" draggable={false}
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
+      <span style={{
+        position: "relative", fontFamily: "Alegreya, Georgia, serif",
+        fontWeight: 800, fontSize, lineHeight: 1,
+        color: dark ? "#241a05" : "#fff",
+        textShadow: dark ? "none" : "0 0.05em 0.15em rgba(0,0,0,0.7)",
+      }}>{label}</span>
+    </span>
+  );
+}
+
+// Card name arched along the top plate, matching the official
+// occupation title treatment. Rendered as SVG text on a path so
+// it scales with the card.
+function TitleArc({ name }) {
+  const arcId = useId();
+  const size = fitSize((name || "").length,
+    [[12, 92], [17, 78], [22, 66], [28, 56], [999, 48]]);
+  return (
+    <svg viewBox="0 0 1010 1558" style={{
+      position: "absolute", inset: 0, width: "100%", height: "100%",
+      pointerEvents: "none",
+    }}>
+      <path id={arcId} d="M 80 320 Q 505 130 930 320" fill="none" />
+      <text fontFamily="Alegreya, Georgia, serif" fontWeight="800"
+        fontSize={size} fill="#241a05">
+        <textPath href={`#${arcId}`} startOffset="50%" textAnchor="middle">
+          {name}
+        </textPath>
+      </text>
+    </svg>
+  );
+}
+
+export function OccupationCardV2({ spec, cid, width = 250, artUrl, playable, selected, onClick }) {
+  const c = normalize(spec || {}, cid);
+  const art = artUrl !== undefined ? artUrl : (cid ? defaultArtUrl(cid) : null);
+  const [artFailed, setArtFailed] = useState(false);
+  const height = Math.round(width * FRAME_ASPECT);
+  const em = width / 25;
+
+  // Art window in px: radius is a fraction of width; extend it a
+  // touch so the art tucks under the frame's ring.
+  const artR = (WINDOW.r + 0.01) * width;
+  const artStyle = {
+    position: "absolute",
+    left: WINDOW.cx * width - artR, top: WINDOW.cy * height - artR,
+    width: artR * 2, height: artR * 2, borderRadius: "50%", overflow: "hidden",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    background: `radial-gradient(circle at 50% 38%, #fff8dc 0%, #cadd6e 130%)`,
+  };
+
+  return (
+    <div onClick={onClick} title={`${c.name} — Occupation`} style={{
+      position: "relative", width, height, fontSize: em, flexShrink: 0,
+      cursor: onClick ? "pointer" : "default", userSelect: "none",
+      filter: playable === false ? "grayscale(0.7) brightness(0.85)" : "none",
+      opacity: playable === false ? 0.75 : 1,
+      borderRadius: "0.9em",
+      boxShadow: selected ? "0 0 0 0.35em #d97706" : "none",
+    }}>
+      {/* 1 — art layer under the frame window */}
+      <div style={artStyle}>
+        {art && !artFailed
+          ? <img src={art} alt={c.name} onError={() => setArtFailed(true)} draggable={false}
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          : <span style={{ fontSize: "4.2em" }}>{TYPE_GLYPH.occupation}</span>}
+      </div>
+
+      {/* 2 — frame artwork */}
+      <img src={frameUrl("occupation")} alt="" draggable={false} style={{
+        position: "absolute", inset: 0, width: "100%", height: "100%",
+        pointerEvents: "none",
+      }} />
+
+      {/* 3 — title, code, badges, rules text */}
+      <TitleArc name={c.name} />
+
+      {/* official-style card code — only short codes fit the plate */}
+      {cid && cid.length <= 6 ? (
+        <span style={{
+          position: "absolute", left: "8%", top: "24%",
+          fontFamily: "Alegreya, Georgia, serif", fontWeight: 700,
+          fontSize: "0.72em", color: "#4a3d15", opacity: 0.85,
+        }}>{cid}</span>
+      ) : null}
+
+      {/* gold band, left: min players */}
+      {c.minPlayers ? (
+        <span style={{ position: "absolute", left: "7.5%", top: "45%" }}>
+          <Badge asset="badge_players" label={`${c.minPlayers}+`}
+            size={0.13 * width} fontSize="1.35em"
+            title={`Playable with ${c.minPlayers}+ players`} />
+        </span>
+      ) : null}
+
+      {/* gold band, right: VP, marks, deck */}
+      <span style={{
+        position: "absolute", right: "7.5%", top: "45%",
+        display: "flex", gap: "0.25em", alignItems: "center",
+      }}>
+        {c.traveling ? <PassMark /> : null}
+        {c.hasAction ? <ActionMark /> : null}
+        {c.points ? (
+          <Badge asset="badge_vp" label={c.points} size={0.13 * width}
+            fontSize="1.5em" dark title={`${c.points} points`} />
+        ) : null}
+        {c.deck && c.deck !== "base" ? (
+          <Badge asset="badge_deck" label={c.deck === "custom" ? "✎" : c.deck}
+            size={0.13 * width} fontSize={c.deck.length > 1 ? "1.1em" : "1.5em"}
+            title={c.deck === "custom" ? "Custom card" : `Deck ${c.deck}`} />
+        ) : null}
+      </span>
+
+      {/* rules text block on the big plate */}
+      <div style={{
+        position: "absolute", left: "11%", right: "11%", top: "57%", bottom: "6.5%",
+        display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center", textAlign: "center",
+        overflow: "hidden",
+      }}>
+        {c.prereq ? (
+          <div style={{
+            fontFamily: "Alegreya, Georgia, serif", fontStyle: "italic",
+            fontWeight: 500, fontSize: "0.85em", color: "#4a3d15", marginBottom: "0.4em",
+          }}>Requires {c.prereq}</div>
+        ) : null}
+        <CardText text={c.text} style={{
+          fontFamily: "Alegreya, Georgia, serif", fontWeight: 500,
+          color: "#241a05", lineHeight: 1.24,
+          fontSize: fitSize((c.text || "").length,
+            [[60, "1.5em"], [110, "1.3em"], [170, "1.14em"], [240, "1.0em"], [320, "0.9em"], [999, "0.8em"]]),
+        }} />
+      </div>
+    </div>
+  );
+}
+
 /**
  * The full official-layout card.
  *   spec     — catalog entry from agricola_cards.json
@@ -344,6 +529,12 @@ export function defaultArtUrl(cid) {
  */
 export function AgricolaCard({ spec, cid, width = 250, artUrl, playable, selected, onClick, footer }) {
   const c = normalize(spec || {}, cid);
+  // Occupations use the asset-layered builder; minors/majors keep
+  // the CSS frame until their frame artwork exists.
+  if (c.type === "occupation") {
+    return <OccupationCardV2 spec={spec} cid={cid} width={width} artUrl={artUrl}
+      playable={playable} selected={selected} onClick={onClick} />;
+  }
   const theme = CARD_THEMES[c.type];
   const art = artUrl !== undefined ? artUrl : (cid ? defaultArtUrl(cid) : null);
   const isOcc = c.type === "occupation";
