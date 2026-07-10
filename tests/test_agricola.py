@@ -7,9 +7,10 @@ import pytest
 from server.agricola.engine import AgricolaEngine
 from server.agricola import cards, sub_actions
 from server.agricola.state import (
-    ANIMAL_TYPES, HARVEST_ROUNDS, MAJOR_IMPROVEMENTS, STAGE_CARDS,
+    ANIMAL_TYPES, HARVEST_ROUNDS, MAJOR_IMPROVEMENTS, STAGE_CARDS, NUM_CELLS,
     animal_counts, cell_edges, compute_pastures, pasture_capacity,
     validate_fence_layout, validate_animal_placement, create_player,
+    plowable_cells, is_border_edge, table_score, all_edge_keys,
 )
 from server.agricola.scoring import score_player
 
@@ -4701,3 +4702,326 @@ def test_b023_style_recipe_owner_only_until_round_14(engine, temp_card):
     s["round"] = 14
     space = next(sp for sp in s["action_spaces"] if sp["id"] == sid)
     assert not engine._card_space_usable(s, s["players"][owner], space)
+
+
+# ── Engine phase 13: field/fence/grid extensions ──────────────────────
+# Multi-stack card fields (K105 Acreage, FR089 Landscape Gardener), the
+# fence-token mechanism (B030 Wood Palisades), and the FR001 Abandoned
+# Willow "remove a field" recipe -- see decks/GUIDE.md's "Field stacks"
+# and "Fence tokens" sections, and CARDS.md item 19 for the full
+# per-card assessment (C069 and FR059 remain gated; see there for why).
+# None of the motivating compendium cards are registered by this pass --
+# temp_card-only tests exercise each mechanism, matching phases 8-12's
+# precedent.
+
+def test_multi_stack_field_sow_and_harvest_independently(engine, temp_card):
+    """K105-style: 2 independent grain stacks on one card field, each
+    sown and harvested separately."""
+    cid = "test_acreage"
+    temp_card(cid, "Test Acreage", "minor", "test",
+              field={"crops": ("grain",), "stacks": 2})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, cid)
+    assert inst["stacks"] == [None, None]
+    give(s, first, grain=2)
+    sub_actions.sow(s, p, [{"card": cid, "crop": "grain", "stack": 0}], [])
+    assert inst["stacks"][0] == {"type": "grain", "count": 3}
+    assert inst["stacks"][1] is None
+    # can_sow/empty_fields still see the second, still-open stack.
+    assert sub_actions.can_sow(p)
+    _cells, card_targets = sub_actions.empty_fields(p)
+    assert inst in card_targets
+    sub_actions.sow(s, p, [{"card": cid, "crop": "grain", "stack": 1}], [])
+    assert inst["stacks"][1] == {"type": "grain", "count": 3}
+    _cells, card_targets = sub_actions.empty_fields(p)
+    assert inst not in card_targets
+    # Harvest yields 2 grain (one per stack), decrementing each stack
+    # independently of the other.
+    grain_before = p["resources"]["grain"]
+    engine._start_harvest(s, [])
+    assert p["resources"]["grain"] == grain_before + 2
+    assert inst["stacks"][0]["count"] == 2
+    assert inst["stacks"][1]["count"] == 2
+
+
+def test_multi_stack_field_can_sow_both_in_one_call(engine, temp_card):
+    """Both stacks may also be addressed in a single sow() call (two
+    separate sow_items entries naming the same card, different stacks)."""
+    cid = "test_acreage_batch"
+    temp_card(cid, "Test Acreage Batch", "minor", "test",
+              field={"crops": ("grain",), "stacks": 2})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, cid)
+    give(s, first, grain=2)
+    sub_actions.sow(s, p, [{"card": cid, "crop": "grain", "stack": 0},
+                          {"card": cid, "crop": "grain", "stack": 1}], [])
+    assert inst["stacks"][0] == {"type": "grain", "count": 3}
+    assert inst["stacks"][1] == {"type": "grain", "count": 3}
+
+
+def test_multi_stack_field_sow_same_stack_twice_rejected(engine, temp_card):
+    cid = "test_acreage_dup"
+    temp_card(cid, "Test Acreage Dup", "minor", "test",
+              field={"crops": ("grain",), "stacks": 2})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, cid)
+    give(s, first, grain=2)
+    with pytest.raises(ValueError):
+        sub_actions.sow(s, p, [{"card": cid, "crop": "grain", "stack": 0},
+                              {"card": cid, "crop": "grain", "stack": 0}], [])
+
+
+def test_multi_stack_field_invalid_stack_index_rejected(engine, temp_card):
+    cid = "test_acreage_bad_idx"
+    temp_card(cid, "Test Acreage Bad Idx", "minor", "test",
+              field={"crops": ("grain",), "stacks": 2})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, cid)
+    give(s, first, grain=1)
+    with pytest.raises(ValueError):
+        sub_actions.sow(s, p, [{"card": cid, "crop": "grain", "stack": 2}], [])
+    with pytest.raises(ValueError):
+        sub_actions.sow(s, p, [{"card": cid, "crop": "grain", "stack": -1}], [])
+
+
+def test_multi_stack_field_exhausted_stack_reverts_to_none_independently(
+        engine, temp_card):
+    """A 2-count vegetable stack empties (-> None) after 2 harvests,
+    independent of its still-unsown sibling stack."""
+    cid = "test_acreage_exhaust"
+    temp_card(cid, "Test Acreage Exhaust", "minor", "test",
+              field={"crops": ("vegetable",), "stacks": 2})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, cid)
+    give(s, first, vegetable=1)
+    sub_actions.sow(s, p, [{"card": cid, "crop": "vegetable", "stack": 0}], [])
+    assert inst["stacks"][0]["count"] == 2
+    engine._start_harvest(s, [])
+    assert inst["stacks"][0]["count"] == 1
+    assert inst["stacks"][1] is None
+    engine._start_harvest(s, [])
+    assert inst["stacks"][0] is None
+    assert inst["stacks"][1] is None
+
+
+def test_fr089_style_sow_as_two_fields_mixed_crops_and_scoring(engine, temp_card):
+    """FR089 Landscape Gardener-style: 2 stacks, either crop, sown
+    independently. Its crops count toward grain/vegetable scoring but
+    never toward the 'fields' category -- true of every card field
+    already (score_player's `fields` tally only ever counts farmyard
+    cell tiles, never card_fields), which is exactly what FR089's own
+    '(this card does not count as a field when scoring)' asks for, for
+    free -- see CARDS.md item 19's FR089 scoring finding."""
+    cid = "test_landscape_gardener"
+    temp_card(cid, "Test Landscape Gardener", "minor", "test",
+              field={"crops": ("grain", "vegetable"), "stacks": 2})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, cid)
+    give(s, first, grain=1, vegetable=1)
+    sub_actions.sow(s, p, [{"card": cid, "crop": "grain", "stack": 0},
+                          {"card": cid, "crop": "vegetable", "stack": 1}], [])
+    assert inst["stacks"][0] == {"type": "grain", "count": 3}
+    assert inst["stacks"][1] == {"type": "vegetable", "count": 2}
+    sc = score_player(p, s)
+    assert sc["fields"] == table_score(
+        "fields", sum(1 for c in p["cells"] if c["type"] == "field"))
+    assert sc["grain"] == table_score("grain", 3)
+    assert sc["vegetable"] == table_score("vegetable", 2)
+
+
+def test_stacks_1_card_field_still_uses_legacy_crops_dict(engine):
+    """Regression: a stacks=1 (default) card field, e.g. minor_beanfield,
+    is completely unaffected by the multi-stack mechanism -- no
+    inst['stacks'] key at all, sown/harvested via the flat inst['crops']
+    slot exactly as before phase 13."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, "minor_beanfield")
+    assert "stacks" not in inst
+    give(s, first, vegetable=1)
+    sub_actions.sow(s, p, [{"card": "minor_beanfield", "crop": "vegetable"}], [])
+    assert inst["crops"] == {"type": "vegetable", "count": 2}
+    assert cards.field_stacks(inst) == [{"type": "vegetable", "count": 2}]
+    engine._start_harvest(s, [])
+    assert inst["crops"]["count"] == 1
+
+
+def test_field_stack_helpers_read_old_save_shape_safely():
+    """An old (pre-phase-13) save's stacks=1 card-field instance has
+    'crops' but no 'stacks' key at all -- the field-stack helpers read/
+    write it exactly like a fresh stacks=1 instance."""
+    inst = {"id": "minor_beanfield", "crops": {"type": "vegetable", "count": 2},
+            "data": {}}
+    assert "stacks" not in inst
+    assert cards.field_stacks(inst) == [{"type": "vegetable", "count": 2}]
+    assert cards.get_field_stack(inst) == {"type": "vegetable", "count": 2}
+    assert cards.open_field_stacks(inst) == []
+    cards.set_field_stack(inst, 0, None)
+    assert inst["crops"] is None
+    assert cards.open_field_stacks(inst) == [0]
+
+
+# ── FR001 Abandoned Willow: "remove an empty field" recipe ────────────
+
+def test_fr001_style_remove_empty_field_recipe(engine, temp_card):
+    """FR001 Abandoned Willow: 'immediately remove 1 empty field from
+    your farmyard and receive 4 wood. (That space now counts as
+    unused.)' No new engine plumbing is needed -- a play hook can just
+    flip cell['type'] back to 'empty' via the existing params channel
+    (Shifting Cultivation's plow-via-params precedent, run in reverse).
+    See decks/GUIDE.md's 'FR001 recipe' section."""
+    def hook(state, player, inst, ctx):
+        cell = (ctx.get("params") or {}).get("cell")
+        if not isinstance(cell, int) or not (0 <= cell < NUM_CELLS):
+            raise ValueError("Choose an empty field to remove (params.cell)")
+        c = player["cells"][cell]
+        if c["type"] != "field" or c["crops"]:
+            raise ValueError("You can only remove an empty field")
+        c["type"] = "empty"
+        player["resources"]["wood"] += 4
+        ctx["log"].append(
+            f"{player['name']} removes an empty field, gets 4 wood")
+
+    cid = "test_fr001"
+    temp_card(cid, "Test FR001", "minor", "test", hooks={"play": hook})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    p["cells"][0]["type"] = "field"
+    give_card(s, first, cid)
+    wood_before = p["resources"]["wood"]
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": cid, "params": {"cell": 0}}})
+    p = s["players"][first]
+    assert p["cells"][0]["type"] == "empty"
+    assert p["resources"]["wood"] == wood_before + 4
+
+    # Regression: plow targets, pasture validity, and scoring all still
+    # behave normally on the reverted (now-unused) cell.
+    assert 0 in plowable_cells(p)
+    ok, err, pastures = validate_fence_layout(p, cell_edges(0))
+    assert ok, err
+    assert pastures == [[0]]
+    sc = score_player(p, s)
+    assert sc["fields"] == table_score(
+        "fields", sum(1 for c in p["cells"] if c["type"] == "field"))
+    assert sc["unused_spaces"] <= 0
+
+    # Cannot remove a field that's already planted, or a non-field cell.
+    p["cells"][1]["type"] = "field"
+    p["cells"][1]["crops"] = {"type": "grain", "count": 3}
+    with pytest.raises(ValueError):
+        hook(s, p, None, {"params": {"cell": 1}, "log": []})
+    with pytest.raises(ValueError):
+        hook(s, p, None, {"params": {"cell": 2}, "log": []})  # empty, not a field
+
+
+# ── B030 Wood Palisades: fence-token mechanism ─────────────────────────
+
+def test_fence_tokens_mixed_layout_geometry_cost_and_max_fences_bypass(
+        engine, temp_card):
+    """A mixed layout (normal fences + 1 wood-token border edge)
+    validates as ONE geometric layout, prices only the normal edges
+    through the usual wood cost (the token is paid separately, by the
+    card, at its own rate), and the wood-token edge is excluded from the
+    15-fence cap -- 16 total edges (the whole farmyard's outer
+    perimeter) would be rejected as all-normal fences, but succeeds with
+    1 of them as a token."""
+    cid = "test_wood_palisades"
+    temp_card(cid, "Test Wood Palisades", "minor", "test",
+              fence_token={"cost": {"wood": 2}})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, cid)
+    # Make every farmyard cell pasture-eligible (no starting rooms), so
+    # the whole 16-edge outer perimeter is one legal pasture.
+    for c in p["cells"]:
+        c["type"] = "empty"
+    border = [e for e in all_edge_keys() if is_border_edge(e)]
+    assert len(border) == 16
+    # All-normal, no tokens: 16 > MAX_FENCES(15), rejected outright.
+    ok, err, _pastures = validate_fence_layout(p, border)
+    assert not ok
+
+    token_edge = border[0]
+    give(s, first, wood=17)  # 15 normal fences + 2 for the 1 token
+    sub_actions.build_fences(s, p, border, [], tokens=[token_edge])
+    assert set(p["fences"]) == set(border)
+    assert p["fence_tokens"] == {token_edge: cid}
+    assert p["resources"]["wood"] == 0
+    assert compute_pastures(p) == [sorted(range(NUM_CELLS))]
+    # 16 real edges, but only 15 count against MAX_FENCES.
+    assert len(p["fences"]) - len(p["fence_tokens"]) == 15
+
+
+def test_fence_token_non_border_edge_rejected(engine, temp_card):
+    cid = "test_wood_palisades_interior"
+    temp_card(cid, "Test Wood Palisades Interior", "minor", "test",
+              fence_token={"cost": {"wood": 2}})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, cid)
+    give(s, first, wood=10)
+    fences = cell_edges(6)  # cell 6: all 4 edges are interior (row/col 1)
+    interior_edge = next(e for e in fences if not is_border_edge(e))
+    with pytest.raises(ValueError):
+        sub_actions.build_fences(s, p, fences, [], tokens=[interior_edge])
+
+
+def test_fence_token_requires_owning_card(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    give(s, first, wood=10)
+    fences = cell_edges(4)
+    border_edge = next(e for e in fences if is_border_edge(e))
+    with pytest.raises(ValueError):
+        sub_actions.build_fences(s, p, fences, [], tokens=[border_edge])
+
+
+def test_fence_token_score_bonus_counts_tokens(engine, temp_card):
+    cid = "test_wood_palisades_score"
+    temp_card(cid, "Test Wood Palisades Score", "minor", "test",
+              fence_token={"cost": {"wood": 2}},
+              score_bonus=lambda s, p, i: sum(
+                  1 for owner in p.get("fence_tokens", {}).values()
+                  if owner == i["id"]))
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, cid)
+    give(s, first, wood=10)
+    fences = cell_edges(4)
+    token_edge = next(e for e in fences if is_border_edge(e))
+    sub_actions.build_fences(s, p, fences, [], tokens=[token_edge])
+    sc = score_player(p, s)
+    assert sc["bonus"] >= 1
+
+
+def test_fence_tokens_missing_key_old_save_safe(engine):
+    """An old save's player dict predates `fence_tokens` entirely --
+    every read goes through `.get(..., {})`, so normal (tokenless)
+    fence-building still works with the key absent."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    del p["fence_tokens"]
+    give(s, first, wood=4)
+    assert sub_actions.can_build_fences(s, p)
+    sub_actions.build_fences(s, p, cell_edges(4), [])
+    assert compute_pastures(p) == [[4]]

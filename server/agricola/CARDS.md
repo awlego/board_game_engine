@@ -582,3 +582,111 @@ Known remaining gaps, and how they'd fit if a future card needs them:
   pass (`temp_card`-only tests in `tests/test_agricola.py` exercise each
   mechanism, plus a `card_space`-based proof of the B023 recipe);
   registering them with `compendium_card` is still a separate pass.
+- **Field/fence/grid extensions (item 19, engine phase 13 — the last
+  item of the 19-item engine-gap program)** are now supported for
+  multi-stack card fields and a fence-piece substitute; per-player grid
+  growth remains gated. Motivating cards, per-card status:
+  - **K105 Acreage** (2 independent grain stacks) and **FR089 Landscape
+    Gardener** (2 stacks, any crop, plus an on-play bonus Sow action) —
+    UNBLOCKED. `field={"crops": ..., "stacks": n}` (default 1, zero
+    migration for every existing stacks=1 card field) gives a card
+    instance `n` independent `{"type","count"}`-or-`None` slots
+    (`inst["stacks"]`, read/written only via `cards.field_stacks`/
+    `get_field_stack`/`set_field_stack`/`open_field_stacks`, which also
+    read an old save's stacks=1 `inst["crops"]` with no `"stacks"` key
+    at all); `sub_actions.sow`'s `sow_items` gained an optional
+    `"stack"` selector so the same card id can be sown twice in one
+    call (or across separate calls) at different stack indices;
+    `engine._run_field_phase` harvests each stack independently; FR089's
+    on-play bonus Sow needs no new plumbing either -- a play hook can
+    call `sub_actions.sow` directly via the params channel, the same
+    shape Shifting Cultivation already uses for its on-play plow.
+    **Scoring finding:** FR089's "(this card does not count as a field
+    when scoring)" is true of every card field already and always was
+    -- `scoring.score_player`'s `fields` tally only ever counts farmyard
+    CELL tiles (`c["type"] == "field"`), never `cards.card_fields`, with
+    or without this phase's changes. See `decks/GUIDE.md`'s "Field
+    stacks" section for the full contract and the reader/writer audit.
+  - **C069 Land Consolidation** ("exchange 3 grain in a field for 1
+    vegetable in that field") — reassessed, STILL GATED. The multi-stack
+    mechanism is scoped to a CARD instance's own stacks; it does not
+    give a farmyard CELL (or any one stack) the ability to hold two crop
+    types in the same slot, which is exactly what this exchange needs.
+    No change from its prior status.
+  - **B030 Wood Palisades** (wood tokens instead of a fence piece,
+    excluded from the 15-fence cap, worth a bonus point, border-edge
+    only) — the general MECHANISM is IMPLEMENTED: `player["fence_tokens"]`
+    (edge -> granting card id) tracks which of `player["fences"]` (the
+    single geometric truth -- `compute_pastures`/`validate_fence_layout`'s
+    pasture logic is completely untouched) are tokens;
+    `state.validate_fence_layout` gained an optional `token_edges=`
+    parameter (backward compatible) so its own `MAX_FENCES` check
+    excludes them; `state.is_border_edge` is the new eligibility check;
+    `sub_actions.build_fences` gained an optional `tokens=` parameter
+    that prices normal edges as before and the card's own tokens
+    separately (`fence_token={"cost": {...}}`), validates ownership and
+    border-eligibility, and records them; bonus points are a plain
+    `score_bonus` counting the card's own tokens -- no new scoring
+    plumbing needed. Decisive reason this stayed at "mechanism only,
+    card not registered": consistent with every prior phase's practice
+    (guest tokens, card_space, board geometry, turn structure, hand/deck
+    manipulation) of proving a general mechanism via `temp_card` tests
+    before a specific compendium card adopts it — not a fidelity
+    obstacle in B030's own text, which is otherwise completely clean.
+  - **FR001 Abandoned Willow** ("remove 1 empty field, receive 4 wood")
+    — a plain RECIPE, no plumbing needed: a play hook flips
+    `cell["type"]` back to `"empty"` (Shifting Cultivation's on-play
+    plow, run in reverse). Verified no hidden invariant breaks (plow
+    targets, pasture validity, and scoring all behave correctly on the
+    reverted cell) — see `decks/GUIDE.md`'s "FR001 recipe" section and
+    `test_fr001_style_remove_empty_field_recipe`.
+  - **FR059 Witches' Dance Ground** (+/-2 farmyard spaces) — assessed,
+    STILL GATED: no clean seam. `NUM_CELLS`/`cell_rc`/`cell_index`/
+    `cell_edges`/`edge_cells` (the coordinate system fence edges are
+    keyed on), `orthogonal_neighbors`, `compute_regions`'s flood fill,
+    `plowable_cells`, and the `SCORING_TABLES` `"fields"`/`"pastures"`/
+    `unused_spaces` categories all assume a fixed 15-cell (3x5) farmyard
+    as GLOBAL constants/functions, not per-player state. A variable-
+    length or non-rectangular per-player farmyard would need all of
+    those to become per-player, and the fence edge-key scheme
+    reconsidered too — materially bigger than a bounded engine addition.
+    This is the one remaining gated geometry gap after phase 13.
+
+  None of K105/FR089/B030/FR001 are registered by this pass (`temp_card`-
+  only tests in `tests/test_agricola.py` exercise each mechanism, plus
+  `cards.needs_grain_field`/the Scythe hook/`scoring.score_player` were
+  updated to read crops via `cards.field_stacks` so they see a future
+  stacks>1 card correctly); registering them with `compendium_card`, and
+  updating the handful of existing sow-reactive hooks that still read
+  `inst["crops"]` directly (Seed Drill, and compendium E32/K118/
+  Smallholder — safe today since no stacks>1 card is registered; see
+  `decks/GUIDE.md`'s audit), are both still separate passes.
+
+**Summary — what's still not supported after all 13 phases:**
+
+- FR059-style per-player farmyard grid growth/shrinkage (this phase;
+  the fixed 15-cell/3x5 geometry is deeply load-bearing).
+- D148 Domestician Expert / A011 ("keep animals on a room-border slot" /
+  "on unplanted fields") — storage shapes that don't fit `holds_animals`
+  (a card instance) or farmyard cells at all (item 14).
+- I238 Chamberlain's selective reveal of upcoming round cards to one
+  player (needs a per-player view exception; item 17/18).
+- Moving/removing a built fence or room (removing a FIELD is now
+  supported — see this phase's FR001 recipe; fences/rooms are a bigger
+  case, see `decks/GUIDE.md`'s "Not supported" section for why).
+- Unplacing/returning another player's already-placed person (D093
+  Sheep Inspector, D094/D150) — no "unplace" primitive.
+- Farmers of the Moor (deck M): fuel/heating, horses, forest/moor tiles
+  — a whole expansion's systems.
+- Returning played cards to hand, or playing another player's cards;
+  score-sheet manipulation beyond bonus points; a card modifying the
+  action-space CARD deck's order/reveal; wood/food placed on a card to
+  be taken by OTHER players.
+- Per-card fidelity work still open even where the underlying mechanism
+  exists: registering any of the many `temp_card`-only-proven mechanisms
+  (items 14-19) onto their actual motivating compendium cards, and the
+  large "bonus build/play sub-action" backlog listed under item 7's
+  entry above (A095, A096, B088, B150, FR072, and others).
+
+  See `decks/GUIDE.md`'s "Not supported" section for the living,
+  itemized version of this list.

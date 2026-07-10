@@ -91,7 +91,12 @@ UNIMPLEMENTED = {
     "C069": "converts 3 of the grain in a field into 1 vegetable in that "
             "same field -- a field cell only stores a single "
             "{type,count} crop, so a partial-type conversion within one "
-            "field isn't representable",
+            "field isn't representable. Reassessed for engine phase 13's "
+            "multi-stack card fields: unaffected -- 'stacks' gives a "
+            "CARD instance several independent single-crop slots, but "
+            "does not change a farmyard CELL (or any one slot) to hold "
+            "two crop types at once, which is exactly what this "
+            "exchange needs. Still gated.",
     "C071": "reacts to the breeding phase (no hook exists) and grants a "
             "free Sow action outside the normal action-space flow (not "
             "exposed)",

@@ -26,8 +26,17 @@ from server.agricola.state import (
 )
 
 UNIMPLEMENTED = {
-    "FR001": "removes an empty field from the farmyard; moving/removing "
-             "built fields is explicitly unsupported",
+    "FR001": "removes an empty field from the farmyard, receiving 4 "
+             "wood. Reassessed for engine phase 13: no new plumbing "
+             "needed -- a play hook can just flip cell['type'] back to "
+             "'empty' (the same primitive Shifting Cultivation already "
+             "uses to plow a field, run in reverse); plow targets, "
+             "pasture validity, and scoring all behave correctly on the "
+             "reverted cell with no further changes (see decks/GUIDE.md's "
+             "'FR001 recipe' section and its regression test in "
+             "tests/test_agricola.py). Not registered by this pass "
+             "(a temp_card-only test exercises the recipe); registering "
+             "it as a real minor is a separate pass.",
     "FR005": "requires a per-round 'returning home phase' harvest hook; "
              "harvest_field only fires during the 6 official harvests, "
              "not every round",
@@ -91,7 +100,23 @@ UNIMPLEMENTED = {
              "conditional on a choice made inside that hook",
     "FR059": "extends or shrinks the farmyard by 2 spaces; the 15-cell "
              "grid (ROWS*COLS) is a fixed engine constant with no per-"
-             "player extension/removal mechanism",
+             "player extension/removal mechanism. Reassessed for engine "
+             "phase 13 (the last item of the 19-item engine-gap program) "
+             "and still gated -- no clean seam found: `player['cells']` "
+             "is a fixed-length list every geometry query (orthogonal_"
+             "neighbors' row/col math, compute_regions'/compute_pastures' "
+             "flood fill, plowable_cells) and every scoring table "
+             "('fields'/'pastures'/'unused_spaces') assumes has exactly "
+             "NUM_CELLS entries with a fixed 3x5 (row, col) shape; a "
+             "per-player variable-length or non-rectangular farmyard "
+             "would need cell_rc/cell_index/cell_edges/edge_cells (the "
+             "coordinate system fence edges are keyed on) to become "
+             "per-player rather than global constants -- a materially "
+             "bigger change than the multi-stack/fence-token mechanisms "
+             "above, not a bounded addition. See CARDS.md item 19 and "
+             "decks/GUIDE.md's 'Field/fence/grid extensions' section for "
+             "the full writeup; this is the one remaining gated geometry "
+             "gap after phase 13.",
 }
 
 _MIDDLE_CELLS = (6, 7, 8)  # the 3 farmyard cells with all 8 neighbors

@@ -314,7 +314,16 @@ mechanism.
   the bake dict in actions may then use this card's code as key.
 - `bake_bonus_per_grain=n`, `bake_bonus_flat=n` — extra food on bake.
 - `bake_on_spaces=("farmland", ...)` — grants Bake Bread on spaces.
-- `field={"crops": ("vegetable",)}` — this card is a sowable field.
+- `field={"crops": ("vegetable",), "stacks": n}` — this card is a
+  sowable field; `"stacks"` (default 1) gives it that many independent
+  crop slots (K105/FR089-style) -- see "Field/fence/grid extensions"
+  below for the full contract (`cards.field_stacks`/`get_field_stack`/
+  `set_field_stack`/`open_field_stacks`, the stack-addressed sow-action
+  shape, and old-save compat).
+- `fence_token={"cost": {"wood": 2}}` — this card lets its owner satisfy
+  a border fence edge with wood tokens (`player["fence_tokens"]`)
+  instead of a fence piece, excluded from `MAX_FENCES` (B030-style) --
+  see "Field/fence/grid extensions" below for the full contract.
 - `keep_crops_on_harvest=("vegetable",) or fn(state, player, inst) ->
   iterable` — crop types (queried via `cards.keep_crops_on_harvest(state,
   player)`, unioned across every in-play card) that the field phase
@@ -1268,6 +1277,212 @@ each mechanism, including a `test_b023_style_recipe_owner_only_until_
 round_14` proof of the recipe above); registering them with
 `compendium_card` is still a separate pass, same as every other item.
 
+## Field/fence/grid extensions (engine phase 13)
+
+The 19th and final item of the engine-gap program: card fields with
+more than one independent crop stack, a fence-piece substitute (wood
+tokens), a "remove a field" recipe, and an assessment of per-player
+farmyard-grid growth. Motivating compendium cards: K105 Acreage, FR089
+Landscape Gardener, C069 Land Consolidation, B030 Wood Palisades, FR001
+Abandoned Willow, FR059 Witches' Dance Ground. None of K105/FR089/C069/
+B030/FR001 are registered by this pass (`temp_card`-only tests in
+`tests/test_agricola.py` exercise each mechanism, same as phases 8-12);
+registering them with `compendium_card` is still a separate pass. FR059
+remains gated -- see its own subsection below.
+
+### Field stacks (K105 Acreage, FR089 Landscape Gardener)
+
+A card field's `field={"crops": (...), "stacks": n}` spec key gained an
+optional `"stacks"` entry, defaulting to 1. A stacks=1 card (every card
+field registered before this phase, and the overwhelming majority of
+future ones) is stored EXACTLY as before: `inst["crops"]` is `None` or
+`{"type", "count"}`, no `inst["stacks"]` key at all -- zero migration,
+every pre-phase-13 save is untouched, and nothing reading `inst["crops"]`
+directly for a stacks=1 card (there are many -- see the audit below)
+needs to change.
+
+A card declaring `stacks > 1` instead gets `inst["stacks"]`, a list of
+`stacks` independent `{"type", "count"}`-or-`None` slots, set up once in
+`cards.new_instance`. Four helpers in `cards.py` are the ONLY sanctioned
+way to read/write a card field's crop(s) -- they transparently cover
+both shapes (and an OLD SAVE's stacks=1 instance, which has `"crops"`
+but no `"stacks"` key, exactly like a fresh stacks=1 instance):
+
+- `cards.get_field_stack(inst, i=0)` -- stack `i`'s crop dict or `None`.
+- `cards.set_field_stack(inst, i, value)` -- write stack `i`.
+- `cards.field_stacks(inst)` -- every stack's crop-or-`None`, in order
+  (`[inst.get("crops")]` for a stacks=1/legacy instance).
+- `cards.open_field_stacks(inst)` -- indices of currently-unplanted
+  stacks.
+
+**Sow action shape:** `sub_actions.sow`'s `sow_items` entries for a card
+field gained an optional `"stack"` key: `{"card": cid, "crop": ...,
+"stack": i}`. Omit it for a stacks=1 card (defaults to 0, identical to
+before). A stacks>1 card may appear TWICE in one `sow_items` list (once
+per stack index) -- sowing both of K105's grain stacks, or one of
+FR089's stacks with grain and the other with vegetable, in a single
+action. Each `(card, stack)` pair may only be sown once per call, and
+`stack` must be in range for that card's `field["stacks"]`.
+
+**Harvest semantics:** `engine._run_field_phase`'s card-field loop
+iterates `cards.field_stacks(inst)` and credits/decrements each stack
+independently -- a stacks=2 card with both stacks planted yields 2 crops
+per harvest, one from each stack; `cards.keep_crops_on_harvest` is
+checked per stack, same as before per card. `scoring.score_player` sums
+every stack's crop into the grain/vegetable scoring category the same
+way (via `cards.field_stacks`); card fields already never counted
+toward the `"fields"` scoring category (`score_player`'s `fields` tally
+only ever counts farmyard CELL tiles, never `cards.card_fields`), so
+FR089's "(this card does not count as a field when scoring)" is true of
+every card field for free, stacks or no stacks.
+
+**Old-save compat:** an instance persisted before this phase has
+`"crops"` and no `"stacks"` key at all -- every helper above treats that
+identically to a freshly-created stacks=1 instance (see
+`test_field_stack_helpers_read_old_save_shape_safely`).
+
+**Audit: every `inst["crops"]`/`card_fields` reader, and its
+disposition** (grep for `\["crops"\]`/`card_fields(` across
+`server/agricola/` turns up ~17 files):
+
+- `cards.py` (`needs_grain_field`, `_scythe_hook` -- Scythe), `engine.py`
+  (`_run_field_phase`), `scoring.py` (`score_player`) -- all UPDATED to
+  read via `cards.field_stacks` (see above), so they see stacks>1 crops
+  correctly even though no such card is registered yet.
+- `sub_actions.py` (`empty_fields`, `sow`) -- UPDATED (see above).
+- Every per-card compendium implementation across `decks/deck_*.py`
+  (deck_a/b/c/d/e/i/k/fr's minors and occupations modules, plus
+  `tools/export_agricola_cards.py`'s catalog exporter) reads/writes
+  `inst["crops"]` DIRECTLY for a card's own effect (e.g. a "your grain
+  card fields" counter, or a sow-reactive hook bumping the freshly-sown
+  crop's count -- Seed Drill, and compendium E32 Potato Dibber/K118
+  Liquid Manure/K-deck Smallholder all do `target["crops"]["count"] +=
+  n` from the `sow` event's `ctx["sown"]` list). These are UNCHANGED and
+  safe TODAY, because every field card actually registered defaults to
+  stacks=1, for which `inst["crops"]` is exactly the old shape. They are
+  NOT stack-aware: a stacks>1 card's `inst["crops"]` is always `None`
+  (its crops live in `inst["stacks"]` instead), so a future card
+  registration that combines a stacks>1 field with one of these
+  sow-reactive cards would need updating them to use `cards.
+  get_field_stack`/`field_stacks` -- flagged here for whoever registers
+  K105/FR089 for real. The `sow` event's `ctx["sown"]` list itself was
+  deliberately left as `(target, crop)` 2-tuples (target = the card
+  instance or cell index, exactly as before) rather than growing a
+  third "which stack" element, specifically to avoid a mass rewrite of
+  these ~10 existing consumers; `sub_actions.sow`'s own stack bookkeeping
+  (which stack was just planted, and the same-stack-twice check) is
+  purely internal to that function and never needs to leak into `sown`.
+
+### Fence tokens (B030 Wood Palisades)
+
+"Instead of a fence piece, you can place 2 wood from your supply on
+fence spaces at the edge of your farmyard. These fence spaces with 2
+wood are worth 1 bonus point." Requirements: a token edge (a) completes
+enclosures exactly like a fence, geometrically; (b) does NOT count
+against `MAX_FENCES` (15); (c) costs what the card says (2 wood),
+independent of normal fence pricing/discounts; (d) scores a bonus point;
+(e) is restricted to the farmyard's outer border.
+
+`player["fences"]` stays the SINGLE geometric truth -- every pasture/
+enclosure computation (`compute_pastures`, `validate_fence_layout`'s own
+connectivity/enclosure checks) is completely untouched; a token edge is
+just a normal member of that list. `player["fence_tokens"]` (new, `{}`
+by default -- see `create_player`; `.get("fence_tokens", {})` everywhere
+else so an old save missing the key entirely doesn't crash) maps
+`edge -> granting card id` for whichever of `player["fences"]` are
+tokens. A card grants this with the spec key `fence_token={"cost":
+{"wood": 2}}`; `cards.fence_token_card(player)` finds the (first)
+in-play card granting it.
+
+`state.validate_fence_layout` gained an optional `token_edges=
+frozenset()` parameter (backward compatible -- every pre-existing call
+site passes 2 positional args and is unaffected): its `MAX_FENCES` check
+becomes `len(fences) - len(token_edges & fences) > MAX_FENCES`, so token
+edges don't count against the cap even though they're part of the same
+geometric layout being validated. `state.is_border_edge(edge)` (`len(
+edge_cells(edge)) == 1`) is the new border-eligibility check.
+
+`sub_actions.build_fences` gained an optional `tokens=` parameter (a
+subset of `new_fences` to satisfy with wood tokens instead of a fence
+piece):
+
+```python
+sub_actions.build_fences(state, player, new_fences, log, tokens={edge, ...})
+```
+
+It validates `tokens <= set(new_fences)`, that the player has a
+`fence_token_card`, and that every token edge is a border edge (`state.
+is_border_edge`); prices the REMAINING (non-token) edges through the
+normal `cost_override`/`modified_cost` path exactly as before, then adds
+the granting card's own `fence_token["cost"]` (per token, unconditional
+-- not affected by `cost_override="free"`, since it's the CARD's own
+price, not the generic fence cost); and records each token edge in
+`player["fence_tokens"]`. `can_build_fences`'s own `MAX_FENCES` pre-check
+similarly excludes `player.get("fence_tokens", {})` from the count.
+Scoring is a normal `score_bonus=fn(state, player, inst) -> int` --
+`B030`-style: `sum(1 for owner in p.get("fence_tokens", {}).values() if
+owner == inst["id"])`; no new scoring plumbing needed.
+
+Engine wiring: the two action-space dispatch sites that build fences
+("fencing", "farm_redevelopment") now thread an opaque `action.get(
+"tokens")` through to `_do_build_fences`/`sub_actions.build_fences`,
+exactly parallel to the existing `action.get("payment")` channel.
+
+**Client note:** `client/games/Agricola_MP.jsx` renders fences from
+`player["fences"]` alone; a token edge renders identically to a normal
+fence today (acceptable for now -- no client change made in this pass).
+
+### FR001 recipe: "remove an empty field"
+
+FR001 Abandoned Willow: "Immediately remove 1 empty field from your
+farmyard and receive 4 wood. (That space now counts as unused.)" No new
+engine plumbing needed -- exactly like Shifting Cultivation's on-play
+plow (`ctx["params"]["cell"]`, `player["cells"][cell]["type"] =
+"field"`), a play hook can flip a field cell back with the same
+primitive, run in reverse:
+
+```python
+def _abandoned_willow_play(state, player, inst, ctx):
+    cell = (ctx.get("params") or {}).get("cell")
+    c = player["cells"][cell] if isinstance(cell, int) else None
+    if c is None or c["type"] != "field" or c["crops"]:
+        raise ValueError("Choose an empty field to remove (params.cell)")
+    c["type"] = "empty"
+    player["resources"]["wood"] += 4
+    ctx["log"].append(f"{player['name']} removes an empty field, gets 4 wood")
+```
+
+Verified no hidden invariant breaks: `plowable_cells` treats the
+reverted cell as a normal empty, unfenced, un-stabled candidate (plowing
+it again works exactly as if it had never been a field); pasture/fence
+validation treats it as an ordinary empty cell (`validate_fence_layout`/
+`compute_pastures` don't special-case field history); and `score_player`
+counts it as `unused` (the same as any other empty, unstabled, unfenced
+cell) rather than as a field, matching the card's own "(that space now
+counts as unused)" clause exactly. See `test_fr001_style_remove_empty_
+field_recipe` for the full regression (plow target, pasture validity,
+and scoring all checked after the revert).
+
+### FR059: gated (grid growth)
+
+FR059 Witches' Dance Ground: place beside the farm for +2 farmyard
+spaces (plus 1 bonus point), or place ON the farm to remove 2 spaces.
+Reassessed for this phase and still gated -- no clean seam: `player[
+"cells"]` is a fixed-length (`NUM_CELLS` = `ROWS * COLS` = 15) list, and
+EVERY geometry query assumes that fixed shape -- `cell_rc`/`cell_index`/
+`cell_edges`/`edge_cells` (the (row, col) <-> index <-> edge-key
+coordinate system fence edges are keyed on) are module-level functions
+over the GLOBAL `ROWS`/`COLS` constants, not per-player state;
+`orthogonal_neighbors`, `compute_regions`'s flood fill, and
+`plowable_cells` all walk that same fixed grid; and `SCORING_TABLES`'s
+`"fields"`/`"pastures"`/`unused_spaces` categories are tuned to a
+15-cell farmyard. Making the farmyard variable-length per player would
+mean threading a per-player (rows, cols, extra-cells) shape through
+every one of those, plus the fence edge-key scheme itself -- materially
+bigger than the multi-stack/fence-token additions above, not a bounded
+engine change. This is the one remaining gated geometry gap after phase
+13 (see CARDS.md item 19).
+
 ## Not supported (mark UNIMPLEMENTED, cite the mechanic)
 
 - Affecting other players' hands, people, or farms directly (guest
@@ -1278,7 +1493,15 @@ round_14` proof of the recipe above); registering them with
   "unplace" primitive)
 - Farmers of the Moor concepts: fuel, horses, forest/moor tiles,
   heating, special actions (all of deck M, and FotM-tagged rulings)
-- Moving/removing built fences, rooms, or fields
+- Moving/removing built fences or rooms (removing a FIELD is now
+  supported -- see "Field/fence/grid extensions"'s FR001 recipe above;
+  fences/rooms are a materially bigger case: a fence edge's removal can
+  split/merge pastures and strand animals, and a room's removal
+  interacts with `house_capacity`'s `"per_room"` mode, `extra_rooms`,
+  and the family-growth room check, none of which a plain cell-type
+  flip accounts for)
+- Per-player farmyard grid growth/shrinkage beyond the fixed 3x5 board
+  (FR059 -- see "Field/fence/grid extensions" above)
 - Returning played cards to hand; playing cards from other players
 - Score-sheet manipulation beyond bonus points
 - Wood/food placed on *this card* to be taken by OTHER players

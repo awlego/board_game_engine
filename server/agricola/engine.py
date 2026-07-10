@@ -634,14 +634,17 @@ class AgricolaEngine(GameEngine):
                         if crops["count"] <= 0:
                             cell["crops"] = None
             for inst in cards.card_fields(p):
-                crops = inst.get("crops")
-                if crops:
-                    got[crops["type"]] += 1
-                    card_fields_got[crops["type"]] += 1
-                    if crops["type"] not in keep:
-                        crops["count"] -= 1
-                        if crops["count"] <= 0:
-                            inst["crops"] = None
+                # Each of a card field's stacks (default 1; K105/FR089-
+                # style multi-stack cards have more) yields its own crop
+                # independently -- see cards.field_stacks.
+                for si, crops in enumerate(cards.field_stacks(inst)):
+                    if crops:
+                        got[crops["type"]] += 1
+                        card_fields_got[crops["type"]] += 1
+                        if crops["type"] not in keep:
+                            crops["count"] -= 1
+                            if crops["count"] <= 0:
+                                cards.set_field_stack(inst, si, None)
             p["resources"]["grain"] += got["grain"]
             p["resources"]["vegetable"] += got["vegetable"]
             if got["grain"] or got["vegetable"]:
@@ -1089,7 +1092,8 @@ class AgricolaEngine(GameEngine):
                                        space_id=sid, payment=payment)
         elif sid == "fencing":
             self._do_build_fences(state, p, action.get("fences"), log,
-                                  space_id=sid, payment=action.get("payment"))
+                                  space_id=sid, payment=action.get("payment"),
+                                  tokens=action.get("tokens"))
         elif sid == "grain_utilization":
             sow = action.get("sow") or []
             bake = action.get("bake")
@@ -1134,7 +1138,8 @@ class AgricolaEngine(GameEngine):
             self._do_renovate(state, p, action, log, space_id=sid)
             if action.get("fences"):
                 self._do_build_fences(state, p, action["fences"], log,
-                                      space_id=sid, payment=action.get("payment"))
+                                      space_id=sid, payment=action.get("payment"),
+                                      tokens=action.get("tokens"))
         else:
             raise ValueError(f"Unhandled action space: {sid}")
 
@@ -1208,9 +1213,11 @@ class AgricolaEngine(GameEngine):
         sub_actions.build_stables(state, p, cells, log,
                                   ctx={"space_id": space_id, "payment": payment})
 
-    def _do_build_fences(self, state, p, new_fences, log, space_id=None, payment=None):
+    def _do_build_fences(self, state, p, new_fences, log, space_id=None,
+                         payment=None, tokens=None):
         sub_actions.build_fences(state, p, new_fences, log,
-                                 ctx={"space_id": space_id, "payment": payment})
+                                 ctx={"space_id": space_id, "payment": payment},
+                                 tokens=tokens)
 
     def _renovation_possible(self, state, p):
         return sub_actions.renovation_possible(state, p)

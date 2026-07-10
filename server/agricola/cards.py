@@ -81,8 +81,9 @@ def card(cid, name, ctype, text, deck="base", min_players=1, cost=None,
     bake, raw_values, bake_bonus, cost_mod, occ_cost_delta,
     pasture_capacity_bonus, pasture_capacity_mod, unfenced_stable_capacity_mod,
     pasture_secondary_types, holds_animals, house_capacity, extra_rooms,
-    field, bake_on_spaces, lasso, score_bonus, card_space, skip_turn,
-    after_skip, placement_blocked)."""
+    field (its own "stacks" key defaults to 1; see cards.field_stacks),
+    bake_on_spaces, lasso, score_bonus, card_space, skip_turn,
+    after_skip, placement_blocked, fence_token)."""
     assert cid not in CARDS, cid
     # A traveling card is handed to the left neighbor (or removed, solo)
     # right after its `play` hook runs and never sits in `player["minors"]`
@@ -100,7 +101,11 @@ def card(cid, name, ctype, text, deck="base", min_players=1, cost=None,
 
 
 def new_instance(cid):
-    return {"id": cid, "crops": None, "data": {}}
+    inst = {"id": cid, "crops": None, "data": {}}
+    field_spec = CARDS[cid].get("field")
+    if field_spec and field_spec.get("stacks", 1) > 1:
+        inst["stacks"] = [None] * field_spec["stacks"]
+    return inst
 
 
 def spec(card_instance_or_id):
@@ -438,6 +443,15 @@ def has_lasso(player):
     return any(spec(i).get("lasso") for i in in_play(player))
 
 
+def fence_token_card(player):
+    """The in-play card instance (if any) that lets `player` satisfy a
+    border fence edge with wood tokens instead of a fence piece (spec
+    key `fence_token={"cost": {...}}` -- e.g. B030 Wood Palisades). Only
+    one such card is expected in practice; the first found wins."""
+    return next((i for i in in_play(player) if spec(i).get("fence_token")),
+                None)
+
+
 def grant_guest(player, n=1):
     """Grant `player` n extra work-phase placement(s) ("guest tokens")
     for the *current* round. Consumed by the placement flow (folded into
@@ -560,6 +574,55 @@ def card_fields(player):
     return [i for i in player["minors"] if spec(i).get("field")]
 
 
+# ── Field stacks (engine phase 13: multi-stack card fields) ──────────
+#
+# A card field's `field={"crops": (...), "stacks": n}` spec key defaults
+# to a single stack (n=1), stored exactly as before in the flat
+# `inst["crops"]` slot (None or {"type", "count"}) -- zero migration,
+# every pre-phase-13 save/card is untouched. A card declaring `stacks`
+# > 1 (K105 Acreage, FR089 Landscape Gardener) instead gets
+# `inst["stacks"]`, a list of `stacks` independent {"type", "count"}-or-
+# None slots, set up once in `new_instance`. The four helpers below are
+# the ONLY sanctioned way to read/write a card field's crop(s) -- they
+# transparently cover both shapes (and an old save's stacks=1 instance,
+# which has "crops" but no "stacks" key at all), so callers never need
+# to branch on which representation a given card uses. See decks/
+# GUIDE.md's "Field stacks" section for the full contract and the
+# sow-action-shape / harvest-semantics writeup.
+def get_field_stack(inst, i=0):
+    """The crop dict (or None) in stack `i` of a card-field instance."""
+    stacks = inst.get("stacks")
+    if stacks is not None:
+        return stacks[i]
+    if i:
+        raise IndexError(f"{inst['id']} has no stack {i}")
+    return inst.get("crops")
+
+
+def set_field_stack(inst, i, value):
+    """Write stack `i`'s crop dict (or None to clear it)."""
+    stacks = inst.get("stacks")
+    if stacks is not None:
+        stacks[i] = value
+    elif i:
+        raise IndexError(f"{inst['id']} has no stack {i}")
+    else:
+        inst["crops"] = value
+
+
+def field_stacks(inst):
+    """Every stack's crop dict-or-None, in index order. A legacy
+    stacks=1 instance (or an old save with no "stacks" key at all)
+    yields the single-element `[inst.get("crops")]`."""
+    stacks = inst.get("stacks")
+    return list(stacks) if stacks is not None else [inst.get("crops")]
+
+
+def open_field_stacks(inst):
+    """Indices of `inst`'s currently-unplanted stacks."""
+    return [i for i, c in enumerate(field_stacks(inst)) if c is None]
+
+
 def keep_crops_on_harvest(state, player):
     """Crop types (a subset of "grain"/"vegetable") that the field phase
     should count and credit as usual but NOT decrement from the field --
@@ -602,8 +665,8 @@ def needs_grain_field(n=1):
     def ok(s, p):
         fields = sum(1 for c in p["cells"]
                      if c["crops"] and c["crops"]["type"] == "grain")
-        fields += sum(1 for i in card_fields(p)
-                      if i["crops"] and i["crops"]["type"] == "grain")
+        fields += sum(1 for i in card_fields(p) for crop in field_stacks(i)
+                      if crop and crop["type"] == "grain")
         return fields >= n
     return (ok, f"{n} grain field(s)")
 
@@ -1294,8 +1357,8 @@ card("minor_wool_blankets", "Wool Blankets", "minor", cost={"wood": 1},
 def _scythe_hook(state, player, inst, ctx):
     fields = sum(1 for c in player["cells"]
                  if c["crops"] and c["crops"]["type"] == "grain")
-    fields += sum(1 for i in card_fields(player)
-                  if i["crops"] and i["crops"]["type"] == "grain")
+    fields += sum(1 for i in card_fields(player) for crop in field_stacks(i)
+                  if crop and crop["type"] == "grain")
     if fields >= 2:
         player["resources"]["grain"] += 1
         ctx["log"].append(f"{player['name']}'s Scythe grants 1 grain")

@@ -177,16 +177,31 @@ def compute_pastures(player):
     return pastures
 
 
-def validate_fence_layout(player, fences):
+def is_border_edge(edge):
+    """True if `edge` sits on the farmyard's outer border (touches only
+    1 cell) rather than between two cells -- e.g. B030 Wood Palisades'
+    wood-token fences are restricted to these."""
+    return len(edge_cells(edge)) == 1
+
+
+def validate_fence_layout(player, fences, token_edges=frozenset()):
     """
     Validate a complete fence layout (list of edge keys) against the
     player's tiles. Returns (ok, error_message, pastures).
+
+    `token_edges` (engine phase 13, B030 Wood Palisades) are edges within
+    `fences` satisfied by wood tokens instead of a fence piece -- they
+    still count as real fences for every geometry check below (enclosing
+    a pasture, connectivity, ...), but are excluded from the MAX_FENCES
+    cap, since a card providing them explicitly says "instead of a fence
+    piece" (a separate resource, not one of the 15 physical fence
+    pieces).
     """
     fences = set(fences)
     for e in fences:
         if e not in VALID_EDGES:
             return False, f"Invalid fence position: {e}", []
-    if len(fences) > MAX_FENCES:
+    if len(fences) - len(token_edges & fences) > MAX_FENCES:
         return False, f"Only {MAX_FENCES} fences are available", []
 
     regions = compute_regions(fences)
@@ -645,6 +660,7 @@ def create_player(index, player_id, name):
         "resources": {r: 0 for r in RESOURCE_TYPES},
         "cells": cells,
         "fences": [],
+        "fence_tokens": {},
         "house_type": "wood",
         "people_total": 2,
         "people_placed": 0,

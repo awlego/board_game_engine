@@ -57,8 +57,20 @@ UNIMPLEMENTED = {
             "discrete same-turn event; cook conversions are a static "
             "rate query (raw_values/cook), never a fired event",
     "B030": "requires an alternate fence-piece representation (wood "
-            "palisades) with its own per-piece scoring; the engine "
-            "models a single fence type",
+            "palisades) with its own per-piece scoring. Now supported "
+            "(engine phase 13): player['fence_tokens'] (edge -> granting "
+            "card id) marks a subset of player['fences'] as wood-token "
+            "edges -- fences stays the single geometric truth (no "
+            "changes to validate_fence_layout's/compute_pastures' "
+            "pasture logic), tokens are excluded from the 15-fence cap, "
+            "priced at the card's own fence_token['cost'] instead of "
+            "normal fence pricing, and restricted to border edges (state."
+            "is_border_edge) via sub_actions.build_fences's new `tokens=` "
+            "param; bonus points are a normal score_bonus counting the "
+            "card's own tokens. See decks/GUIDE.md's 'Fence tokens' "
+            "section. Not registered by this pass (temp_card-only tests "
+            "exercise the mechanism); registering it as a real minor is "
+            "a separate pass.",
     "B034": "requires detecting that animals taken from a space were "
             "fully accommodated (not discarded); no post-accommodation "
             "hook exists",

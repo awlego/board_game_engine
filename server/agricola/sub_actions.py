@@ -84,7 +84,7 @@ from server.agricola.state import (
     ANIMAL_TYPES, MAX_PEOPLE, MAX_STABLES, MAX_FENCES, NUM_CELLS,
     TOTAL_ROUNDS, MAJOR_IMPROVEMENTS, FIREPLACES, COOKING_HEARTHS,
     orthogonal_neighbors, compute_pastures, validate_fence_layout,
-    validate_animal_placement,
+    validate_animal_placement, is_border_edge,
 )
 from server.agricola import cards
 
@@ -337,7 +337,7 @@ def build_stables(state, player, cells, log, cost_override=None, ctx=None):
 # ── Build fences ─────────────────────────────────────────────────────
 
 def can_build_fences(state, player, cost_override=None, ctx=None):
-    if len(player["fences"]) >= MAX_FENCES:
+    if len(player["fences"]) - len(player.get("fence_tokens", {})) >= MAX_FENCES:
         return False
     n = 1 if player["fences"] else 4
     if cost_override == "free":
@@ -349,7 +349,18 @@ def can_build_fences(state, player, cost_override=None, ctx=None):
     return can_afford(player, cost)
 
 
-def build_fences(state, player, new_fences, log, cost_override=None, ctx=None):
+def build_fences(state, player, new_fences, log, cost_override=None, ctx=None,
+                 tokens=None):
+    """`tokens` (engine phase 13, B030 Wood Palisades): a subset of
+    `new_fences` satisfied by wood tokens from an in-play `fence_token`
+    card instead of a fence piece -- restricted to border edges (see
+    `state.is_border_edge`), priced at the card's own `fence_token["cost"]`
+    (paid in ADDITION to, and independent of, `cost_override`/`cost_mod`
+    for the remaining normal fences), and recorded in
+    `player["fence_tokens"]` (edge -> granting card id) so `can_
+    build_fences`/`build_fences`'s own MAX_FENCES check -- and `state.
+    validate_fence_layout`'s -- both exclude them from the 15-fence cap.
+    See decks/GUIDE.md's "Fence tokens" section for the full contract."""
     if not new_fences or not isinstance(new_fences, list):
         raise ValueError("Choose fences to build")
     if len(new_fences) != len(set(new_fences)):
@@ -357,23 +368,48 @@ def build_fences(state, player, new_fences, log, cost_override=None, ctx=None):
     for e in new_fences:
         if e in player["fences"]:
             raise ValueError("Fence already built there")
+    tokens = set(tokens or [])
+    token_card = None
+    if tokens:
+        if not tokens <= set(new_fences):
+            raise ValueError("Wood-token edges must be part of this fence layout")
+        token_card = cards.fence_token_card(player)
+        if token_card is None:
+            raise ValueError("No card lets you place wood-token fences")
+        if any(not is_border_edge(e) for e in tokens):
+            raise ValueError(
+                "Wood tokens can only be placed on the farmyard's outer border")
     old_pastures = {tuple(pa) for pa in compute_pastures(player)}
     start_index = len(player["fences"])
     layout = player["fences"] + list(new_fences)
-    ok, err, _pastures = validate_fence_layout(player, layout)
+    existing_tokens = set(player.get("fence_tokens", {}))
+    ok, err, _pastures = validate_fence_layout(
+        player, layout, token_edges=existing_tokens | tokens)
     if not ok:
         raise ValueError(err)
+    normal_fences = [e for e in new_fences if e not in tokens]
     full_ctx = dict(ctx or {})
-    full_ctx.update({"count": len(new_fences), "start_index": start_index})
-    cost = _effective_cost(
+    full_ctx.update({"count": len(normal_fences), "start_index": start_index})
+    normal_cost = _effective_cost(
         cost_override,
         lambda: cards.modified_cost(state, player, "fences",
-                                     {"wood": len(new_fences)},
+                                     {"wood": len(normal_fences)},
                                      full_ctx))
-    if cost_override != "free":
-        pay(player, cost)
+    cost = dict(normal_cost) if cost_override != "free" else {}
+    if tokens:
+        token_cost = cards.spec(token_card).get("fence_token", {}).get("cost", {})
+        for good, amount in token_cost.items():
+            cost[good] = cost.get(good, 0) + amount * len(tokens)
+    pay(player, cost)
     player["fences"] = sorted(layout)
-    log.append(f"{player['name']} builds {len(new_fences)} fence(s)")
+    if tokens:
+        ftok = player.setdefault("fence_tokens", {})
+        for e in tokens:
+            ftok[e] = token_card["id"]
+    msg = f"{player['name']} builds {len(normal_fences)} fence(s)"
+    if tokens:
+        msg += f" and {len(tokens)} wood-token fence(s)"
+    log.append(msg)
 
     new_pastures = [pa for pa in compute_pastures(player)
                     if tuple(pa) not in old_pastures]
@@ -709,7 +745,8 @@ def play_minor(state, player, cid, log, params=None, cost_override=None, ctx=Non
 def empty_fields(player):
     cells = [i for i, c in enumerate(player["cells"])
              if c["type"] == "field" and not c["crops"]]
-    card_targets = [i for i in cards.card_fields(player) if not i["crops"]]
+    card_targets = [i for i in cards.card_fields(player)
+                    if cards.open_field_stacks(i)]
     return cells, card_targets
 
 
@@ -720,10 +757,17 @@ def can_sow(player):
 
 
 def sow(state, player, sow_items, log):
+    """`sow_items`: `{"cell": idx, "crop": ...}` (farmyard field tile) or
+    `{"card": cid, "crop": ..., "stack": i}` (card field; "stack" selects
+    which of the card's `field["stacks"]` (default 1) independent slots
+    to plant -- omit it for a stacks=1 card, defaults to 0). Multiple
+    items may target the SAME card id at different stack indices in one
+    call (K105/FR089-style multi-stack cards) -- see decks/GUIDE.md's
+    "Field stacks" section."""
     if not isinstance(sow_items, list) or not sow_items:
         raise ValueError("Choose fields to sow")
     seen_cells = set()
-    seen_cards = set()
+    seen_stacks = set()
     sown = []
     counts = {"grain": 0, "vegetable": 0}
     for item in sow_items:
@@ -736,17 +780,24 @@ def sow(state, player, sow_items, log):
             cid = item["card"]
             inst = next((i for i in cards.card_fields(player)
                         if i["id"] == cid), None)
-            if inst is None or cid in seen_cards:
+            if inst is None:
                 raise ValueError("Invalid card field")
-            allowed = cards.CARDS[cid]["field"]["crops"]
+            field_spec = cards.CARDS[cid]["field"]
+            n_stacks = field_spec.get("stacks", 1)
+            stack = item.get("stack", 0)
+            if not isinstance(stack, int) or not (0 <= stack < n_stacks) \
+                    or (cid, stack) in seen_stacks:
+                raise ValueError("Invalid card field")
+            allowed = field_spec["crops"]
             if crop not in allowed:
                 raise ValueError(
                     f"{cards.CARDS[cid]['name']} can only grow "
                     + "/".join(allowed))
-            if inst["crops"]:
+            if cards.get_field_stack(inst, stack):
                 raise ValueError("That card field is already planted")
-            seen_cards.add(cid)
-            inst["crops"] = {"type": crop, "count": 3 if crop == "grain" else 2}
+            seen_stacks.add((cid, stack))
+            cards.set_field_stack(
+                inst, stack, {"type": crop, "count": 3 if crop == "grain" else 2})
             sown.append((inst, crop))
         else:
             cell = item.get("cell")

@@ -23,14 +23,19 @@ def score_player(player, state=None):
                 grain += c["crops"]["count"]
             else:
                 vegetable += c["crops"]["count"]
-    # Crops growing on card fields (e.g. Beanfield) count as crops
-    # but not as field tiles.
+    # Crops growing on card fields (e.g. Beanfield) count as crops but
+    # not as field tiles -- true of every card field already (`fields`
+    # above only ever counts cells, never card_fields), which is
+    # incidentally exactly what FR089 Landscape Gardener's "this card
+    # does not count as a field when scoring" asks for, for free. Each
+    # of a card field's stacks (default 1) is summed independently.
     for inst in cards.card_fields(player):
-        if inst["crops"]:
-            if inst["crops"]["type"] == "grain":
-                grain += inst["crops"]["count"]
-            else:
-                vegetable += inst["crops"]["count"]
+        for crop in cards.field_stacks(inst):
+            if crop:
+                if crop["type"] == "grain":
+                    grain += crop["count"]
+                else:
+                    vegetable += crop["count"]
 
     unused = sum(
         1 for i, c in enumerate(cells)

@@ -1326,7 +1326,7 @@
   "deck": "B",
   "implemented": false,
   "name": "Wood Palisades",
-  "reason": "requires an alternate fence-piece representation (wood palisades) with its own per-piece scoring; the engine models a single fence type",
+  "reason": "requires an alternate fence-piece representation (wood palisades) with its own per-piece scoring. Now supported (engine phase 13): player['fence_tokens'] (edge -> granting card id) marks a subset of player['fences'] as wood-token edges -- fences stays the single geometric truth (no changes to validate_fence_layout's/compute_pastures' pasture logic), tokens are excluded from the 15-fence cap, priced at the card's own fence_token['cost'] instead of normal fence pricing, and restricted to border edges (state.is_border_edge) via sub_actions.build_fences's new `tokens=` param; bonus points are a normal score_bonus counting the card's own tokens. See decks/GUIDE.md's 'Fence tokens' section. Not registered by this pass (temp_card-only tests exercise the mechanism); registering it as a real minor is a separate pass.",
   "text": "Instead of a fence piece, you can place 2 wood from your supply on fence spaces at the edge of your farmyard. These fence spaces with 2 wood are worth 1 bonus point.",
   "type": "minor"
  },
@@ -2810,7 +2810,7 @@
   "deck": "C",
   "implemented": false,
   "name": "Land Consolidation",
-  "reason": "converts 3 of the grain in a field into 1 vegetable in that same field -- a field cell only stores a single {type,count} crop, so a partial-type conversion within one field isn't representable",
+  "reason": "converts 3 of the grain in a field into 1 vegetable in that same field -- a field cell only stores a single {type,count} crop, so a partial-type conversion within one field isn't representable. Reassessed for engine phase 13's multi-stack card fields: unaffected -- 'stacks' gives a CARD instance several independent single-crop slots, but does not change a farmyard CELL (or any one slot) to hold two crop types at once, which is exactly what this exchange needs. Still gated.",
   "text": "At any time, you can exchange 3 grain in a field for 1 vegetable in that field. (1VP. Req 3 occ.) This card is a field that can only grow vegetables. You can immediately turn each vegetable you harvested from this card into 4 food.",
   "type": "minor"
  },
@@ -6113,7 +6113,7 @@
   "deck": "FR",
   "implemented": false,
   "name": "Abandoned Willow",
-  "reason": "removes an empty field from the farmyard; moving/removing built fields is explicitly unsupported",
+  "reason": "removes an empty field from the farmyard, receiving 4 wood. Reassessed for engine phase 13: no new plumbing needed -- a play hook can just flip cell['type'] back to 'empty' (the same primitive Shifting Cultivation already uses to plow a field, run in reverse); plow targets, pasture validity, and scoring all behave correctly on the reverted cell with no further changes (see decks/GUIDE.md's 'FR001 recipe' section and its regression test in tests/test_agricola.py). Not registered by this pass (a temp_card-only test exercises the recipe); registering it as a real minor is a separate pass.",
   "text": "Immediately remove 1 empty field from your farmyard and receive 4 Wood. (That space now counts as unused).",
   "type": "minor"
  },
@@ -6669,7 +6669,7 @@
   "deck": "FR",
   "implemented": false,
   "name": "Witches' Dance Ground",
-  "reason": "extends or shrinks the farmyard by 2 spaces; the 15-cell grid (ROWS*COLS) is a fixed engine constant with no per-player extension/removal mechanism",
+  "reason": "extends or shrinks the farmyard by 2 spaces; the 15-cell grid (ROWS*COLS) is a fixed engine constant with no per-player extension/removal mechanism. Reassessed for engine phase 13 (the last item of the 19-item engine-gap program) and still gated -- no clean seam found: `player['cells']` is a fixed-length list every geometry query (orthogonal_neighbors' row/col math, compute_regions'/compute_pastures' flood fill, plowable_cells) and every scoring table ('fields'/'pastures'/'unused_spaces') assumes has exactly NUM_CELLS entries with a fixed 3x5 (row, col) shape; a per-player variable-length or non-rectangular farmyard would need cell_rc/cell_index/cell_edges/edge_cells (the coordinate system fence edges are keyed on) to become per-player rather than global constants -- a materially bigger change than the multi-stack/fence-token mechanisms above, not a bounded addition. See CARDS.md item 19 and decks/GUIDE.md's 'Field/fence/grid extensions' section for the full writeup; this is the one remaining gated geometry gap after phase 13.",
   "text": "Place this card on or beside your farm. If you place it beside your farm, you gain 2 extra farmyard spaces (to be scored as normal) and you receive 1 Bonus point. If you place it on your farm, cover two orthogonally adjacent unused spaces which no longer count as part of your farm.",
   "type": "minor"
  },
@@ -6898,7 +6898,7 @@
   "deck": "FR",
   "implemented": false,
   "name": "Landscape Gardener",
-  "reason": "Landscape Gardener: 'sow on this card as if it were 2 fields' needs a card field slot holding 2 independent crop plantings; the field={...} architecture (and inst['crops']) supports exactly one crop per card instance. It also grants an immediate bonus Sow action on play, which would need the full sow-action flow replicated outside the placement dispatch.",
+  "reason": "Landscape Gardener: 'sow on this card as if it were 2 fields' (plus, per its full compendium text, 'when you play this card, you may take a Sow action'). Now supported -- the multi-stack field={'crops': ..., 'stacks': 2} architecture (engine phase 13, see decks/GUIDE.md's 'Field stacks' section) covers the first clause, and the second is a plain play hook calling sub_actions.sow(...) with an optional params channel (the same shape as Shifting Cultivation's on-play plow) -- no new plumbing needed for either. '(Does not count as a field when scoring)' is true of every card field already (scoring.py never counts card fields toward the 'fields' category), so that clause is free. Not registered by this pass (temp_card-only tests exercise the multi-stack mechanism); registering it as a real occupation is a separate pass.",
   "text": "When you Sow, you may Sow on this card as if it were 2 fields. When you play this card, you may take a \"Sow\" action. (This card does not count as a field when scoring.)",
   "type": "occupation"
  },
@@ -8942,7 +8942,7 @@
   "deck": "K",
   "implemented": false,
   "name": "Acreage",
-  "reason": "Acreage holds 2 independent sowable grain stacks, each harvested separately. The engine's card-field mechanism (inst['crops']) is a single {type,count} slot per card instance, and the harvest field-phase loop reads at most one stack per card field -- there is no way to represent or harvest a second, independently-sown stack.",
+  "reason": "Acreage holds 2 independent sowable grain stacks, each harvested separately. Now supported by cards.py's field={'crops': ..., 'stacks': n} architecture (engine phase 13) -- inst['stacks'] holds independent per-stack crop slots, sown/harvested independently (see decks/GUIDE.md's 'Field stacks' section). Not registered by this pass (temp_card-only tests exercise the mechanism); registering it as a real minor is a separate pass.",
   "text": "When you sow, you can plant grain on this card. There can be up to 2 stacks of grain on this card, as shown.",
   "type": "minor"
  },

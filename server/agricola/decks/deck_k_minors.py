@@ -27,11 +27,13 @@ from server.agricola.state import (
 
 UNIMPLEMENTED = {
     "K105": "Acreage holds 2 independent sowable grain stacks, each "
-            "harvested separately. The engine's card-field mechanism "
-            "(inst['crops']) is a single {type,count} slot per card "
-            "instance, and the harvest field-phase loop reads at most "
-            "one stack per card field -- there is no way to represent "
-            "or harvest a second, independently-sown stack.",
+            "harvested separately. Now supported by cards.py's "
+            "field={'crops': ..., 'stacks': n} architecture (engine "
+            "phase 13) -- inst['stacks'] holds independent per-stack "
+            "crop slots, sown/harvested independently (see decks/"
+            "GUIDE.md's 'Field stacks' section). Not registered by this "
+            "pass (temp_card-only tests exercise the mechanism); "
+            "registering it as a real minor is a separate pass.",
     "K109": "requires detecting an animal->food conversion during the "
             "feeding phase specifically. Neither _apply_feed's "
             "conversion loop nor _apply_accommodate's cook loop fires "

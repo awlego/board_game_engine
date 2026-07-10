@@ -39,7 +39,10 @@ def build_catalog():
                 if isinstance(value, tuple):
                     value = list(value)
                 if key == "field":
-                    value = {"crops": list(value["crops"])}
+                    field_value = {"crops": list(value["crops"])}
+                    if value.get("stacks", 1) != 1:
+                        field_value["stacks"] = value["stacks"]
+                    value = field_value
                 if key == "conversions":
                     value = [
                         {k: v for k, v in conv.items()
