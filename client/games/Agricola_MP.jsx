@@ -592,54 +592,310 @@ function HandPanel({ me, playableMinors }) {
 // ACTION BOARD
 // ============================================================
 
-function ActionBoard({ state, validSpaces, onPick, players }) {
-  const groups = [
-    { title: "Permanent", spaces: state.action_spaces.filter((s) => s.stage === 0) },
-    { title: "Round cards", spaces: state.action_spaces.filter((s) => s.stage > 0) },
-  ];
+// Engine-canonical board geometry (server/agricola/state.py
+// SPACE_POSITIONS / ROUND_SLOTS): [col, row] with col -1 the 3p/4p
+// extension strip, 0 the scroll column, 1 the accumulation column,
+// 2-7 the stage columns. The card revealed in round N always sits at
+// ROUND_SLOTS[N], so adjacency cards read the same on screen as in
+// the engine.
+const BOARD_POS = {
+  farm_expansion: [0, 0], meeting_place: [0, 1], grain_seeds: [0, 2],
+  farmland: [0, 3], lessons: [0, 4], day_laborer: [0, 5],
+  forest: [1, 2], clay_pit: [1, 3], reed_bank: [1, 4], fishing: [1, 5],
+  copse: [-1, 0], grove: [-1, 1],
+  resource_market_3p: [-1, 2], resource_market_4p: [-1, 2],
+  hollow_3p: [-1, 3], hollow_4p: [-1, 3],
+  lessons_b: [-1, 4], traveling_players: [-1, 5],
+};
+const ROUND_SLOTS = {
+  1: [2, 2], 2: [2, 3], 3: [2, 4], 4: [2, 5],
+  5: [3, 2], 6: [3, 3], 7: [3, 4],
+  8: [4, 2], 9: [4, 3],
+  10: [5, 2], 11: [5, 3],
+  12: [6, 2], 13: [6, 3],
+  14: [7, 2],
+};
+const stageOfRound = (r) => r <= 4 ? 1 : r <= 7 ? 2 : r <= 9 ? 3 : r <= 11 ? 4 : r <= 13 ? 5 : 6;
+// Official majors-board arrangement: hearths + Well on top, ovens and
+// crafts below.
+const MAJORS_LAYOUT = [
+  "fireplace_2", "fireplace_3", "cooking_hearth_4", "cooking_hearth_5", "well",
+  "clay_oven", "stone_oven", "joinery", "pottery", "basketmaker",
+];
+
+const BOARD_FONT = "'Cinzel', Georgia, serif";
+const GRASS_NOISE = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E")`;
+
+function WorkerDiscs({ space, players }) {
+  const idxs = [space.occupied_by, ...(space.extra_occupants || [])]
+    .filter((i) => i !== null && i !== undefined);
+  if (!idxs.length) return null;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {groups.map((g) => (
-        <div key={g.title}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: "#57534e", textTransform: "uppercase", marginBottom: 4 }}>
-            {g.title}
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 6 }}>
-            {g.spaces.map((sp) => {
-              const occupant = sp.occupied_by !== null ? players[sp.occupied_by] : null;
-              const occColor = occupant ? PLAYER_COLORS[occupant.index] : null;
-              const valid = validSpaces.has(sp.id);
-              return (
-                <div key={sp.id}
-                  onClick={valid ? () => onPick(sp.id) : undefined}
-                  title={sp.desc}
-                  style={{
-                    background: occupant ? "#e7e5e4" : valid ? "#ecfccb" : "#fafaf9",
-                    border: valid ? "2px solid #65a30d" : "1px solid #d6d3c1",
-                    borderRadius: 8, padding: "6px 8px", cursor: valid ? "pointer" : "default",
-                    opacity: occupant ? 0.75 : 1, minHeight: 44,
-                  }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
-                    <b style={{ fontSize: 12 }}>{sp.name}</b>
-                    {occupant && (
-                      <span title={occupant.name} style={{
-                        width: 12, height: 12, borderRadius: "50%", flexShrink: 0,
-                        background: occColor.bg, border: `2px solid ${occColor.light}`,
-                      }} />
-                    )}
-                  </div>
-                  <div style={{ fontSize: 10, color: "#57534e" }}>{sp.desc}</div>
-                  <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 2 }}>
-                    {Object.entries(sp.supply || {}).map(([good, count]) => (
-                      <GoodChip key={good} good={good} count={count} small />
-                    ))}
-                  </div>
-                </div>
-              );
+    <span style={{ display: "inline-flex", gap: 2, flexShrink: 0 }}>
+      {idxs.map((i, k) => (
+        <span key={k} title={players[i]?.name} style={{
+          width: 13, height: 13, borderRadius: "50%",
+          background: PLAYER_COLORS[i].bg,
+          border: "1.5px solid #fff",
+          boxShadow: "0 1px 2px rgba(0,0,0,0.5)",
+        }} />
+      ))}
+    </span>
+  );
+}
+
+// One physical action space on the board (scroll, accumulation, or a
+// revealed round card).
+function BoardSpace({ sp, valid, onPick, players, round, gridPos }) {
+  const occupied = sp.occupied_by !== null && sp.occupied_by !== undefined;
+  const isRoundCard = round !== undefined;
+  const base = sp.accumulates
+    ? "linear-gradient(170deg,#efdfb4 0%,#e2cd94 55%,#d5bc7e 100%)"
+    : isRoundCard
+      ? "linear-gradient(175deg,#fdf6e0 0%,#f4e7c1 100%)"
+      : "linear-gradient(170deg,#f8f0d8 0%,#efe0b8 60%,#e6d3a3 100%)";
+  return (
+    <div
+      className={valid ? "agri-valid" : undefined}
+      onClick={valid ? () => onPick(sp.id) : undefined}
+      title={`${sp.name} — ${sp.desc}`}
+      style={{
+        gridColumn: gridPos[0], gridRow: gridPos[1],
+        background: base,
+        border: valid ? "2px solid #f59e0b" : "1px solid #a8895a",
+        boxShadow: valid
+          ? "0 0 0 3px rgba(245,158,11,0.35), 0 3px 5px rgba(30,50,15,0.4)"
+          : "inset 0 1px 0 rgba(255,255,255,0.65), inset 0 -6px 10px rgba(160,130,70,0.22), 0 2px 4px rgba(30,50,15,0.35)",
+        borderRadius: 7, padding: "4px 5px",
+        display: "flex", flexDirection: "column", overflow: "hidden",
+        opacity: occupied ? 0.82 : 1, position: "relative",
+        filter: occupied ? "saturate(0.65)" : "none",
+      }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 2 }}>
+        <b style={{
+          fontFamily: BOARD_FONT, fontSize: 9.5, lineHeight: 1.15,
+          color: "#43331a", letterSpacing: 0.2, flex: 1, minWidth: 0,
+          hyphens: "auto", WebkitHyphens: "auto",
+        }}>{sp.name}</b>
+        {isRoundCard ? (
+          <span title={`Revealed in round ${round}${HARVEST_ROUNDS.includes(round) ? " — harvest" : ""}`}
+            style={{
+              flexShrink: 0, minWidth: 15, height: 15, borderRadius: 8, padding: "0 3px",
+              background: "linear-gradient(160deg,#5f8f3e,#456f2c)", color: "#f2f8e4",
+              fontSize: 8.5, fontWeight: 800, display: "inline-flex",
+              alignItems: "center", justifyContent: "center", gap: 1,
+              border: "1px solid #37591f",
+            }}>{round}{HARVEST_ROUNDS.includes(round) ? "🌾" : ""}</span>
+        ) : null}
+      </div>
+      <div style={{ fontSize: 7.5, color: "#6d5a3a", lineHeight: 1.25, marginTop: 1, flex: 1, overflow: "hidden" }}>
+        {sp.desc}
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 2 }}>
+        <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+          {Object.entries(sp.supply || {}).map(([good, count]) => (
+            <GoodChip key={good} good={good} count={count} small />
+          ))}
+        </div>
+        <WorkerDiscs space={sp} players={players} />
+      </div>
+    </div>
+  );
+}
+
+// A face-down (not yet revealed) round slot, printed on the board.
+function RoundSlot({ round, gridPos }) {
+  return (
+    <div title={`Round ${round} — revealed at the start of that round`}
+      style={{
+        gridColumn: gridPos[0], gridRow: gridPos[1],
+        background: "rgba(15,35,8,0.22)",
+        border: "1.5px dashed rgba(245,240,210,0.4)", borderRadius: 8,
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        color: "rgba(250,245,220,0.9)", gap: 1, textShadow: "0 1px 2px rgba(0,0,0,0.5)",
+      }}>
+      <div style={{ fontFamily: BOARD_FONT, fontSize: 12, fontWeight: 700 }}>Round {round}</div>
+      <div style={{ fontSize: 8.5, opacity: 0.85 }}>Stage {stageOfRound(round)}</div>
+      {HARVEST_ROUNDS.includes(round) && <div style={{ fontSize: 10 }} title="Harvest after this round">🌾</div>}
+    </div>
+  );
+}
+
+// The red supplemental board holding the major improvements.
+function MajorsBoard({ available, gridColumn, gridRow }) {
+  const openSet = new Set(available);
+  return (
+    <div style={{
+      gridColumn, gridRow,
+      background: "linear-gradient(165deg,#8e3b2c 0%,#7a2f22 60%,#6c2a1e 100%)",
+      border: "1px solid #4e1d13", borderRadius: 8, padding: "5px 7px 7px",
+      boxShadow: "inset 0 1px 0 rgba(255,220,190,0.25), 0 3px 6px rgba(30,20,10,0.45)",
+      display: "flex", flexDirection: "column",
+    }}>
+      <div style={{
+        fontFamily: BOARD_FONT, fontSize: 10, fontWeight: 700, letterSpacing: 1.5,
+        color: "#f3d9a8", textTransform: "uppercase", textAlign: "center", marginBottom: 4,
+        textShadow: "0 1px 2px rgba(0,0,0,0.6)",
+      }}>Major Improvements</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 4, flex: 1 }}>
+        {MAJORS_LAYOUT.map((imp) => {
+          const spec = IMPROVEMENTS[imp];
+          const open = openSet.has(imp);
+          return open ? (
+            <div key={imp}
+              title={`${spec.name} — ${spec.desc} · cost: ${Object.entries(spec.cost).map(([g, n]) => `${n} ${g}`).join(", ")}`}
+              style={{
+                background: "linear-gradient(175deg,#f9efd6,#eeddb2)",
+                border: "1px solid #9c7c4c", borderRadius: 5, padding: "3px 4px",
+                boxShadow: "0 2px 3px rgba(30,20,10,0.5)",
+                display: "flex", flexDirection: "column", gap: 1, overflow: "hidden",
+              }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
+                <b style={{ fontFamily: BOARD_FONT, fontSize: 8.5, lineHeight: 1.15, color: "#43331a" }}>
+                  {spec.name}
+                </b>
+                <span style={{ fontSize: 8, fontWeight: 800, color: "#7f1d1d", flexShrink: 0 }}>⭐{spec.points}</span>
+              </div>
+              <div style={{ display: "flex", gap: 2, flexWrap: "wrap", marginTop: "auto" }}>
+                {Object.entries(spec.cost).map(([g, n]) => (
+                  <span key={g} style={{ fontSize: 8, fontWeight: 700, color: "#57431f" }}>{n}{GOODS[g].icon}</span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div key={imp} title={`${spec.name} — built`} style={{
+              border: "1px dashed rgba(240,210,170,0.35)", borderRadius: 5,
+              background: "rgba(40,15,8,0.25)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 7.5, color: "rgba(240,215,180,0.55)", textAlign: "center", padding: 2,
+              fontStyle: "italic",
+            }}>{spec.name}<br />built</div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ActionBoard({ state, validSpaces, onPick, players }) {
+  const byId = {};
+  state.action_spaces.forEach((sp) => { byId[sp.id] = sp; });
+  // Round number of each revealed stage card (reveal order = round order).
+  const roundOf = {};
+  (state.revealed || []).forEach((cid, i) => { roundOf[cid] = i + 1; });
+
+  const ext = state.action_spaces.some((sp) => (BOARD_POS[sp.id] || [0])[0] === -1);
+  const off = ext ? 2 : 1; // grid columns are 1-based; shift right if strip present
+  const cols = 8 + (ext ? 1 : 0);
+  const cell = (x, y) => [x + off, y + 1];
+
+  // Spaces the printed grid doesn't know: card-created action spaces
+  // (Chapel, Forest Inn, ...) and anything else unpositioned.
+  const looseSpaces = state.action_spaces.filter(
+    (sp) => !(sp.id in BOARD_POS) && !(sp.id in roundOf));
+
+  return (
+    <div style={{ width: "fit-content" }}>
+      <style>{`
+        .agri-valid { cursor: pointer; transition: transform .12s ease, box-shadow .12s ease; }
+        .agri-valid:hover { transform: translateY(-2px);
+          box-shadow: 0 0 0 3px rgba(245,158,11,0.55), 0 6px 10px rgba(30,50,15,0.5) !important; }
+      `}</style>
+      {/* Wooden frame */}
+      <div style={{
+        background: "linear-gradient(160deg,#7c5a37 0%,#654728 55%,#54391f 100%)",
+        borderRadius: 14, padding: 9,
+        boxShadow: "0 6px 16px rgba(30,25,10,0.35), inset 0 1px 0 rgba(255,230,190,0.35)",
+      }}>
+        {/* Meadow */}
+        <div style={{
+          position: "relative", borderRadius: 8, padding: 8,
+          background: `
+            radial-gradient(230px 170px at 22% 28%, rgba(255,255,215,0.14), transparent 70%),
+            radial-gradient(280px 210px at 72% 62%, rgba(45,75,20,0.16), transparent 70%),
+            radial-gradient(190px 150px at 46% 88%, rgba(255,255,215,0.10), transparent 70%),
+            linear-gradient(155deg,#93b164 0%,#7fa254 45%,#6f9449 100%)`,
+          boxShadow: "inset 0 0 18px rgba(25,45,10,0.32)",
+        }}>
+          <div style={{
+            position: "absolute", inset: 0, borderRadius: 8,
+            background: GRASS_NOISE, pointerEvents: "none",
+          }} />
+          <div style={{
+            position: "relative", display: "grid", gap: 6,
+            gridTemplateColumns: `repeat(${cols}, 92px)`,
+            gridTemplateRows: "repeat(6, 86px)",
+          }}>
+            {/* Fixed action spaces at their printed positions */}
+            {state.action_spaces.map((sp) => {
+              const pos = BOARD_POS[sp.id];
+              if (!pos) return null;
+              return <BoardSpace key={sp.id} sp={sp} players={players}
+                valid={validSpaces.has(sp.id)} onPick={onPick}
+                gridPos={cell(pos[0], pos[1])} />;
             })}
+            {/* Round track: revealed cards, then face-down slots */}
+            {Object.entries(ROUND_SLOTS).map(([r, pos]) => {
+              const round = Number(r);
+              const cid = (state.revealed || [])[round - 1];
+              const sp = cid && byId[cid];
+              return sp
+                ? <BoardSpace key={`r${round}`} sp={sp} players={players}
+                    valid={validSpaces.has(sp.id)} onPick={onPick}
+                    round={round} gridPos={cell(pos[0], pos[1])} />
+                : <RoundSlot key={`r${round}`} round={round} gridPos={cell(pos[0], pos[1])} />;
+            })}
+            <MajorsBoard available={state.available_improvements || []}
+              gridColumn={`${cell(2, 0)[0]} / span 6`} gridRow="1 / span 2" />
+            {/* Harvest / end-of-game reference, printed on the board like
+                the original's right-hand panel */}
+            <div style={{
+              gridColumn: `${cell(6, 4)[0]} / span 2`, gridRow: "5 / span 2",
+              background: "linear-gradient(170deg,#f4ebcf 0%,#e9d8ab 100%)",
+              border: "1px solid #a8895a", borderRadius: 7, padding: "8px 10px",
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.65), 0 2px 4px rgba(30,50,15,0.35)",
+              display: "flex", flexDirection: "column", gap: 4,
+              fontSize: 8.5, color: "#5b4a2c", lineHeight: 1.35,
+            }}>
+              <div style={{ fontFamily: BOARD_FONT, fontSize: 10.5, fontWeight: 700, color: "#43331a", textAlign: "center" }}>
+                🌾 Harvest
+              </div>
+              <div style={{ textAlign: "center", marginTop: -2 }}>
+                after rounds 4 · 7 · 9 · 11 · 13 · 14
+              </div>
+              <div><b>1. Field</b> — reap 1 grain/vegetable from each sown field</div>
+              <div><b>2. Feed</b> — 2 food per person (1 for newborns)</div>
+              <div><b>3. Breed</b> — 2+ animals of a kind bear one more</div>
+              <div style={{ borderTop: "1px solid #c4ab77", marginTop: "auto", paddingTop: 4, textAlign: "center", fontStyle: "italic" }}>
+                The game ends with the round-14 harvest.
+              </div>
+            </div>
           </div>
         </div>
-      ))}
+      </div>
+      {/* Card-created action spaces (Chapel, Forest Inn, ...) */}
+      {looseSpaces.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8, alignItems: "stretch" }}>
+          {looseSpaces.map((sp) => {
+            const owner = sp.owner !== undefined ? players[sp.owner] : null;
+            return (
+              <div key={sp.id} style={{ width: 148, display: "flex", flexDirection: "column" }}>
+                {owner && (
+                  <div style={{ fontSize: 9, color: "#57534e", marginBottom: 1 }}>
+                    <span style={{
+                      display: "inline-block", width: 8, height: 8, borderRadius: "50%",
+                      background: PLAYER_COLORS[owner.index].bg, marginRight: 3,
+                    }} />{owner.name}
+                  </div>
+                )}
+                <BoardSpace sp={sp} players={players}
+                  valid={validSpaces.has(sp.id)} onPick={onPick}
+                  gridPos={["auto", "auto"]} />
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -1477,88 +1733,39 @@ function GameBoard({ game }) {
           </span>
         </div>
 
-        {/* Round track */}
-        <div style={{ display: "flex", gap: 3, marginBottom: 12 }}>
-          {Array.from({ length: 14 }, (_, i) => i + 1).map((r) => (
-            <div key={r} title={HARVEST_ROUNDS.includes(r) ? "Harvest" : ""} style={{
-              width: 26, height: 22, borderRadius: 4, fontSize: 11, fontWeight: 700,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              background: r < state.round ? "#d6d3c1" : r === state.round ? "#65a30d" : "#fefce8",
-              color: r === state.round ? "#fff" : "#57534e",
-              border: HARVEST_ROUNDS.includes(r) ? "2px solid #ca8a04" : "1px solid #d6d3c1",
-            }}>{r}</div>
-          ))}
-        </div>
-
         {state.game_over && <ScoreSheet state={state} />}
 
+        {error && !planner && !pendingMine && !feedAction && (
+          <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 6 }}>{error}</div>
+        )}
+        {planner && me && (
+          <Planner space={planner} state={state} me={me} error={error}
+            actionInfo={validActions.find((a) => a.space === planner)}
+            submit={(a) => { submitAction(a); setPlanner(null); }}
+            cancel={() => setPlanner(null)} />
+        )}
+        {cardActions.length > 0 && !planner && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+            {cardActions.map((a) => (
+              <Btn key={a.card} small variant="secondary"
+                onClick={() => submitAction({ kind: "card_action", card: a.card })}>
+                ⚡ {cardSpec(a.card).name}: {a.description}
+              </Btn>
+            ))}
+          </div>
+        )}
+
+        {/* Board row: the action board with the log beside it */}
         <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-          {/* Left: action board */}
-          <div style={{ width: 330, flexShrink: 0 }}>
-            <ActionBoard state={state} validSpaces={planner ? new Set() : validSpaces}
-              onPick={pick} players={state.players} />
-            {/* Major improvements supply */}
-            <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: "#57534e", textTransform: "uppercase", marginBottom: 4 }}>
-                Major improvements available
-              </div>
-              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                {state.available_improvements.map((imp) => (
-                  <span key={imp} title={`${IMPROVEMENTS[imp].desc} — cost: ${Object.entries(IMPROVEMENTS[imp].cost).map(([g, n]) => `${n} ${g}`).join(", ")}`}
-                    style={{
-                      fontSize: 10, background: "#fff", border: "1px solid #fca5a5",
-                      borderRadius: 6, padding: "2px 6px", fontWeight: 700, color: "#7f1d1d",
-                    }}>
-                    {IMPROVEMENTS[imp].name} ⭐{IMPROVEMENTS[imp].points}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Center: planner + farms */}
-          <div style={{ flex: 1, minWidth: 420 }}>
-            {error && !planner && !pendingMine && !feedAction && (
-              <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 6 }}>{error}</div>
-            )}
-            {planner && me && (
-              <Planner space={planner} state={state} me={me} error={error}
-                actionInfo={validActions.find((a) => a.space === planner)}
-                submit={(a) => { submitAction(a); setPlanner(null); }}
-                cancel={() => setPlanner(null)} />
-            )}
-            {cardActions.length > 0 && !planner && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                {cardActions.map((a) => (
-                  <Btn key={a.card} small variant="secondary"
-                    onClick={() => submitAction({ kind: "card_action", card: a.card })}>
-                    ⚡ {cardSpec(a.card).name}: {a.description}
-                  </Btn>
-                ))}
-              </div>
-            )}
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              {state.players.map((p) => (
-                <PlayerPanel key={p.index} player={p} color={PLAYER_COLORS[p.index]}
-                  isYou={p.index === myIdx}
-                  isCurrent={state.phase === "work" && state.current_player === p.index}
-                  isStarting={state.starting_player === p.index}
-                  state={state}>
-                  <FarmYard player={p} />
-                </PlayerPanel>
-              ))}
-            </div>
-            {me && <HandPanel me={me} playableMinors={state.playable_minors} />}
-          </div>
-
-          {/* Right: log */}
-          <div style={{ width: 250, flexShrink: 0 }}>
+          <ActionBoard state={state} validSpaces={planner ? new Set() : validSpaces}
+            onPick={pick} players={state.players} />
+          <div style={{ flex: 1, minWidth: 220 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: "#57534e", textTransform: "uppercase", marginBottom: 4 }}>
               Game log
             </div>
             <div ref={logRef} style={{
               background: "#fefce8", border: "1px solid #d6d3c1", borderRadius: 8,
-              padding: 8, height: 520, overflowY: "auto", fontSize: 11, lineHeight: 1.5,
+              padding: 8, height: 548, overflowY: "auto", fontSize: 11, lineHeight: 1.5,
             }}>
               {gameLogs.map((m, i) => (
                 <div key={i} style={{
@@ -1569,6 +1776,20 @@ function GameBoard({ game }) {
             </div>
           </div>
         </div>
+
+        {/* Farms + hand below the board */}
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
+          {state.players.map((p) => (
+            <PlayerPanel key={p.index} player={p} color={PLAYER_COLORS[p.index]}
+              isYou={p.index === myIdx}
+              isCurrent={state.phase === "work" && state.current_player === p.index}
+              isStarting={state.starting_player === p.index}
+              state={state}>
+              <FarmYard player={p} />
+            </PlayerPanel>
+          ))}
+        </div>
+        {me && <HandPanel me={me} playableMinors={state.playable_minors} />}
       </div>
 
       {/* Blocking dialogs */}
