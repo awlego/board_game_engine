@@ -553,10 +553,10 @@ function CardZoom({ rect, cid, spec }) {
   );
 }
 
-function HandCard({ cid, playable, selected, onClick, extra }) {
+function HandCard({ cid, spec: specOverride, playable, selected, onClick, extra }) {
   const [zoomRect, setZoomRect] = useState(null);
   const zoomTimer = useRef(null);
-  const spec = cardSpec(cid);
+  const spec = specOverride || cardSpec(cid);
   return (
     <div style={{ position: "relative", flexShrink: 0 }}
       onMouseEnter={(e) => {
@@ -1042,11 +1042,18 @@ function minorAction(chosen, params) {
   return m;
 }
 
+// Major improvements come from the local IMPROVEMENTS map (not the
+// catalog), so build a renderable spec for the shared card face.
+function majorSpec(imp) {
+  const m = IMPROVEMENTS[imp];
+  return { name: m.name, type: "major", cost: m.cost, points: m.points, text: m.desc };
+}
+
 function ImprovementPicker({ state, me, chosen, setChosen, upgrade, setUpgrade }) {
   const ownsFireplace = me.improvements.some((i) => FIREPLACES.includes(i));
   const canAfford = (cost) => Object.entries(cost).every(([r, a]) => me.resources[r] >= a);
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 6 }}>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "flex-start" }}>
       {state.available_improvements.map((imp) => {
         const spec = IMPROVEMENTS[imp];
         const affordable = canAfford(spec.cost);
@@ -1054,23 +1061,11 @@ function ImprovementPicker({ state, me, chosen, setChosen, upgrade, setUpgrade }
         const selectable = affordable || upgradeable;
         const selected = chosen === imp;
         return (
-          <div key={imp}
-            onClick={selectable ? () => { setChosen(selected ? null : imp); setUpgrade(!affordable && upgradeable); } : undefined}
-            style={{
-              border: selected ? "2px solid #d97706" : "1px solid #d6d3c1",
-              background: selected ? "#fef3c7" : selectable ? "#fff" : "#f5f5f4",
-              opacity: selectable ? 1 : 0.5, borderRadius: 8, padding: 6, cursor: selectable ? "pointer" : "default",
-            }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-              <b>{spec.name}</b><span>⭐{spec.points}</span>
-            </div>
-            <div style={{ display: "flex", gap: 3, margin: "2px 0" }}>
-              {Object.entries(spec.cost).map(([g, n]) => <GoodChip key={g} good={g} count={n} small />)}
-            </div>
-            <div style={{ fontSize: 10, color: "#57534e" }}>{spec.desc}</div>
+          <div key={imp} style={{ flexShrink: 0 }}>
+            <HandCard cid={imp} spec={majorSpec(imp)} playable={selectable} selected={selected}
+              onClick={selectable ? () => { setChosen(selected ? null : imp); setUpgrade(!affordable && upgradeable); } : undefined} />
             {selected && spec.upgrade && ownsFireplace && (
-              <label style={{ fontSize: 11, display: "block", marginTop: 4 }}
-                onClick={(e) => e.stopPropagation()}>
+              <label style={{ fontSize: 11, display: "block", marginTop: 4 }}>
                 <input type="checkbox" checked={upgrade}
                   onChange={(e) => setUpgrade(e.target.checked)} /> upgrade Fireplace (free)
               </label>
