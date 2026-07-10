@@ -363,8 +363,41 @@ export function defaultArtUrl(cid) {
 // measured from the asset during processing.
 // ============================================================
 
-const FRAME_ASPECT = 1558 / 1010;             // height / width
-const WINDOW = { cx: 0.4985, cy: 0.3479, r: 0.2597 };  // r as fraction of width
+// Per-type frame geometry, measured from each frame asset by
+// tools/process_card_frame.py. Window cx/r are fractions of the
+// frame width, cy of its height. A type absent here falls back to
+// the CSS-drawn card.
+const V2_FRAMES = {
+  occupation: {
+    frame: "occupation", aspect: 1558 / 1010,
+    window: { cx: 0.4985, cy: 0.3479, r: 0.2597, shape: "circle" },
+    arc: "M 80 320 Q 505 130 930 320",
+    bandTop: "45%", textTop: "57%",
+    placeholder: "#cadd6e", ink: "#241a05",
+  },
+  minor: {
+    frame: "minor", aspect: 1536 / 1024,
+    window: { cx: 0.4990, cy: 0.3604, r: 0.2581, shape: "hex" },
+    arc: "M 80 320 Q 505 130 930 320",
+    bandTop: "45%", textTop: "57%",
+    placeholder: "#e8a04a", ink: "#241a05",
+  },
+  major: {
+    frame: "major", aspect: 1536 / 1024,
+    window: { cx: 0.4985, cy: 0.3444, r: 0.2283, shape: "square" },
+    arc: "M 80 320 Q 505 130 930 320",
+    bandTop: "45%", textTop: "57%",
+    placeholder: "#c98a63", ink: "#f5e7c8",
+  },
+};
+
+// Art-layer clip shapes; the window hole itself is punched in the
+// frame asset, this just crops the art to roughly match it.
+const ART_CLIPS = {
+  circle: { borderRadius: "50%" },
+  hex: { clipPath: "polygon(2% 50%, 27% 2%, 73% 2%, 98% 50%, 73% 98%, 27% 98%)" },
+  square: { borderRadius: "12%" },
+};
 
 function frameUrl(name) {
   return `${import.meta.env.BASE_URL}agricola/frames/${name}.webp`;
@@ -394,18 +427,18 @@ function Badge({ asset, label, size, fontSize, title, dark }) {
 // Card name arched along the top plate, matching the official
 // occupation title treatment. Rendered as SVG text on a path so
 // it scales with the card.
-function TitleArc({ name }) {
+function TitleArc({ name, arc, ink }) {
   const arcId = useId();
   const size = fitSize((name || "").length,
     [[12, 92], [17, 78], [22, 66], [28, 56], [999, 48]]);
   return (
-    <svg viewBox="0 0 1010 1558" style={{
+    <svg viewBox="0 0 1010 1558" preserveAspectRatio="none" style={{
       position: "absolute", inset: 0, width: "100%", height: "100%",
       pointerEvents: "none",
     }}>
-      <path id={arcId} d="M 80 320 Q 505 130 930 320" fill="none" />
+      <path id={arcId} d={arc} fill="none" />
       <text fontFamily="Alegreya, Georgia, serif" fontWeight="800"
-        fontSize={size} fill="#241a05">
+        fontSize={size} fill={ink}>
         <textPath href={`#${arcId}`} startOffset="50%" textAnchor="middle">
           {name}
         </textPath>
@@ -414,26 +447,54 @@ function TitleArc({ name }) {
   );
 }
 
-export function OccupationCardV2({ spec, cid, width = 250, artUrl, playable, selected, onClick }) {
+// Small parchment plate with content overlaid — the cost and
+// prerequisite slots at the top corners of minors/majors.
+function PlateSlot({ children, side, title }) {
+  return (
+    <span title={title} style={{
+      position: "absolute", top: "4.5%", [side]: "6.5%",
+      maxWidth: "30%", minWidth: "12%", minHeight: "2.2em",
+      display: "inline-flex", alignItems: "center", justifyContent: "center",
+      padding: "0.35em 0.6em",
+    }}>
+      <img src={frameUrl("badge_plate")} alt="" draggable={false} style={{
+        position: "absolute", inset: 0, width: "100%", height: "100%",
+      }} />
+      <span style={{
+        position: "relative", fontFamily: "Alegreya, Georgia, serif",
+        fontWeight: 700, color: "#241a05", textAlign: "center", lineHeight: 1.1,
+      }}>{children}</span>
+    </span>
+  );
+}
+
+export function CardV2({ spec, cid, width = 250, artUrl, playable, selected, onClick }) {
   const c = normalize(spec || {}, cid);
+  const geo = V2_FRAMES[c.type];
   const art = artUrl !== undefined ? artUrl : (cid ? defaultArtUrl(cid) : null);
   const [artFailed, setArtFailed] = useState(false);
-  const height = Math.round(width * FRAME_ASPECT);
+  const height = Math.round(width * geo.aspect);
   const em = width / 25;
+  const isOcc = c.type === "occupation";
+  const theme = CARD_THEMES[c.type];
 
-  // Art window in px: radius is a fraction of width; extend it a
-  // touch so the art tucks under the frame's ring.
-  const artR = (WINDOW.r + 0.01) * width;
+  // Art window in px: extend the measured radius a touch so the
+  // art tucks under the frame's rim.
+  const artR = (geo.window.r + 0.012) * width;
   const artStyle = {
     position: "absolute",
-    left: WINDOW.cx * width - artR, top: WINDOW.cy * height - artR,
-    width: artR * 2, height: artR * 2, borderRadius: "50%", overflow: "hidden",
+    left: geo.window.cx * width - artR, top: geo.window.cy * height - artR,
+    width: artR * 2, height: artR * 2, overflow: "hidden",
+    ...ART_CLIPS[geo.window.shape],
     display: "flex", alignItems: "center", justifyContent: "center",
-    background: `radial-gradient(circle at 50% 38%, #fff8dc 0%, #cadd6e 130%)`,
+    background: `radial-gradient(circle at 50% 38%, #fff8dc 0%, ${geo.placeholder} 130%)`,
   };
 
+  const costLabel = Object.entries(c.cost).map(([g, n]) => `${n}${ICONS[g]?.icon || g}`).join(" ")
+    || c.costText;
+
   return (
-    <div onClick={onClick} title={`${c.name} — Occupation`} style={{
+    <div onClick={onClick} title={`${c.name} — ${theme.label}`} style={{
       position: "relative", width, height, fontSize: em, flexShrink: 0,
       cursor: onClick ? "pointer" : "default", userSelect: "none",
       filter: playable === false ? "grayscale(0.7) brightness(0.85)" : "none",
@@ -446,44 +507,72 @@ export function OccupationCardV2({ spec, cid, width = 250, artUrl, playable, sel
         {art && !artFailed
           ? <img src={art} alt={c.name} onError={() => setArtFailed(true)} draggable={false}
               style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-          : <span style={{ fontSize: "4.2em" }}>{TYPE_GLYPH.occupation}</span>}
+          : <span style={{ fontSize: "4.2em" }}>{TYPE_GLYPH[c.type]}</span>}
       </div>
 
       {/* 2 — frame artwork */}
-      <img src={frameUrl("occupation")} alt="" draggable={false} style={{
+      <img src={frameUrl(geo.frame)} alt="" draggable={false} style={{
         position: "absolute", inset: 0, width: "100%", height: "100%",
         pointerEvents: "none",
       }} />
 
-      {/* 3 — title, code, badges, rules text */}
-      <TitleArc name={c.name} />
+      {/* 3 — title, code, corner slots, badges, rules text */}
+      <TitleArc name={c.name} arc={geo.arc} ink={geo.ink} />
 
       {/* official-style card code — only short codes fit the plate */}
       {cid && cid.length <= 6 ? (
         <span style={{
           position: "absolute", left: "8%", top: "24%",
           fontFamily: "Alegreya, Georgia, serif", fontWeight: 700,
-          fontSize: "0.72em", color: "#4a3d15", opacity: 0.85,
+          fontSize: "0.72em", color: geo.ink, opacity: 0.8,
         }}>{cid}</span>
       ) : null}
 
-      {/* gold band, left: min players */}
-      {c.minPlayers ? (
-        <span style={{ position: "absolute", left: "7.5%", top: "45%" }}>
+      {/* top corner slots: prerequisite left, cost right */}
+      {c.prereq ? (
+        <PlateSlot side="left" title={`Prerequisite: ${c.prereq}`}>
+          <span style={{ fontSize: fitSize(c.prereq.length, [[16, "0.8em"], [30, "0.68em"], [999, "0.58em"]]) }}>
+            {c.prereq}
+          </span>
+        </PlateSlot>
+      ) : null}
+      {costLabel ? (
+        <PlateSlot side="right" title={`Cost: ${costLabel}`}>
+          <span style={{ fontSize: fitSize(costLabel.length, [[8, "0.9em"], [16, "0.75em"], [999, "0.6em"]]) }}>
+            {costLabel}
+          </span>
+        </PlateSlot>
+      ) : null}
+
+      {/* gold band, left: players for occupations, VP for the rest */}
+      <span style={{
+        position: "absolute", left: "7.5%", top: geo.bandTop,
+        display: "flex", gap: "0.25em", alignItems: "center",
+      }}>
+        {isOcc && c.minPlayers ? (
           <Badge asset="badge_players" label={`${c.minPlayers}+`}
             size={0.13 * width} fontSize="1.35em"
             title={`Playable with ${c.minPlayers}+ players`} />
-        </span>
-      ) : null}
+        ) : null}
+        {!isOcc && c.points ? (
+          <Badge asset="badge_vp" label={c.points} size={0.13 * width}
+            fontSize="1.5em" dark title={`${c.points} points`} />
+        ) : null}
+        {!isOcc && c.minPlayers > 1 ? (
+          <Badge asset="badge_players" label={`${c.minPlayers}+`}
+            size={0.11 * width} fontSize="1.15em"
+            title={`Playable with ${c.minPlayers}+ players`} />
+        ) : null}
+      </span>
 
-      {/* gold band, right: VP, marks, deck */}
+      {/* gold band, right: marks, occupation VP, deck */}
       <span style={{
-        position: "absolute", right: "7.5%", top: "45%",
+        position: "absolute", right: "7.5%", top: geo.bandTop,
         display: "flex", gap: "0.25em", alignItems: "center",
       }}>
         {c.traveling ? <PassMark /> : null}
         {c.hasAction ? <ActionMark /> : null}
-        {c.points ? (
+        {isOcc && c.points ? (
           <Badge asset="badge_vp" label={c.points} size={0.13 * width}
             fontSize="1.5em" dark title={`${c.points} points`} />
         ) : null}
@@ -496,20 +585,14 @@ export function OccupationCardV2({ spec, cid, width = 250, artUrl, playable, sel
 
       {/* rules text block on the big plate */}
       <div style={{
-        position: "absolute", left: "11%", right: "11%", top: "57%", bottom: "6.5%",
+        position: "absolute", left: "11%", right: "11%", top: geo.textTop, bottom: "6.5%",
         display: "flex", flexDirection: "column",
         alignItems: "center", justifyContent: "center", textAlign: "center",
         overflow: "hidden",
       }}>
-        {c.prereq ? (
-          <div style={{
-            fontFamily: "Alegreya, Georgia, serif", fontStyle: "italic",
-            fontWeight: 500, fontSize: "0.85em", color: "#4a3d15", marginBottom: "0.4em",
-          }}>Requires {c.prereq}</div>
-        ) : null}
         <CardText text={c.text} style={{
           fontFamily: "Alegreya, Georgia, serif", fontWeight: 500,
-          color: "#241a05", lineHeight: 1.24,
+          color: geo.ink, lineHeight: 1.24,
           fontSize: fitSize((c.text || "").length,
             [[60, "1.5em"], [110, "1.3em"], [170, "1.14em"], [240, "1.0em"], [320, "0.9em"], [999, "0.8em"]]),
         }} />
@@ -517,6 +600,9 @@ export function OccupationCardV2({ spec, cid, width = 250, artUrl, playable, sel
     </div>
   );
 }
+
+// Back-compat alias — occupations were the first layered type.
+export const OccupationCardV2 = CardV2;
 
 /**
  * The full official-layout card.
@@ -529,10 +615,10 @@ export function OccupationCardV2({ spec, cid, width = 250, artUrl, playable, sel
  */
 export function AgricolaCard({ spec, cid, width = 250, artUrl, playable, selected, onClick, footer }) {
   const c = normalize(spec || {}, cid);
-  // Occupations use the asset-layered builder; minors/majors keep
-  // the CSS frame until their frame artwork exists.
-  if (c.type === "occupation") {
-    return <OccupationCardV2 spec={spec} cid={cid} width={width} artUrl={artUrl}
+  // Types with frame artwork use the asset-layered builder; anything
+  // else keeps the CSS frame.
+  if (V2_FRAMES[c.type]) {
+    return <CardV2 spec={spec} cid={cid} width={width} artUrl={artUrl}
       playable={playable} selected={selected} onClick={onClick} />;
   }
   const theme = CARD_THEMES[c.type];
