@@ -842,10 +842,8 @@
  },
  "A127": {
   "deck": "A",
-  "implemented": false,
   "min_players": 3,
   "name": "Lodger",
-  "reason": "extra_rooms is permanent for the game; this card requires the room grant to expire after round 9's returning-home phase, with no card-removal-from-play mechanism available.",
   "text": "This card provides room for 1 person, but only until the returning home phase of round 9. If you have not moved the person elsewhere by then, remove it from play.",
   "type": "occupation"
  },
@@ -984,10 +982,8 @@
  },
  "A148": {
   "deck": "A",
-  "implemented": false,
   "min_players": 4,
   "name": "Woolgrower",
-  "reason": "needs a new animal-storage location tied to this specific card (capacity = completed feeding phases), separate from house/pasture/stable capacity; not exposed by the accommodation system.",
   "text": "This card can hold a number of sheep equal to the number of completed feeding phases.",
   "type": "occupation"
  },
@@ -2005,9 +2001,8 @@
  },
  "B115": {
   "deck": "B",
-  "implemented": false,
+  "min_players": 1,
   "name": "Tinsmith Master",
-  "reason": "requires a pasture-capacity bonus that applies only to stable-less pastures; the existing pasture_capacity_bonus key is applied uniformly to every pasture by state.pasture_capacity(), with no per-pasture stable condition.",
   "text": "You can hold 1 additional animal in each pasture without a stable. Each time you sow in a field, you can place 1 additional crop of the respective type in that field.",
   "type": "occupation"
  },
@@ -2206,10 +2201,8 @@
  },
  "B148": {
   "deck": "B",
-  "implemented": false,
   "min_players": 4,
   "name": "Pet Broker",
-  "reason": "grants extra house capacity for sheep specifically, scaled by occupation count; the existing house_capacity ability is animal-type-agnostic and would incorrectly extend capacity to non-sheep pets too.",
   "text": "When you play this card, you immediately get 1 sheep. You can keep 1 sheep on each occupation in front of you.",
   "type": "occupation"
  },
@@ -2644,9 +2637,8 @@
    "wood": 1
   },
   "deck": "C",
-  "implemented": false,
+  "min_players": 1,
   "name": "Cattle Farm",
-  "reason": "per-pasture-count animal storage (grows with pastures built) has no supported query -- house_capacity only takes a flat int or 'per_room'",
   "text": "For each pasture you have, you can keep 1 cattle on this card.",
   "type": "minor"
  },
@@ -3561,10 +3553,8 @@
  },
  "C148": {
   "deck": "C",
-  "implemented": false,
   "min_players": 4,
   "name": "Mud Wallower",
-  "reason": "'exchange 4 clay on this card for 1 wild boar, held by this card' needs animals stored outside cells/pets that still participate in breeding and scoring; animal_counts/animal_totals_of and the breeding phase only read cells and pets",
   "text": "Each time you use an accumulation space, place 1 clay from the general supply on this card. You must immediately exchange 4 clay on this card for 1 wild boar, held by this card.",
   "type": "occupation"
  },
@@ -3773,10 +3763,14 @@
   "type": "minor"
  },
  "D011": {
+  "cost": {
+   "grain": 1
+  },
   "deck": "D",
-  "implemented": false,
+  "house_capacity": -1,
+  "min_players": 1,
   "name": "Lawn Fertilizer",
-  "reason": "static per-pasture-size capacity (size-1 pastures hold 3, or 6 with a stable) -- pasture_capacity_bonus is one flat additive value applied to every pasture regardless of its size, so a size-conditioned bonus can't be expressed",
+  "points": 1,
   "text": "Your pastures of size 1 can hold up to 3 animals of the same type. (With a stable, they can hold up to 6 animals of the same type.) (1VP. Cost 1 Grain.) In the feeding phase of each harvest, you get 1 food. You can no longer hold animals in your house (not even via another card).",
   "type": "minor"
  },
@@ -4380,9 +4374,8 @@
  },
  "D085": {
   "deck": "D",
-  "implemented": false,
+  "min_players": 1,
   "name": "Reader",
-  "reason": "Reader: extra_rooms is a static per-card value in this engine; it can't express a conditional ('once you have 6 occupations') room grant.",
   "text": "As soon as you have 6 occupations in front of you (including this one), this card provides room for one person. In the draft variant, you need 7 occupations to play this.",
   "type": "occupation"
  },
@@ -5647,10 +5640,9 @@
  },
  "E29": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Shepherd's Pipe",
   "prereq_text": "1 sheep",
-  "reason": "two blocked mechanics: the +2 pasture capacity only for pastures 'where you keep sheep' can't be expressed since pasture_capacity_bonus is a flat additive across every pasture regardless of animal type; and unfenced-stable capacity is hardcoded to 1 in validate_animal_placement with no card-modifier hook (same class of gap as B012).",
   "text": "You can hold up to 2 additional sheep in each of the pastures where you keep sheep. You can keep up to 2 sheep in each unfenced stable.",
   "type": "minor"
  },
@@ -5968,11 +5960,10 @@
    "wood": 2
   },
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Animal Yard",
   "points": 1,
-  "prereq_text": "1 occ",
-  "reason": "a card-held slot for 2 animals of any type, kept outside the house/pastures; validate_animal_placement only recognizes pastures, unfenced stables, and the house as accommodation buckets (same gap as B012).",
+  "prereq_text": "1 occupations",
   "text": "This card can hold up to two animals of your choice. They need not be the same type of animal.",
   "type": "minor"
  },
@@ -6728,11 +6719,10 @@
   "type": "minor"
  },
  "FR013": {
-  "cost_text": "1 sheep",
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Chameleon",
-  "reason": "requires extra animal capacity limited to pastures that specifically hold sheep; pasture_capacity_bonus applies uniformly to every pasture with no per-pasture, per-animal-type condition (same gap as B115)",
+  "prereq_text": "1 sheep",
   "text": "When you play this card, you receive 1 Wild boar. You may keep 1 Wild boar in each of your pastures that hold Sheep. (Pastures can still only hold the normal amount of animals).",
   "type": "minor"
  },
@@ -7558,9 +7548,8 @@
  },
  "FR105": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Reformer",
-  "reason": "Reformer: 'keep 1 animal on each occupation card' needs a house_capacity variant scaled by the number of occupations in play; house_capacity only supports a flat int or 'per_room', and extending it means editing cards.py's shared query function, outside this module's two deliverables.",
   "text": "You may keep any 1 animal on each of your played Occupation cards.",
   "type": "occupation"
  },
@@ -8844,11 +8833,10 @@
    "wood": 2
   },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Wildlife Reserve",
   "points": 1,
-  "prereq_text": "2 occ",
-  "reason": "requires card-based animal storage capacity outside house/pastures; accommodation only consults house_capacity and pasture_capacity_bonus (same gap as the B012 precedent).",
+  "prereq_text": "2 occupations",
   "text": "This card can hold up to 1 sheep, 1 wild boar and 1 cattle.",
   "type": "minor"
  },
@@ -10189,11 +10177,10 @@
  },
  "K145": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Forest Pasture",
   "points": 1,
-  "prereq_text": "3 occ",
-  "reason": "unlimited card-held boar storage entirely outside house capacity and pasture capacity. Accommodation only consults house_capacity and pasture_capacity_bonus (same gap noted for B012 in deck_b_minors.py) -- there is no card-storage capacity query for animals.",
+  "prereq_text": "3 occupations",
   "text": "This card can hold an unlimited number of wild boar.",
   "type": "minor"
  },

@@ -51,6 +51,8 @@ def _prep_prereqs(state, pidx, cid):
             put_in_play(state, pidx, _DUMMY_OCCS[i])
     if cid == "FR003":
         p["fences"] = sorted(cell_edges(4))
+    if cid == "FR013":
+        p["pets"]["sheep"] = 1
     if cid == "FR016":
         p["cells"][0]["type"] = "field"
     if cid == "FR021":
@@ -798,3 +800,30 @@ def test_golden_rose_food_discount_occupation_and_minor(engine):
     assert cost == {"food": 1}
     cost2 = cards.modified_cost(s, p, "occupation", {"wood": 1}, {"card": "y"})
     assert cost2 == {"wood": 1}
+
+
+def test_chameleon_costs_sheep_grants_boar_and_shares_pasture(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    p["pets"]["sheep"] = 1
+    give_card(s, first, "FR013")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "FR013"}})
+    p = s["players"][first]
+    assert p["pets"].get("sheep", 0) == 0  # 1 sheep spent as this card's cost
+
+    pid = p["player_id"]
+    acts = engine.get_valid_actions(s, pid)
+    acc = next(a for a in acts if a["kind"] == "accommodate")
+    assert acc["gained"] == {"boar": 1}
+    s = place(engine, s, {"kind": "accommodate", "placements": [],
+                          "discard": {"boar": 1}})
+
+    inst = next(i for i in p["minors"] if i["id"] == "FR013")
+    secondary = cards.CARDS["FR013"]["pasture_secondary_types"](
+        s, p, inst, {"cells": [4], "size": 1, "stables": 0, "animal_type": "sheep"})
+    assert secondary == {"boar": 1}
+    secondary2 = cards.CARDS["FR013"]["pasture_secondary_types"](
+        s, p, inst, {"cells": [4], "size": 1, "stables": 0, "animal_type": "cattle"})
+    assert secondary2 == {}

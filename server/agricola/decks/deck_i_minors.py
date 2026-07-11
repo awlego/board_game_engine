@@ -56,10 +56,6 @@ UNIMPLEMENTED = {
     "I100": "creates a new action space usable by every player (shared "
             "action-space creation), matching the B042 precedent -- "
             "unsupported.",
-    "I102": "requires card-based animal storage capacity outside "
-            "house/pastures; accommodation only consults "
-            "house_capacity and pasture_capacity_bonus (same gap as "
-            "the B012 precedent).",
     "I103": "offers every player (not just the owner) an optional "
             "feeding-phase conversion, taxed to the owner; "
             "card_action/conversions are only ever queried against the "
@@ -591,6 +587,19 @@ def _animal_feed_score(state, player, inst):
 
 compendium_card("I101", prereq=_needs_planted_fields(4),
                 score_bonus=_animal_feed_score)
+
+
+# ── I102 Wildlife Reserve ────────────────────────────────────────────
+# "This card can hold up to 1 sheep, 1 wild boar and 1 cattle." Req 2
+# occ. (Rulings say Shepherd's Pipe/Drinking Trough also increase this
+# card's capacity -- that cross-card interaction isn't modeled here,
+# same documented-gap treatment as E58/E29/K120's own noted interaction
+# gaps.)
+def _wildlife_reserve_holds(state, player, inst):
+    return {"types": {"sheep": 1, "boar": 1, "cattle": 1}}
+
+compendium_card("I102", cost={"wood": 2}, points=1, prereq=needs_occupations(2),
+                holds_animals=_wildlife_reserve_holds)
 
 
 # ── I104 Weekly Market ────────────────────────────────────────────────

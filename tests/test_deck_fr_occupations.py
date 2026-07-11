@@ -868,3 +868,20 @@ def test_miser_discount_only_exactly_one_room_via_a_space(engine):
     cost_no_space = cards.modified_cost(s, p, "room", {"wood": 5, "reed": 2},
                                         {"count": 1})
     assert cost_no_space == {"wood": 5, "reed": 2}
+
+
+def test_reformer_holds_1_any_animal_per_occupation(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "occ_woodcutter")
+    inst = put_in_play(s, first, "FR105")
+    assert len(p["occupations"]) == 2
+
+    inst["held"] = {"sheep": 1, "boar": 1}
+    ok, err = cards.validate_held(s, p)
+    assert ok, err
+
+    inst["held"] = {"sheep": 2, "boar": 1}
+    ok, err = cards.validate_held(s, p)
+    assert not ok

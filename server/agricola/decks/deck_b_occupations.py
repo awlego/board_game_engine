@@ -42,11 +42,6 @@ UNIMPLEMENTED = {
             "outcome; the major_improvement space always requires "
             "building an improvement or playing a minor (no pass/decline "
             "option exists).",
-    "B115": "requires a pasture-capacity bonus that applies only to "
-            "stable-less pastures; the existing pasture_capacity_bonus "
-            "key is applied uniformly to every pasture by "
-            "state.pasture_capacity(), with no per-pasture stable "
-            "condition.",
     "B116": "requires reacting to the preparation-phase accumulation-"
             "space replenishment (reed_bank going from empty to 1 reed); "
             "no hook fires at replenish time.",
@@ -73,10 +68,6 @@ UNIMPLEMENTED = {
             "immediately followed by 'you also get 1 clay/food' with an "
             "unclear player-count mapping); likely still parse-"
             "contaminated and not reliably implementable.",
-    "B148": "grants extra house capacity for sheep specifically, scaled "
-            "by occupation count; the existing house_capacity ability is "
-            "animal-type-agnostic and would incorrectly extend capacity "
-            "to non-sheep pets too.",
     "B149": "spends 3 of the player's 4 available stables permanently; "
             "MAX_STABLES is a fixed engine constant with no per-player "
             "reduction mechanism, so this cost can't be paid faithfully.",
@@ -425,6 +416,31 @@ def _silokeeper_space(state, player, inst, ctx):
 
 compendium_card("B112", hooks={"harvest_field": _silokeeper_harvest,
                                "space_used": _silokeeper_space})
+
+
+# ── B115 Tinsmith Master ──────────────────────────────────────────────
+# "You can hold 1 additional animal in each pasture without a stable.
+# Each time you sow in a field, you can place 1 additional crop of the
+# respective type in that field." (Per rulings: one extra crop on top
+# of the existing stack, unconditional -- same auto-apply shape as
+# K118 Liquid Manure's sow hook in deck_k_minors.py.)
+def _tinsmith_pasture_mod(state, player, inst, info):
+    return 1 if info["stables"] == 0 else 0
+
+def _tinsmith_sow(state, player, inst, ctx):
+    added = 0
+    for target, crop in ctx["sown"]:
+        crops = player["cells"][target]["crops"] if isinstance(target, int) \
+            else target["crops"]
+        if crops:
+            crops["count"] += 1
+            added += 1
+    if added:
+        ctx["log"].append(f"{player['name']}'s Tinsmith Master adds "
+                          f"{added} extra crop(s)")
+
+compendium_card("B115", pasture_capacity_mod=_tinsmith_pasture_mod,
+                hooks={"sow": _tinsmith_sow})
 
 
 # ── B113 Patch Caregiver ──────────────────────────────────────────────
@@ -874,6 +890,24 @@ def _huntsman_choice(state, player, inst, ctx):
 
 compendium_card("B147", hooks={"space_used": _huntsman_space},
                 resolve_choice=_huntsman_choice)
+
+
+# ── B148 Pet Broker ──────────────────────────────────────────────────
+# "When you play this card, you immediately get 1 sheep. You can keep 1
+# sheep on each occupation in front of you." house_capacity is type-
+# agnostic (see UNIMPLEMENTED history), so this is registered as
+# card-held storage instead (holds_animals, sheep-typed cap scaled by
+# occupation count) -- the same lumped-single-card-total pattern B011
+# Feedyard uses for its per-pasture count (deck_b_minors.py).
+def _pet_broker_play(state, player, inst, ctx):
+    add_goods(ctx["extra"], {"sheep": 1})
+    ctx["log"].append(f"{player['name']}'s Pet Broker grants 1 sheep")
+
+def _pet_broker_holds(state, player, inst):
+    return {"types": {"sheep": len(player["occupations"])}}
+
+compendium_card("B148", hooks={"play": _pet_broker_play},
+                holds_animals=_pet_broker_holds)
 
 
 # ── B152 Junior Artist ────────────────────────────────────────────────

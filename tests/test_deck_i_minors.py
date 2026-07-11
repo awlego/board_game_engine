@@ -33,7 +33,7 @@ def test_registration_completeness():
 # ── Smoke test: every implemented card gets played once ──────────────
 
 _NEEDS_OCC = {"I63": 1, "I67": 2, "I72": 3, "I74": 2, "I79": 3, "I80": 3,
-             "I90": 2}
+             "I90": 2, "I102": 2}
 _DUMMY_OCCS = ["occ_woodcutter", "occ_reed_collector", "occ_clay_digger"]
 
 
@@ -510,3 +510,25 @@ def test_weekly_market_on_play_and_travels(engine):
                           "minor": {"card": "I104"}})
     assert s["players"][first]["resources"]["vegetable"] == 2
     assert "I104" in s["players"][other]["hand_minors"]
+
+
+def test_wildlife_reserve_holds_1_sheep_1_boar_1_cattle(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    for i in range(2):
+        put_in_play(s, first, ["occ_woodcutter", "occ_reed_collector"][i])
+    inst = put_in_play(s, first, "I102")
+    assert len(p["occupations"]) == 2
+
+    inst["held"] = {"sheep": 1, "boar": 1, "cattle": 1}
+    ok, err = cards.validate_held(s, p)
+    assert ok, err
+
+    inst["held"] = {"sheep": 2}
+    ok, err = cards.validate_held(s, p)
+    assert not ok
+
+    inst["held"] = {"boar": 2}
+    ok, err = cards.validate_held(s, p)
+    assert not ok

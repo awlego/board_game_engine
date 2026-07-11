@@ -697,3 +697,38 @@ def test_carpenters_apprentice_three_clauses(engine):
     fence_cost = cards.modified_cost(s, p, "fences", {"wood": 4},
                                      {"count": 4, "start_index": 12})
     assert fence_cost == {"wood": 1}
+
+
+def test_mud_wallower_accumulates_clay_and_exchanges_for_boar(engine):
+    s = make_state(engine, 4)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, "C148")
+    add_space(s, "forest3", "Forest 3", acc=True, supply={"wood": 3})
+    hook = cards.CARDS["C148"]["hooks"]["space_used"]
+
+    for _ in range(3):
+        ctx = {"space_id": "forest3", "goods": {"wood": 3}, "log": [],
+              "extra": {}, "actor": first}
+        hook(s, p, inst, ctx)
+    assert inst["data"]["clay"] == 3
+    assert inst.get("held", {}) == {}
+
+    ctx = {"space_id": "forest3", "goods": {"wood": 3}, "log": [],
+          "extra": {}, "actor": first}
+    hook(s, p, inst, ctx)  # 4th clay -> mandatory exchange
+    assert inst["data"]["clay"] == 0
+    assert inst["held"] == {"boar": 1}
+
+    # Another player's use of an accumulation space doesn't add clay.
+    ctx2 = {"space_id": "forest3", "goods": {"wood": 3}, "log": [],
+           "extra": {}, "actor": (first + 1) % 4}
+    hook(s, p, inst, ctx2)
+    assert inst["data"]["clay"] == 0
+
+    assert cards.CARDS["C148"]["holds_animals"](s, p, inst) == {"types": {"boar": None}}
+    ok, err = cards.validate_held(s, p)
+    assert ok, err
+    inst["held"] = {"sheep": 1}
+    ok, err = cards.validate_held(s, p)
+    assert not ok  # only boar allowed

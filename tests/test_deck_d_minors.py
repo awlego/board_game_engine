@@ -6,7 +6,7 @@ import pytest
 from server.agricola.engine import AgricolaEngine
 from server.agricola import cards
 from server.agricola.decks import deck_d_minors
-from server.agricola.state import HARVEST_ROUNDS
+from server.agricola.state import HARVEST_ROUNDS, cell_edges
 
 from test_agricola import (
     make_state, give, give_card, put_in_play, add_space, place, current_pid,
@@ -872,3 +872,31 @@ def test_hunting_trophy_prereq_and_play_consumes_boar(engine):
     assert p3["cells"][0]["animal"] is None
     # Cooking Hearth cooks boar for 3.
     assert p3["resources"]["food"] == food_before3 + 3
+
+
+def test_lawn_fertilizer_size1_capacity_and_house_lockout(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "D011")
+    p["fences"] = sorted(cell_edges(4))  # size-1 pasture at cell 4
+
+    assert cards.pasture_capacity(s, p, [4], "sheep") == 3  # 2 base + 1
+    p["cells"][4]["stable"] = True
+    assert cards.pasture_capacity(s, p, [4], "sheep") == 6  # 2*2 base + 2
+
+    # A differently-sized pasture is unaffected (size-1 mod doesn't apply).
+    p["cells"][4]["stable"] = False
+    fences = set(cell_edges(3)) | set(cell_edges(4))
+    fences.discard("v-0-4")
+    p["fences"] = sorted(fences)
+    assert cards.pasture_capacity(s, p, [3, 4], "sheep") == 4  # plain 2*2
+
+    # No animals in the house, not even via another card.
+    assert cards.house_capacity(s, p) == 0
+
+    food = p["resources"]["food"]
+    hook = cards.CARDS["D011"]["hooks"]["harvest_field"]
+    hook(s, p, {"id": "D011", "data": {}},
+        {"harvest_index": 1, "log": [], "actor": first, "extra": {}})
+    assert p["resources"]["food"] == food + 1

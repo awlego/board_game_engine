@@ -655,3 +655,28 @@ def test_site_manager_on_play_build_with_food_substitution(engine):
     with pytest.raises(ValueError):
         place(engine, s3, {"kind": "place", "space": "lessons", "card": "D095",
                           "params": {"improvement": "well"}})
+
+
+def test_reader_provides_room_once_6_occupations_are_in_play(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "D085")
+    for i, cid in enumerate(["occ_woodcutter", "occ_reed_collector",
+                             "occ_clay_digger", "occ_stonecutter"]):
+        put_in_play(s, first, cid)
+    assert len(p["occupations"]) == 5
+    assert cards.extra_rooms(s, p) == 0
+
+    add_space(s, "basic_wish", "Basic Wish for Children")
+    pid = p["player_id"]
+    acts = engine.get_valid_actions(s, pid)
+    assert not any(a["kind"] == "place" and a["space"] == "basic_wish"
+                  for a in acts)
+
+    put_in_play(s, first, "occ_shepherd")  # 6th occupation
+    assert len(p["occupations"]) == 6
+    assert cards.extra_rooms(s, p) == 1
+    acts = engine.get_valid_actions(s, pid)
+    assert any(a["kind"] == "place" and a["space"] == "basic_wish"
+              for a in acts)

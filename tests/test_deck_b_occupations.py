@@ -600,3 +600,43 @@ def test_estate_master_locks_in_bonus_once_farm_is_full(engine):
                              "actor": first, "extra": {}})
     assert inst["data"]["bonus"] == 5
     assert cards.CARDS["B132"]["score_bonus"](s, p, inst) == 5
+
+
+def test_tinsmith_master_stable_less_pasture_and_sow_bonus(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "B115")
+    p["fences"] = sorted(cell_edges(4))  # size-1 pasture, no stable
+    assert cards.pasture_capacity(s, p, [4], "sheep") == 3  # 2 base + 1
+    p["cells"][4]["stable"] = True
+    assert cards.pasture_capacity(s, p, [4], "sheep") == 4  # stabled -> no bonus
+
+    p["cells"][0]["type"] = "field"
+    p["cells"][0]["crops"] = {"type": "grain", "count": 1}
+    hook = cards.CARDS["B115"]["hooks"]["sow"]
+    hook(s, p, {"id": "B115", "data": {}},
+        {"sown": [(0, p["cells"][0]["crops"])], "log": []})
+    assert p["cells"][0]["crops"]["count"] == 2
+
+
+def test_pet_broker_gains_sheep_and_holds_by_occupation_count(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "occ_woodcutter")
+    inst = put_in_play(s, first, "B148")
+    assert len(p["occupations"]) == 2
+
+    assert cards.CARDS["B148"]["holds_animals"](s, p, inst) == {"types": {"sheep": 2}}
+    inst["held"] = {"sheep": 2}
+    ok, err = cards.validate_held(s, p)
+    assert ok, err
+    inst["held"] = {"sheep": 3}
+    ok, err = cards.validate_held(s, p)
+    assert not ok
+
+    play_hook = cards.CARDS["B148"]["hooks"]["play"]
+    ctx = {"log": [], "actor": first, "extra": {}}
+    play_hook(s, p, inst, ctx)
+    assert ctx["extra"]["sheep"] == 1

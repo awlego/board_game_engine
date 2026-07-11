@@ -72,11 +72,6 @@ UNIMPLEMENTED = {
     "K139": "lets the player use a family-growth action space another "
             "player has already placed on this round -- placing on an "
             "occupied space is the guide's unsupported mechanic.",
-    "K145": "unlimited card-held boar storage entirely outside house "
-            "capacity and pasture capacity. Accommodation only "
-            "consults house_capacity and pasture_capacity_bonus (same "
-            "gap noted for B012 in deck_b_minors.py) -- there is no "
-            "card-storage capacity query for animals.",
     "K339": "requires detecting each individual animal->food conversion "
             "during feeding (same unfired-hook gap as K109/C053) AND a "
             "novel per-room food-storage mechanic (max 1 food token per "
@@ -699,6 +694,15 @@ def _mansion_score(state, player, inst):
     return rooms * 2
 
 compendium_card("K144", score_bonus=_mansion_score)
+
+
+# ── K145 Forest Pasture ──────────────────────────────────────────────
+# "This card can hold an unlimited number of wild boar." Req 3 occ.
+def _forest_pasture_holds(state, player, inst):
+    return {"types": {"boar": None}}
+
+compendium_card("K145", points=1, prereq=needs_occupations(3),
+                holds_animals=_forest_pasture_holds)
 
 
 # ── K146 Loom ─────────────────────────────────────────────────────────

@@ -725,3 +725,33 @@ def test_slurry_grants_free_sow_after_diverse_breeding(engine):
     assert p["cells"][0]["crops"] == {"type": "grain", "count": 3}
     inst = next(i for i in p["minors"] if i["id"] == "C071")
     assert inst["data"]["sow_credits"] == 0
+
+
+def test_cattle_farm_holds_1_cattle_per_pasture(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, "C012")
+
+    inst["held"] = {"cattle": 0}
+    ok, err = cards.validate_held(s, p)
+    assert ok, err
+
+    # No pastures yet -> 0 cattle held.
+    inst["held"] = {"cattle": 1}
+    ok, err = cards.validate_held(s, p)
+    assert not ok
+
+    p["fences"] = sorted(cell_edges(4)) + sorted(cell_edges(8))
+    assert len(compute_pastures(p)) == 2
+    inst["held"] = {"cattle": 2}
+    ok, err = cards.validate_held(s, p)
+    assert ok, err
+
+    inst["held"] = {"cattle": 3}
+    ok, err = cards.validate_held(s, p)
+    assert not ok
+
+    inst["held"] = {"sheep": 1}
+    ok, err = cards.validate_held(s, p)
+    assert not ok  # only cattle allowed

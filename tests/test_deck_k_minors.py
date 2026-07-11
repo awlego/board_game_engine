@@ -39,7 +39,7 @@ def _prep_prereqs(state, pidx, cid):
     p = state["players"][pidx]
     n_occ = {"K108": 3, "K113": 1, "K114": 2, "K115": 3, "K117": 1,
             "K119": 1, "K131": 3, "K133": 2, "K136": 2, "K137": 3,
-            "K140": 4, "K142": 2, "K146": 2}.get(cid)
+            "K140": 4, "K142": 2, "K145": 3, "K146": 2}.get(cid)
     if n_occ:
         for i in range(n_occ):
             put_in_play(state, pidx, _DUMMY_OCCS[i])
@@ -669,3 +669,21 @@ def test_loom_k146_food_and_score(engine):
     cards.CARDS["K146"]["hooks"]["harvest_field"](s, p, inst, ctx)
     assert p["resources"]["food"] == 3
     assert cards.score_bonuses(s, p) == 2
+
+
+def test_forest_pasture_holds_unlimited_boar(engine):
+    s = make_state(engine, 4)
+    first = s["current_player"]
+    p = s["players"][first]
+    for i in range(3):
+        put_in_play(s, first, _DUMMY_OCCS[i])
+    inst = put_in_play(s, first, "K145")
+    assert len(p["occupations"]) == 3
+
+    inst["held"] = {"boar": 50}
+    ok, err = cards.validate_held(s, p)
+    assert ok, err
+
+    inst["held"] = {"sheep": 1}
+    ok, err = cards.validate_held(s, p)
+    assert not ok  # only boar allowed

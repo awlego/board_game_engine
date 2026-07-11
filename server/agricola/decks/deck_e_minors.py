@@ -81,16 +81,6 @@ UNIMPLEMENTED = {
            "_apply_feed's conversion loop doesn't fire any card event "
            "either (same class of gap as D083's harvest-food "
            "conversions).",
-    "E29": "two blocked mechanics: the +2 pasture capacity only for "
-           "pastures 'where you keep sheep' can't be expressed since "
-           "pasture_capacity_bonus is a flat additive across every "
-           "pasture regardless of animal type; and unfenced-stable "
-           "capacity is hardcoded to 1 in validate_animal_placement "
-           "with no card-modifier hook (same class of gap as B012).",
-    "E58": "a card-held slot for 2 animals of any type, kept outside the "
-           "house/pastures; validate_animal_placement only recognizes "
-           "pastures, unfenced stables, and the house as accommodation "
-           "buckets (same gap as B012).",
     "E338": "would gain an animal (duplicating one already owned) "
             "through a feeding-phase conversion, but the engine's "
             "conversion 'get' path only credits player['resources'], "
@@ -319,7 +309,24 @@ def _e28_score(state, player, inst):
 compendium_card("E28", cost={"wood": 1}, score_bonus=_e28_score)
 
 
-# ── E29 Shepherd's Pipe — UNIMPLEMENTED (see module dict) ────────────
+# ── E29 Shepherd's Pipe ────────────────────────────────────────────────
+# "You can hold up to 2 additional sheep in each of the pastures where
+# you keep sheep. You can keep up to 2 sheep in each unfenced stable."
+# Req 1 sheep. (Rulings also say this increases the Animal Yard/Wildlife
+# Reserve's capacity for sheep -- that cross-card interaction isn't
+# modeled here, same documented-gap treatment as K120 House Goat's
+# Animal Tamer interaction in deck_k_minors.py.)
+def _shepherds_pipe_pasture_mod(state, player, inst, info):
+    return 2 if info["animal_type"] == "sheep" else 0
+
+def _shepherds_pipe_stable_mod(state, player, inst, animal_type):
+    return 1 if animal_type == "sheep" else 0
+
+compendium_card(
+    "E29",
+    prereq=(lambda s, p: animal_totals_of(p)["sheep"] >= 1, "1 sheep"),
+    pasture_capacity_mod=_shepherds_pipe_pasture_mod,
+    unfenced_stable_capacity_mod=_shepherds_pipe_stable_mod)
 
 
 # ── E30 Canoe ────────────────────────────────────────────────────────────
@@ -744,7 +751,17 @@ compendium_card(
     hooks=schedule_on_play("food", fixed_rounds=(10, 11, 12, 13, 14)))
 
 
-# ── E58 Animal Yard — UNIMPLEMENTED (see module dict) ────────────────
+# ── E58 Animal Yard ────────────────────────────────────────────────────
+# "This card can hold up to two animals of your choice. They need not be
+# the same type of animal." Req 1 occ. (Rulings also say this is
+# increased by the Drinking Trough and Shepherd's Pipe -- that
+# cross-card capacity interaction isn't modeled here, same documented-
+# gap treatment as E29/K120's own noted interaction gaps.)
+def _animal_yard_holds(state, player, inst):
+    return {"total": 2}
+
+compendium_card("E58", cost={"wood": 2}, points=1, prereq=needs_occupations(1),
+                holds_animals=_animal_yard_holds)
 
 
 # ── E59 Drinking Trough ──────────────────────────────────────────────────

@@ -31,9 +31,6 @@ from server.agricola.state import (
 )
 
 UNIMPLEMENTED = {
-    "D085": "Reader: extra_rooms is a static per-card value in this engine; "
-            "it can't express a conditional ('once you have 6 occupations') "
-            "room grant.",
     "D086": "Sheep Agent: 'keep 1 sheep on each occupation card' needs a "
             "per-occupation-card animal-capacity mode; house_capacity only "
             "supports a flat int or 'per_room'.",
@@ -155,6 +152,18 @@ def _remove_one_animal(player, animal_type):
                 c["animal"] = None
             return True
     return False
+
+
+# ── D085 Reader ───────────────────────────────────────────────────────
+# "As soon as you have 6 occupations in front of you (including this
+# one), this card provides room for one person." This is the GUIDE.md
+# worked example for a computed extra_rooms fn (engine phase 8): a
+# static per-card int can't express the "once you have 6" condition, but
+# extra_rooms=fn(state, player, inst) -> int can.
+def _reader_extra_rooms(state, player, inst):
+    return 1 if len(player["occupations"]) >= 6 else 0
+
+compendium_card("D085", extra_rooms=_reader_extra_rooms)
 
 
 # ── D088 Millwright ──────────────────────────────────────────────────

@@ -25,10 +25,6 @@ from server.agricola.state import (
 )
 
 UNIMPLEMENTED = {
-    "D011": "static per-pasture-size capacity (size-1 pastures hold 3, or "
-            "6 with a stable) -- pasture_capacity_bonus is one flat "
-            "additive value applied to every pasture regardless of its "
-            "size, so a size-conditioned bonus can't be expressed",
     "D021": "lets you take a Family Growth action in place of a Minor "
             "Improvement action's usual effect -- the engine's per-space "
             "handlers (_resolve_space) don't expose a substitution point "
@@ -287,7 +283,32 @@ def _fern_seeds_play(state, player, inst, ctx):
 compendium_card("D008", prereq=FERN_SEEDS_PREREQ,
                 hooks={"play": _fern_seeds_play})
 
-# D011 Lawn Fertilizer -- see UNIMPLEMENTED
+# ── D011 Lawn Fertilizer ─────────────────────────────────────────────
+# "Your pastures of size 1 can hold up to 3 animals of the same type.
+# (With a stable, they can hold up to 6.) In the feeding phase of each
+# harvest, you get 1 food. You can no longer hold animals in your house
+# (not even via another card)." The DB's parsed cost/vp fields are empty/
+# 0 (the meta field failed to split out of this entry's running text --
+# a parser artifact, see the module docstring's pattern), but the text
+# itself states "(1VP. Cost 1 Grain.)" inline as a single coherent
+# clause (not a second, unrelated card's bleed-through, unlike this
+# file's other documented cases) -- cost/points are overridden to match
+# the printed text rather than the empty parsed fields.
+def _lawn_fertilizer_mod(state, player, inst, info):
+    if info["size"] != 1:
+        return 0
+    return 2 if info["stables"] >= 1 else 1  # +1 -> 3; +2 -> 2*2+2=6
+
+# house_capacity=-1 models "no animals in your house, not even via
+# another card" the same way K120 House Goat does (deck_k_minors.py):
+# reduces the base 1-pet house capacity to 0. As with that precedent,
+# this doesn't fully override a hypothetical house_capacity="per_room"
+# card also in play (no priority/override rule between two static
+# keys) -- an accepted, documented simplification, not a silent one.
+compendium_card("D011", cost={"grain": 1}, points=1,
+                hooks=harvest_food(lambda s, p: 1),
+                pasture_capacity_mod=_lawn_fertilizer_mod,
+                house_capacity=-1)
 
 # ── D013 Trowel ────────────────────────────────────────────────────────
 # Cost 1W. At any time, renovate straight to stone at a special cost.

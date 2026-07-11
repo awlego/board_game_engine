@@ -1080,12 +1080,39 @@ UNIMPLEMENTED["C146"] = (
 
 # ═════════════════════════════════════════════════════════════════════
 # C148 Mud Wallower — min 4 players
+# "Each time you use an accumulation space, place 1 clay from the
+# general supply on this card. You must immediately exchange 4 clay on
+# this card for 1 wild boar, held by this card." The clay stash lives
+# in inst["data"] (card-local, not animal storage); once it reaches 4
+# it's mandatorily exchanged for 1 held boar via holds_animals'
+# inst["held"]. Per the rulings, this card only ever holds boar
+# received this way (holds_animals declares "boar" only, unlimited) and
+# those boar DO participate in breeding/scoring like any other
+# card-held animal (animal_counts reads inst["held"] directly) --
+# exactly the fidelity the engine's card-held-storage mechanism (phase
+# 8) was built for.
 # ═════════════════════════════════════════════════════════════════════
-UNIMPLEMENTED["C148"] = (
-    "'exchange 4 clay on this card for 1 wild boar, held by this card' "
-    "needs animals stored outside cells/pets that still participate in "
-    "breeding and scoring; animal_counts/animal_totals_of and the "
-    "breeding phase only read cells and pets")
+def _mud_wallower_space_used(state, player, inst, ctx):
+    if ctx["actor"] != player["index"]:
+        return
+    sp = next((s for s in state["action_spaces"]
+              if s["id"] == ctx["space_id"]), None)
+    if not sp or not sp["accumulates"]:
+        return
+    inst["data"]["clay"] = inst["data"].get("clay", 0) + 1
+    ctx["log"].append(f"{player['name']}'s Mud Wallower places 1 clay on itself")
+    while inst["data"]["clay"] >= 4:
+        inst["data"]["clay"] -= 4
+        inst["held"] = inst.get("held") or {}
+        inst["held"]["boar"] = inst["held"].get("boar", 0) + 1
+        ctx["log"].append(f"{player['name']}'s Mud Wallower exchanges 4 clay "
+                          "for 1 wild boar")
+
+def _mud_wallower_holds(state, player, inst):
+    return {"types": {"boar": None}}
+
+compendium_card("C148", holds_animals=_mud_wallower_holds,
+                hooks={"space_used": _mud_wallower_space_used})
 
 # ═════════════════════════════════════════════════════════════════════
 # C149 Resource Recycler — UNIMPLEMENTED

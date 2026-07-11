@@ -662,3 +662,39 @@ def test_animal_teacher_purchase(engine):
     p = s["players"][first]
     totals = cards.animal_totals_of(p)
     assert totals["sheep"] == 1
+
+
+def test_lodger_room_expires_after_round_9(engine):
+    s = make_state(engine, 3)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "A127")
+    s["round"] = 1
+    assert cards.extra_rooms(s, p) == 1
+    s["round"] = 9
+    assert cards.extra_rooms(s, p) == 1  # still active through round 9
+    s["round"] = 10
+    assert cards.extra_rooms(s, p) == 0  # expired after round 9's returning home
+
+
+def test_woolgrower_capacity_tracks_completed_feeding_phases(engine):
+    s = make_state(engine, 4)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, "A148")
+    holds = cards.CARDS["A148"]["holds_animals"]
+    assert holds(s, p, inst) == {"types": {"sheep": 0}}  # no harvest yet
+
+    s["harvest_index"] = 1
+    s["phase"] = "feeding"
+    assert holds(s, p, inst) == {"types": {"sheep": 0}}  # this feeding isn't done
+
+    s["phase"] = "breeding"
+    assert holds(s, p, inst) == {"types": {"sheep": 1}}  # feeding just completed
+
+    s["phase"] = "work"
+    assert holds(s, p, inst) == {"types": {"sheep": 1}}  # still 1 in round 5+
+
+    s["harvest_index"] = 2
+    s["phase"] = "feeding"
+    assert holds(s, p, inst) == {"types": {"sheep": 1}}

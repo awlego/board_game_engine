@@ -111,12 +111,6 @@ UNIMPLEMENTED = {
              "_apply_feed fires no hook per conversion (same gap as "
              "FR067), and this card additionally needs visibility into "
              "OTHER players' feedings, which conversions don't broadcast.",
-    "FR105": "Reformer: 'keep 1 animal on each occupation card' needs a "
-             "house_capacity variant scaled by the number of occupations "
-             "in play; house_capacity only supports a flat int or "
-             "'per_room', and extending it means editing cards.py's "
-             "shared query function, outside this module's two "
-             "deliverables.",
     "FR113": "Trailblazer: 'at the start of each round, you may pay 1 "
              "Food to Plow 1 field' is an optional round_start choice; "
              "round_start hooks cannot prompt, and there is no parameter "
@@ -1022,6 +1016,19 @@ def _racing_stable_manager_choice(state, player, inst, ctx):
 
 compendium_card("FR104", hooks={"stable_built": _racing_stable_manager_stable},
                 resolve_choice=_racing_stable_manager_choice)
+
+
+# ── FR105 Reformer ───────────────────────────────────────────────────
+# "You may keep any 1 animal on each of your played Occupation cards."
+# Registered as card-held storage on this instance (holds_animals, any
+# type, aggregated total = occupation count), the same lumped-single-
+# card-total pattern B011 Feedyard uses for "1 animal per pasture"
+# (deck_b_minors.py) -- "on each occupation card" is a per-card slot
+# count, not a distinct per-card storage location the engine models.
+def _reformer_holds(state, player, inst):
+    return {"total": len(player["occupations"])}
+
+compendium_card("FR105", holds_animals=_reformer_holds)
 
 
 # ── FR106 Sailboat Constructor ────────────────────────────────────────

@@ -29,9 +29,6 @@ UNIMPLEMENTED = {
             "5 people) and per-species card storage (1 sheep/1 boar/1 "
             "cattle) aren't expressible via the flat extra_rooms/"
             "house_capacity queries",
-    "C012": "per-pasture-count animal storage (grows with pastures built) "
-            "has no supported query -- house_capacity only takes a flat "
-            "int or 'per_room'",
     "C013": "renovating directly from wood to stone, skipping the clay "
             "stage, requires overriding the fixed RENOVATION_TARGET "
             "sequence -- not exposed to cost_mod",
@@ -174,6 +171,14 @@ compendium_card("C005", hooks={"play": _c005_play})
 # "(Cost 1F.) Immediately place 1 stone on each of your empty fields..."
 # clause whose ruling is tagged "(FotM)" -- Farmers of the Moor bleed;
 # not implemented, per GUIDE's FotM exclusion.)
+
+
+# ── C012 Cattle Farm ──────────────────────────────────────────────────
+# "For each pasture you have, you can keep 1 cattle on this card."
+def _cattle_farm_holds(state, player, inst):
+    return {"types": {"cattle": len(compute_pastures(player))}}
+
+compendium_card("C012", holds_animals=_cattle_farm_holds)
 
 
 def _c083_play(state, player, inst, ctx):

@@ -48,10 +48,6 @@ UNIMPLEMENTED = {
              "as a discrete event; raw crop-to-food conversion is a "
              "static rate query (raw_values), never a fired event (same "
              "gap as B029)",
-    "FR013": "requires extra animal capacity limited to pastures that "
-             "specifically hold sheep; pasture_capacity_bonus applies "
-             "uniformly to every pasture with no per-pasture, "
-             "per-animal-type condition (same gap as B115)",
     "FR014": "requires a food stash usable only to pay Occupation costs; "
              "the occupation-cost payment path has no hook for an "
              "alternate resource source (same gap as B155)",
@@ -397,6 +393,34 @@ def _camembert_play(state, player, inst, ctx):
 
 compendium_card("FR012", points=1, prereq=needs_occupations(2),
                 hooks={"play": _camembert_play})
+
+
+# ── FR013 Chameleon ────────────────────────────────────────────────────
+# "When you play this card, you receive 1 Wild boar. You may keep 1
+# Wild boar in each of your pastures that hold Sheep. (Pastures can
+# still only hold the normal amount of animals)." Cost 1 sheep -- an
+# animal cost, not a resource cost, so it's paid inside the play hook
+# (same shape as this file's own FR028 Hammock). This is the GUIDE.md
+# worked example for pasture_secondary_types (a second animal type
+# sharing a pasture, still counting against that pasture's own total
+# capacity) -- not a capacity increase, despite this card's stale
+# UNIMPLEMENTED note (written before pasture_secondary_types existed as
+# its own distinct mechanism) describing it as one.
+def _chameleon_play(state, player, inst, ctx):
+    if not _remove_animal(player, "sheep", 1):
+        raise ValueError("Chameleon: you need 1 sheep to play this card")
+    add_goods(ctx["extra"], {"boar": 1})
+    ctx["log"].append(f"{player['name']}'s Chameleon exchanges 1 sheep for "
+                      "1 wild boar")
+
+def _chameleon_secondary(state, player, inst, info):
+    return {"boar": 1} if info["animal_type"] == "sheep" else {}
+
+compendium_card(
+    "FR013", cost={},
+    prereq=(lambda s, p: animal_totals_of(p)["sheep"] >= 1, "1 sheep"),
+    hooks={"play": _chameleon_play},
+    pasture_secondary_types=_chameleon_secondary)
 
 
 # ── FR015 Coffee Break ────────────────────────────────────────────────

@@ -45,9 +45,6 @@ UNIMPLEMENTED = {
     "A113": "requires a field to simultaneously hold two crop types "
             "(grain stacked with vegetable); the field model stores a "
             "single crop type per cell/card.",
-    "A127": "extra_rooms is permanent for the game; this card requires the "
-            "room grant to expire after round 9's returning-home phase, "
-            "with no card-removal-from-play mechanism available.",
     "A128": "grants a discounted room build reactively to another "
             "player's Reed Bank use; building a room (cell adjacency, "
             "house-type cost) is engine-internal logic not exposed to "
@@ -64,10 +61,6 @@ UNIMPLEMENTED = {
             "the returning home phase'; occupied_by is reset to None "
             "before any round-boundary hook fires, so that state can't be "
             "observed.",
-    "A148": "needs a new animal-storage location tied to this specific "
-            "card (capacity = completed feeding phases), separate from "
-            "house/pasture/stable capacity; not exposed by the "
-            "accommodation system.",
     "A149": "grants a full discounted Build Rooms sub-action reactively; "
             "room building (adjacency, house-type cost) is engine-internal "
             "and not exposed to card hooks.",
@@ -451,6 +444,27 @@ def _master_workman_space_used(state, player, inst, ctx):
 compendium_card("A126", hooks={"space_used": _master_workman_space_used})
 
 
+# ── A127 Lodger ──────────────────────────────────────────────────────
+# "This card provides room for 1 person, but only until the returning
+# home phase of round 9. If you have not moved the person elsewhere by
+# then, remove it from play." extra_rooms is now a callable that can
+# read state["round"] (engine phase 8), so the expiry is a computed 0
+# after round 9 -- round 9's own returning-home phase runs while
+# state["round"] is still 9 (it only advances to 10 afterward), so
+# `<= 9` covers exactly "through round 9's returning home". The card
+# itself is never literally removed from play (no such mechanism
+# exists) -- functionally equivalent here since Lodger has no other
+# ability that cares whether it's "in play"; extra_rooms is the only
+# thing any caller consults it for, and it correctly reads 0 from round
+# 10 on. This does not retroactively evict a person already grown into
+# the room, matching the physical rule (losing the room doesn't remove
+# family members, only blocks further growth relying on it).
+def _lodger_extra_rooms(state, player, inst):
+    return 1 if state["round"] <= 9 else 0
+
+compendium_card("A127", extra_rooms=_lodger_extra_rooms)
+
+
 # ── A131 Craft Teacher ───────────────────────────────────────────────
 CRAFT_TEACHER_MAJORS = ("joinery", "pottery", "basketmaker")
 
@@ -698,6 +712,27 @@ def _storehouse_steward_space_used(state, player, inst, ctx):
         ctx["log"].append(f"{player['name']}'s Storehouse Steward adds 1 {good}")
 
 compendium_card("A146", hooks={"space_used": _storehouse_steward_space_used})
+
+
+# ── A148 Woolgrower ──────────────────────────────────────────────────
+# "This card can hold a number of sheep equal to the number of
+# completed feeding phases." No new hook needed: state["harvest_index"]
+# already counts harvests started (bumped at the top of _start_harvest,
+# before the feeding phase begins), so it equals the completed count
+# exactly except while THIS harvest's own feeding phase is still in
+# progress (state["phase"] == "feeding"), when it's one ahead -- that
+# harvest's feeding isn't done yet. Verified against every phase this
+# can be queried from: phase "work" (any round, including the one right
+# after a harvest) and "breeding" (right after all players finish
+# feeding, same harvest_index) both want harvest_index unadjusted; only
+# "feeding" itself wants harvest_index - 1.
+def _woolgrower_holds(state, player, inst):
+    n = state["harvest_index"]
+    if state.get("phase") == "feeding":
+        n -= 1
+    return {"types": {"sheep": max(0, n)}}
+
+compendium_card("A148", holds_animals=_woolgrower_holds)
 
 
 # ── A153 Pig Owner ───────────────────────────────────────────────────

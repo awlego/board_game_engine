@@ -8,6 +8,7 @@ from server.agricola import cards
 from server.agricola.decks import deck_e_minors
 from server.agricola.state import (
     MAJOR_IMPROVEMENTS, TOTAL_ROUNDS, plowable_cells, compute_pastures,
+    cell_edges,
 )
 
 from test_agricola import (
@@ -46,7 +47,8 @@ _DUMMY_OCCS = ["occ_woodcutter", "occ_reed_collector", "occ_clay_digger",
               "occ_stonecutter"]
 
 _NEEDS_OCC = {"E18": 2, "E24": 4, "E30": 2, "E36": 1, "E43": 3, "E46": 2,
-             "E47": 3, "E48": 3, "E49": 2, "E54": 4, "E61": 3, "E62": 2}
+             "E47": 3, "E48": 3, "E49": 2, "E54": 4, "E58": 1, "E61": 3,
+             "E62": 2}
 
 
 def _prep_prereqs_and_params(state, pidx, cid):
@@ -74,6 +76,8 @@ def _prep_prereqs_and_params(state, pidx, cid):
         give(state, pidx, wood=1)
         params = {"pay": "wood", "gain": "stone"}
     elif cid == "E60":
+        p["cells"][0]["animal"] = {"type": "sheep", "count": 1}
+    elif cid == "E29":
         p["cells"][0]["animal"] = {"type": "sheep", "count": 1}
     elif cid == "E11":
         params = {"cell": plowable_cells(p)[0]}
@@ -747,3 +751,33 @@ def test_clay_roof_reed_to_clay_payment(engine):
     with pytest.raises(ValueError):
         cards.modified_cost(s, p, "room", {"wood": 5, "reed": 2},
                             {"count": 1, "payment": {"reed_to_clay": 5}})
+
+
+def test_shepherds_pipe_sheep_pasture_and_stable(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    p["cells"][0]["animal"] = {"type": "sheep", "count": 1}  # meet the prereq
+    put_in_play(s, first, "E29")
+    p["fences"] = sorted(cell_edges(4))  # size-1 pasture, base capacity 2
+
+    assert cards.pasture_capacity(s, p, [4], "sheep") == 4  # 2 base + 2
+    assert cards.pasture_capacity(s, p, [4], "cattle") == 2  # unaffected
+    assert cards.unfenced_stable_capacity(s, p, "sheep") == 2
+    assert cards.unfenced_stable_capacity(s, p, "cattle") == 1
+
+
+def test_animal_yard_holds_2_any_mix(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "occ_woodcutter")  # meet the 1-occupation prereq
+    inst = put_in_play(s, first, "E58")
+
+    inst["held"] = {"sheep": 1, "boar": 1}
+    ok, err = cards.validate_held(s, p)
+    assert ok, err
+
+    inst["held"] = {"sheep": 2, "boar": 1}
+    ok, err = cards.validate_held(s, p)
+    assert not ok
