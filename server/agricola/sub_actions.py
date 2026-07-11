@@ -637,7 +637,15 @@ def play_occupation(state, player, cid, log, params=None, cost_override=None, ct
     anything else; the space-specific Lessons pricing (occs_played-
     dependent escalation) is `engine._occupation_cost`/
     `lessons_occupation_cost`, only meaningful for the Lessons/
-    Lessons(3-4p) action spaces themselves."""
+    Lessons(3-4p) action spaces themselves.
+
+    An occupation spec's own `cost` dict (E172 Chief's "costs an
+    additional 2 food") is a card-inherent surcharge, charged on top of
+    every path INCLUDING `"free"` -- "at no cost" grants waive the play
+    cost, not the card's own printed "additional" cost. (The Lessons
+    valid-action preview can't see it -- `lessons_occupation_cost` is
+    card-agnostic -- so a placement can still fail here on the
+    surcharge; apply_action's deep-copy keeps that atomic.)"""
     if cid not in player["hand_occupations"]:
         raise ValueError("That occupation is not in your hand")
     spec = cards.CARDS[cid]
@@ -646,24 +654,33 @@ def play_occupation(state, player, cid, log, params=None, cost_override=None, ct
     if not cards.check_prereq(state, player, cid):
         raise ValueError(f"Prerequisite not met: {spec['prereq'][1]}")
     if isinstance(cost_override, dict):
-        cost = cost_override
+        cost = dict(cost_override)
     elif cost_override == "free":
         cost = {}
     else:
         n = max(0, 1 + cards.occ_cost_delta(player))
         full_ctx = dict(ctx or {})
         full_ctx["card"] = cid
-        cost = cards.modified_cost(state, player, "occupation", {"food": n}, full_ctx)
-    if cost_override != "free":
-        pay(player, cost)
+        cost = dict(cards.modified_cost(state, player, "occupation",
+                                        {"food": n}, full_ctx))
+    surcharge = spec.get("cost") or {}
+    for res, amount in surcharge.items():
+        cost[res] = cost.get(res, 0) + amount
+    pay(player, cost)
     player["hand_occupations"].remove(cid)
     inst = cards.new_instance(cid)
     player["occupations"].append(inst)
     player["occs_played"] += 1
     _add_card_space(state, player, inst)
-    # Occupations are always priced in food; report the total even when
-    # it's 0 (matches the Lessons space's escalating-cost log lines).
-    cost_str = "free" if cost_override == "free" else f"{cost.get('food', 0)} food"
+    # Occupations are normally priced in food; report the total even
+    # when it's 0 (matches the Lessons space's escalating-cost log
+    # lines). A non-food surcharge falls back to the full goods string.
+    if cost_override == "free" and not cost:
+        cost_str = "free"
+    elif set(cost) <= {"food"}:
+        cost_str = f"{cost.get('food', 0)} food"
+    else:
+        cost_str = cards.goods_str(cost)
     log.append(f"{player['name']} plays the occupation "
               f"\"{spec['name']}\" ({cost_str})")
 

@@ -304,6 +304,34 @@ def test_dock_worker_conversions(engine):
     assert p["resources"]["stone"] == 1
 
 
+def test_chief_surcharge_is_charged_on_top_of_lessons_cost(engine):
+    # E172's printed "costs an additional 2 food" is a card-inherent
+    # surcharge play_occupation adds to every path (even a free first
+    # Lessons play).
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    give_card(s, first, "E172")
+    give(s, first, food=2)
+    food = p["resources"]["food"]
+    s = place(engine, s, {"kind": "place", "space": "lessons",
+                          "card": "E172"})
+    p = s["players"][first]
+    assert p["occs_played"] == 1
+    assert p["resources"]["food"] == food - 2  # Lessons free + 2 surcharge
+
+
+def test_chief_surcharge_applies_to_free_grants(engine):
+    s = make_state(engine, 2)
+    p = s["players"][0]
+    give_card(s, 0, "E172")
+    give(s, 0, food=2)
+    food = p["resources"]["food"]
+    log = []
+    sub_actions.play_occupation(s, p, "E172", log, cost_override="free")
+    assert p["resources"]["food"] == food - 2
+
+
 def test_chief_extra_cost_and_stone_room_score(engine):
     assert cards.CARDS["E172"]["cost"] == {"food": 2}
     s = make_state(engine, 2)
