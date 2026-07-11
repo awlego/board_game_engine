@@ -694,3 +694,34 @@ def test_studio_conversions_generic_pathway(engine):
                 cards.conversion_options(p))
     key = next(k for k in convs if k.startswith("C055:0"))
     assert convs[key] == {"give": {"wood": 1}, "get": {"food": 2}}
+
+
+def test_slurry_grants_free_sow_after_diverse_breeding(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, "C071")
+    hook = cards.CARDS["C071"]["hooks"]["breeding"]
+
+    ctx = {"newborns": {"sheep": 1}, "unplaced": {}, "harvest_index": 1,
+          "log": [], "actor": first, "extra": {}}
+    hook(s, p, inst, ctx)
+    assert inst["data"].get("sow_credits", 0) == 0  # only 1 type -> no credit
+
+    ctx2 = {"newborns": {"sheep": 1, "boar": 1}, "unplaced": {},
+           "harvest_index": 1, "log": [], "actor": first, "extra": {}}
+    hook(s, p, inst, ctx2)
+    assert inst["data"]["sow_credits"] == 1
+
+    p["cells"][0]["type"] = "field"
+    give(s, first, grain=1)
+    assert cards.CARDS["C071"]["card_action"]["available"](s, p, inst)
+    pid = p["player_id"]
+    s = engine.apply_action(s, pid, {
+        "kind": "card_action", "card": "C071",
+        "params": {"sow_items": [{"cell": 0, "crop": "grain"}]},
+    }).new_state
+    p = s["players"][first]
+    assert p["cells"][0]["crops"] == {"type": "grain", "count": 3}
+    inst = next(i for i in p["minors"] if i["id"] == "C071")
+    assert inst["data"]["sow_credits"] == 0

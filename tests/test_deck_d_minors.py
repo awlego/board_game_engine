@@ -77,6 +77,9 @@ def _prep_prereqs(state, pidx, cid):
         p["improvements"].append("pottery")
         if "pottery" in state["available_improvements"]:
             state["available_improvements"].remove("pottery")
+    if cid == "D070":
+        p["cells"][0]["type"] = "field"
+        p["cells"][1]["type"] = "field"
 
 
 def _resolve_all_prompts(engine, state, pid):
@@ -689,3 +692,103 @@ def test_roof_ladder_cost_mod_and_bonus_stone(engine):
     assert p["house_type"] == "clay"
     assert p["resources"]["reed"] == 0  # never had any, and none was charged
     assert p["resources"]["stone"] == 1
+
+
+def test_breed_registry_tracks_source_and_cooking(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, "D036")
+    assert cards.CARDS["D036"]["prereq"][0](s, p)  # starts with no sheep
+
+    gained = cards.CARDS["D036"]["hooks"]["gained"]
+    converted = cards.CARDS["D036"]["hooks"]["converted"]
+    score = cards.CARDS["D036"]["score_bonus"]
+
+    # 2 non-breeding sheep -> still within the "at most 2" limit.
+    gained(s, p, inst, {"goods": {"sheep": 2}, "source": "space",
+                       "log": [], "actor": first})
+    assert inst["data"]["non_breeding_sheep"] == 2
+    assert score(s, p, inst) == 3
+
+    # A 3rd non-breeding sheep breaks the limit.
+    gained(s, p, inst, {"goods": {"sheep": 1}, "source": "space",
+                       "log": [], "actor": first})
+    assert score(s, p, inst) == 0
+
+    # Breeding-sourced sheep never count against the limit.
+    inst["data"]["non_breeding_sheep"] = 0
+    gained(s, p, inst, {"goods": {"sheep": 5}, "source": "breeding",
+                       "log": [], "actor": first})
+    assert inst["data"]["non_breeding_sheep"] == 0
+    assert score(s, p, inst) == 3
+
+    # Cooking a sheep zeroes the bonus regardless of the sheep count.
+    converted(s, p, inst, {"give": {"sheep": 1}, "get": {"food": 2},
+                          "actor": first})
+    assert score(s, p, inst) == 0
+
+
+def test_grain_sieve_bonus_grain_needs_2_harvested(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "D065")
+    p["cells"][0]["type"] = "field"
+    p["cells"][0]["crops"] = {"type": "grain", "count": 1}
+    grain_before = p["resources"]["grain"]
+    log = []
+    engine._start_harvest(s, log)
+    p = s["players"][first]
+    assert p["resources"]["grain"] == grain_before + 1  # just the 1 harvested
+
+
+def test_grain_sieve_bonus_grain_at_2_harvested(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "D065")
+    p["cells"][0]["type"] = "field"
+    p["cells"][0]["crops"] = {"type": "grain", "count": 3}
+    p["cells"][1]["type"] = "field"
+    p["cells"][1]["crops"] = {"type": "grain", "count": 3}
+    grain_before = p["resources"]["grain"]
+    log = []
+    engine._start_harvest(s, log)
+    p = s["players"][first]
+    # 2 grain harvested (1 per field) + 1 bonus grain.
+    assert p["resources"]["grain"] == grain_before + 2 + 1
+
+
+def test_straw_manure_pays_grain_to_add_vegetables(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "D070")
+    p["cells"][0]["type"] = "field"
+    p["cells"][0]["crops"] = {"type": "vegetable", "count": 1}
+    p["cells"][1]["type"] = "field"
+    p["cells"][1]["crops"] = {"type": "vegetable", "count": 1}
+    give(s, first, grain=1)
+    veg_before = p["resources"]["vegetable"]
+    log = []
+    engine._start_harvest(s, log)
+    p = s["players"][first]
+    assert s["phase"] == "work"  # stalled on the prompt
+    assert len(s["prompts"]) == 1
+    prompt = s["prompts"][0]
+    # Choose the combo that covers both fields.
+    idx = next(i for i, combo in enumerate(prompt["data"]["combos"])
+              if len(combo) == 2)
+    pid = p["player_id"]
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": idx}).new_state
+    p = s["players"][first]
+    assert p["resources"]["grain"] == 0
+    assert s["phase"] == "feeding"  # field phase ran once the prompt resolved
+    # Straw Manure adds 1 to each field before the field phase (1 -> 2),
+    # then the field phase's normal -1 harvest deduction brings each
+    # back to 1 (not 0) -- net effect is the extra crop was harvested
+    # instead of emptying the field.
+    assert p["cells"][0]["crops"]["count"] == 1
+    assert p["cells"][1]["crops"]["count"] == 1
+    assert p["resources"]["vegetable"] == veg_before + 2

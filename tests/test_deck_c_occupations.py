@@ -652,3 +652,19 @@ def test_animal_catcher_swap_option(engine):
     from server.agricola.state import animal_counts
     counts = animal_counts(s["players"][first])
     assert counts == {"sheep": 1, "boar": 1, "cattle": 1}
+
+
+def test_agricultural_labourer_grants_clay_per_grain_gain(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "C120")
+    add_space(s, "grain_test_c120", "Grain Test", acc=True, supply={"grain": 2})
+    clay_before = p["resources"]["clay"]
+    s = place(engine, s, {"kind": "place", "space": "grain_test_c120"})
+    p = s["players"][first]
+    # "For each grain you obtain" is proportional: 2 grain -> 2 clay,
+    # and the 8-clay pile decrements by that amount.
+    assert p["resources"]["clay"] == clay_before + 2
+    inst = next(i for i in p["occupations"] if i["id"] == "C120")
+    assert inst["data"]["clay"] == 6

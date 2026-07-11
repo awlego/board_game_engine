@@ -572,3 +572,31 @@ def test_weakling_grants_vegetable(engine):
           "log": [], "actor": first}
     cards.CARDS["B161"]["hooks"]["space_used"](s, s["players"][first], None, ctx)
     assert s["players"][first]["resources"]["vegetable"] == veg_before + 1
+
+
+def test_estate_master_locks_in_bonus_once_farm_is_full(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, "B132")
+    for c in p["cells"]:
+        c["type"] = "room"  # no unused farmyard spaces left
+
+    play_hook = cards.CARDS["B132"]["hooks"]["play"]
+    play_hook(s, p, inst, {"log": [], "actor": first, "extra": {}})
+    assert inst["data"]["unlocked"]
+
+    harvest_hook = cards.CARDS["B132"]["hooks"]["harvest_field"]
+    harvest_hook(s, p, inst, {"got": {"grain": 1, "vegetable": 3},
+                             "tiles": {}, "card_fields": {}, "log": [],
+                             "actor": first, "extra": {}})
+    assert inst["data"]["bonus"] == 3
+
+    # Bonus keeps accruing even after the farmyard gains unused space
+    # again (ruling: the "once" trigger is permanent).
+    p["cells"][0]["type"] = "empty"
+    harvest_hook(s, p, inst, {"got": {"grain": 0, "vegetable": 2},
+                             "tiles": {}, "card_fields": {}, "log": [],
+                             "actor": first, "extra": {}})
+    assert inst["data"]["bonus"] == 5
+    assert cards.CARDS["B132"]["score_bonus"](s, p, inst) == 5

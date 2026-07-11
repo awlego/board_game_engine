@@ -79,11 +79,6 @@ UNIMPLEMENTED = {
             "shape as D088 -- now expressible via ctx['payment'] "
             "(engine phase 7), so this is a plain implementation gap, "
             "not a plumbing one.",
-    "D126": "Field Cultivator: 'each time you harvest a field tile, take "
-            "the top good from the pile' needs the count of field tiles "
-            "harvested this phase, but the harvest_field hook fires after "
-            "crops are already applied with no such count in ctx, and no "
-            "baseline to diff against.",
     "D127": "Hardworking Man: 'this card is an action space for you only' "
             "-- same private-action-space gap as D116.",
     "D128": "Building Tycoon: reacts to *another* player building rooms, "
@@ -515,6 +510,54 @@ def _forest_trader_resolve(state, player, inst, ctx):
 
 compendium_card("D125", hooks={"space_used": _forest_trader_hook},
                 resolve_choice=_forest_trader_resolve)
+
+
+# ── D126 Field Cultivator ────────────────────────────────────────────
+# "Pile 1 wood, 1 clay, 1 reed, 1 stone, 1 reed, 1 clay, and 1 wood on
+# this card. Each time you harvest a field tile, you can also take the
+# top good from the pile." harvest_field's ctx["tiles"] now gives the
+# count of farmyard field tiles harvested this harvest; each one offers
+# one yes/no prompt over the current top of the (palindromic, so
+# direction-independent) pile, chained one at a time (K115/K119-style)
+# since a decline leaves the pile's top unchanged for the next tile.
+_FIELD_CULTIVATOR_PILE = ("wood", "clay", "reed", "stone", "reed", "clay", "wood")
+
+def _field_cultivator_prompt_next(state, player, inst):
+    remaining = inst["data"].get("fc_remaining", 0)
+    idx = inst["data"].get("fc_idx", 0)
+    if remaining <= 0 or idx >= len(_FIELD_CULTIVATOR_PILE):
+        inst["data"]["fc_remaining"] = 0
+        return
+    good = _FIELD_CULTIVATOR_PILE[idx]
+    prompt_choice(state, player, inst["id"],
+                 f"Field Cultivator: take 1 {good} from the pile?",
+                 ["yes", "no"])
+
+def _field_cultivator_harvest_field(state, player, inst, ctx):
+    # harvest_field fires once per harvest (not once per tile), and any
+    # prompt chain from an earlier harvest is always fully resolved
+    # (the game blocks on it) before the next one fires, so fc_remaining
+    # is always 0 here.
+    n = ctx["tiles"].get("grain", 0) + ctx["tiles"].get("vegetable", 0)
+    if n <= 0:
+        return
+    inst["data"]["fc_remaining"] = n
+    _field_cultivator_prompt_next(state, player, inst)
+
+def _field_cultivator_resolve(state, player, inst, ctx):
+    idx = inst["data"].get("fc_idx", 0)
+    good = _FIELD_CULTIVATOR_PILE[idx]
+    if ctx["option"] == "yes":
+        player["resources"][good] += 1
+        ctx["log"].append(f"{player['name']}'s Field Cultivator grants "
+                          f"1 {good}")
+        cards.fire_gained(state, player, {good: 1}, "card", ctx["log"])
+        inst["data"]["fc_idx"] = idx + 1
+    inst["data"]["fc_remaining"] -= 1
+    _field_cultivator_prompt_next(state, player, inst)
+
+compendium_card("D126", hooks={"harvest_field": _field_cultivator_harvest_field},
+                resolve_choice=_field_cultivator_resolve)
 
 
 # ── D133 Beer Tent Operator ───────────────────────────────────────────

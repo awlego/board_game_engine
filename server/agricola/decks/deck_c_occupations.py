@@ -683,14 +683,32 @@ UNIMPLEMENTED["C117"] = (
     "data in this engine")
 
 # ═════════════════════════════════════════════════════════════════════
-# C120 Agricultural Labourer — UNIMPLEMENTED
+# C120 Agricultural Labourer
 # ═════════════════════════════════════════════════════════════════════
-UNIMPLEMENTED["C120"] = (
-    "'for each grain you obtain, get 1 clay from this card' needs a "
-    "generic 'resource gained' event; grain enters a player's supply "
-    "through many different, not-unified sources (grain_seeds, harvest, "
-    "other cards' conversions/hooks), so this can't be tracked "
-    "comprehensively without a new engine-wide hook")
+# DB text-bleed (see module docstring): only the first clause -- "Place
+# 8 clay on this card. For each grain you obtain, you also get 1 clay
+# from this card." -- is this card's own text; the "(1-5 players)"
+# marker recurs three more times mid-string introducing unrelated
+# effects (an on-play wood/clay grant, a build-cost discount, a clay/
+# stone-house income effect), which are scrape artifacts from other
+# cards and not implemented. "For EACH grain" (unlike B021 Hayloft
+# Barn's "each time you obtain AT LEAST 1 grain", which a ruling caps
+# at one trigger per event) reads as proportional: N grain obtained in
+# one credit event grants min(N, remaining pile) clay.
+def _agricultural_labourer_gained(state, player, inst, ctx):
+    n = ctx["goods"].get("grain", 0)
+    if not n:
+        return
+    remaining = inst["data"].get("clay", 8)
+    grant = min(n, remaining)
+    if grant <= 0:
+        return
+    inst["data"]["clay"] = remaining - grant
+    add_goods(ctx["extra"], {"clay": grant})
+    ctx["log"].append(f"{player['name']}'s Agricultural Labourer grants "
+                      f"{grant} clay ({remaining - grant} left on the card)")
+
+compendium_card("C120", hooks={"gained": _agricultural_labourer_gained})
 
 # ═════════════════════════════════════════════════════════════════════
 # C124 Stone Importer

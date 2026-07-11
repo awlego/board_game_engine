@@ -10,6 +10,8 @@ remaining concatenated text describes a different printing of the same
 slot and is out of scope for this registration.
 """
 
+from itertools import combinations
+
 from server.agricola import cards
 from server.agricola.cards import (
     compendium_card, add_goods, goods_str, prompt_choice,
@@ -19,7 +21,7 @@ from server.agricola.cards import (
 from server.agricola import sub_actions
 from server.agricola.state import (
     NUM_CELLS, TOTAL_ROUNDS, HARVEST_ROUNDS, FIREPLACES, MAJOR_IMPROVEMENTS,
-    orthogonal_neighbors, compute_pastures, plowable_cells,
+    orthogonal_neighbors, compute_pastures, plowable_cells, animal_counts,
 )
 
 UNIMPLEMENTED = {
@@ -48,10 +50,6 @@ UNIMPLEMENTED = {
     "D026": "builds two majors in one action, or builds specific majors "
             "via the Minor-Improvement action slot -- _do_improvement "
             "only builds one major per major-improvement action",
-    "D036": "requires tracking, over the whole game, how many sheep were "
-            "bred vs. gained from other sources and whether any were ever "
-            "cooked -- breeding (_finish_harvest) fires no card hook at "
-            "all, so bred sheep can't be distinguished from other gains",
     "D051": "a shared action space with its own effect (bonus food, then "
             "use another unoccupied space with that person) -- requires a "
             "new action-space type engine.py doesn't dispatch",
@@ -63,13 +61,6 @@ UNIMPLEMENTED = {
             "cook-table entry would also be wrong for owners of a better "
             "cooking improvement, since cook tables merge via max, not "
             "additively",
-    "D065": "primary effect needs to know how much grain was harvested "
-            "this harvest; harvest_field's ctx only carries harvest_index "
-            "(no yield amounts), and the field counts are already "
-            "decremented by the time the hook fires",
-    "D070": "needs to add crops to fields before the harvest's field-phase "
-            "deduction; harvest_field only fires after that deduction, so "
-            "there's no hook point early enough",
     "D074": "needs to know how much wood was spent building rooms/"
             "stables/improvements this turn; space_used's ctx reports "
             "goods the space granted, not resources the player paid",
@@ -655,7 +646,36 @@ def _fodder_chamber_score(state, player, inst):
 compendium_card("D035", cost={"grain": 3, "stone": 3},
                 score_bonus=_fodder_chamber_score)
 
-# D036 Breed Registry -- see UNIMPLEMENTED
+# ── D036 Breed Registry ─────────────────────────────────────────────
+# "During scoring, if you gained at most 2 sheep from sources other than
+# breeding during the game and have not turned any sheep into food, you
+# get 3 bonus points." Req: no sheep (checked at play time). gained's
+# source == "breeding" is exactly "from breeding"; converted's give
+# tracks cooking (feeding-phase conversions and accommodate-time cook).
+def _breed_registry_gained(state, player, inst, ctx):
+    n = ctx["goods"].get("sheep", 0)
+    if n and ctx["source"] != "breeding":
+        inst["data"]["non_breeding_sheep"] = \
+            inst["data"].get("non_breeding_sheep", 0) + n
+
+def _breed_registry_converted(state, player, inst, ctx):
+    if ctx["actor"] != player["index"]:
+        return
+    if ctx["give"].get("sheep") and ctx["get"].get("food"):
+        inst["data"]["cooked_sheep"] = True
+
+def _breed_registry_score(state, player, inst):
+    if inst["data"].get("cooked_sheep"):
+        return 0
+    if inst["data"].get("non_breeding_sheep", 0) > 2:
+        return 0
+    return 3
+
+compendium_card(
+    "D036", prereq=(lambda s, p: animal_counts(p)["sheep"] == 0, "no sheep"),
+    hooks={"gained": _breed_registry_gained,
+           "converted": _breed_registry_converted},
+    score_bonus=_breed_registry_score)
 
 # ── D040 Cesspit ───────────────────────────────────────────────────────
 # -1VP. Req 2 fields and 1 occ. Alternate 1 clay / 1 wild boar on each
@@ -958,7 +978,22 @@ compendium_card("D064", prereq=needs_occupations(1),
                 hooks={"round_start": _baking_course_round_start},
                 resolve_choice=_baking_course_choice)
 
-# D065 Grain Sieve -- see UNIMPLEMENTED
+# ── D065 Grain Sieve ─────────────────────────────────────────────────
+# "In the field phase of each harvest, if you harvest at least 2 grain,
+# you get 1 additional grain from the general supply." A trailing
+# clause ("Each time before you take a 'Bake Bread' action, you can
+# exchange exactly 1 clay for 1 grain") follows a stray ")" mid-string
+# -- per this module's documented DB-bleed convention (top of file),
+# only the first, cost/vp-matching clause is implemented; the second is
+# a different printing's text and out of scope.
+def _grain_sieve_harvest_field(state, player, inst, ctx):
+    if ctx["got"].get("grain", 0) >= 2:
+        add_goods(ctx["extra"], {"grain": 1})
+        ctx["log"].append(f"{player['name']}'s Grain Sieve grants 1 "
+                          "additional grain")
+
+compendium_card("D065", cost={"wood": 1},
+                hooks={"harvest_field": _grain_sieve_harvest_field})
 
 # ── D067 Reap Hook ─────────────────────────────────────────────────────
 # Cost 1W. Place 1 grain on the next 3 of round spaces 4/7/9/11/13/14.
@@ -1011,7 +1046,65 @@ compendium_card("D068", prereq=needs_occupations(2),
                 hooks={"space_used": _small_basket_space},
                 resolve_choice=_small_basket_choice)
 
-# D070 Straw Manure -- see UNIMPLEMENTED
+# ── D070 Straw Manure ────────────────────────────────────────────────
+# "Before the field phase of each harvest, you can pay 1 grain from your
+# supply to add 1 vegetable to each of up to 2 vegetable fields." Req 2
+# fields. harvest_start fires before the field-phase deduction and may
+# safely prompt (GUIDE.md cites this exact card as the motivating
+# example). "Which up to 2 fields" is an open-ended target with no
+# params channel available from an auto-firing hook, so it's offered as
+# an enumerated prompt over every combination of 0/1/2 eligible fields
+# (farmyard field tiles and card fields alike) -- the K115/K119-style
+# "small enumerable choice" shape, just precomputed as combinations
+# instead of chained one-at-a-time picks.
+def _straw_manure_targets(player):
+    out = [("cell", i) for i, c in enumerate(player["cells"])
+          if c["type"] == "field" and c["crops"]
+          and c["crops"]["type"] == "vegetable"]
+    out += [("card", inst["id"], si) for inst in cards.card_fields(player)
+           for si, crop in enumerate(cards.field_stacks(inst))
+           if crop and crop["type"] == "vegetable"]
+    return out
+
+def _straw_manure_label(target):
+    if target[0] == "cell":
+        return f"field cell {target[1]}"
+    return cards.spec(target[1])["name"]
+
+def _straw_manure_add(player, target):
+    if target[0] == "cell":
+        player["cells"][target[1]]["crops"]["count"] += 1
+    else:
+        inst = next(i for i in cards.card_fields(player) if i["id"] == target[1])
+        cards.get_field_stack(inst, target[2])["count"] += 1
+
+def _straw_manure_harvest_start(state, player, inst, ctx):
+    if player["resources"]["grain"] < 1:
+        return
+    targets = _straw_manure_targets(player)
+    if not targets:
+        return
+    combos = [()] + [(t,) for t in targets] + list(combinations(targets, 2))
+    labels = ["Skip"] + [
+        " and ".join(_straw_manure_label(t) for t in c) for c in combos[1:]]
+    prompt_choice(state, player, inst["id"],
+                 "Straw Manure: pay 1 grain to add 1 vegetable to up to 2 "
+                 "vegetable fields?", labels, data={"combos": combos})
+
+def _straw_manure_resolve(state, player, inst, ctx):
+    combo = ctx["data"]["combos"][ctx["index"]]
+    if not combo or player["resources"]["grain"] < 1:
+        return
+    player["resources"]["grain"] -= 1
+    for t in combo:
+        _straw_manure_add(player, t)
+    ctx["log"].append(f"{player['name']}'s Straw Manure adds a vegetable "
+                      f"to {len(combo)} field(s)")
+
+compendium_card(
+    "D070", prereq=_needs_fields(2),
+    hooks={"harvest_start": _straw_manure_harvest_start},
+    resolve_choice=_straw_manure_resolve)
 
 # ── D071 Changeover ────────────────────────────────────────────────────
 # If a field holds exactly 1 good left, discard it and resow that field

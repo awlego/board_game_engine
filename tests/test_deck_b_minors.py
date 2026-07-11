@@ -6,7 +6,7 @@ import pytest
 from server.agricola.engine import AgricolaEngine
 from server.agricola import cards
 from server.agricola.decks import deck_b_minors
-from server.agricola.state import MAJOR_IMPROVEMENTS
+from server.agricola.state import MAJOR_IMPROVEMENTS, cell_edges, compute_pastures
 
 from test_agricola import (
     make_state, give, give_card, put_in_play, add_space, place, current_pid,
@@ -35,7 +35,7 @@ def test_registration_completeness():
 _DUMMY_OCCS = ["occ_woodcutter", "occ_reed_collector", "occ_clay_digger"]
 
 _NEEDS_OCC = {"B006": 1, "B040": 2, "B041": 3, "B048": 1, "B055": 2,
-             "B073": 3, "B075": 1, "B076": 1, "B018": 2}
+             "B073": 3, "B075": 1, "B076": 1, "B018": 2, "B021": 1}
 
 
 def _prep_prereqs(state, pidx, cid):
@@ -651,3 +651,46 @@ def test_moonshine_passes_left_when_declined(engine):
     s = place(engine, s, {"kind": "choice", "index": idx})
     assert "occ_woodcutter" in s["players"][other]["hand_occupations"]
     assert "occ_woodcutter" not in s["players"][first]["hand_occupations"]
+
+
+def test_feedyard_capacity_and_breeding_payout(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, "B011")
+    p["fences"] = sorted(set(cell_edges(4)) | set(cell_edges(9)))
+    assert len(compute_pastures(p)) == 2
+    assert cards.CARDS["B011"]["holds_animals"](s, p, inst) == {"total": 2}
+
+    inst["held"] = {"sheep": 1}  # 1 of 2 spots used -> 1 unused
+    hook = cards.CARDS["B011"]["hooks"]["breeding"]
+    ctx = {"log": [], "extra": {}, "newborns": {}, "unplaced": {},
+          "harvest_index": 1, "actor": first}
+    hook(s, p, inst, ctx)
+    assert ctx["extra"] == {"food": 1}
+
+
+def test_hayloft_barn_food_pile_and_family_growth_bypass(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, "B021")
+    add_space(s, "grain_test_b021", "Grain Test", acc=True, supply={"grain": 5})
+    food_before = p["resources"]["food"]
+    s = place(engine, s, {"kind": "place", "space": "grain_test_b021"})
+    p = s["players"][first]
+    assert p["resources"]["food"] == food_before + 1
+    inst = next(i for i in p["minors"] if i["id"] == "B021")
+    assert inst["data"]["food"] == 3
+
+    # Drain the rest of the pile directly to reach "once it is empty".
+    inst["data"]["food"] = 0
+    assert cards.CARDS["B021"]["card_action"]["available"](s, p, inst)
+    people_before = p["people_total"]
+    rooms = sum(1 for c in p["cells"] if c["type"] == "room")
+    assert rooms <= people_before  # no spare room -- the bypass is the point
+    ctx = {"log": []}
+    cards.CARDS["B021"]["card_action"]["apply"](s, p, inst, ctx)
+    p = s["players"][first]
+    assert p["people_total"] == people_before + 1
+    assert not cards.CARDS["B021"]["card_action"]["available"](s, p, inst)

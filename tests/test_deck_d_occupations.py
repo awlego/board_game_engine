@@ -546,3 +546,34 @@ def test_stable_milker_two_stables_grants_cattle(engine):
     s = engine.apply_action(s, pid, {
         "kind": "accommodate", "pets": {"cattle": 1}}).new_state
     assert s["players"][first]["pets"]["cattle"] == 1
+
+
+def test_field_cultivator_pile_sequence_over_two_tiles(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "D126")
+    p["cells"][0]["type"] = "field"
+    p["cells"][0]["crops"] = {"type": "grain", "count": 1}
+    p["cells"][1]["type"] = "field"
+    p["cells"][1]["crops"] = {"type": "vegetable", "count": 1}
+    wood_before = p["resources"]["wood"]
+    log = []
+    engine._start_harvest(s, log)
+    p = s["players"][first]
+    assert len(s["prompts"]) == 1  # 2 tiles harvested -> chained prompts
+    pid = p["player_id"]
+    # First tile: take the top good ("wood").
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": 0}).new_state
+    p = s["players"][first]
+    assert p["resources"]["wood"] == wood_before + 1
+    # Second prompt is now queued (2nd tile), offering the new top ("clay").
+    assert len(s["prompts"]) == 1
+    clay_before = p["resources"]["clay"]
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": 1}).new_state
+    p = s["players"][first]
+    assert p["resources"]["clay"] == clay_before  # declined
+    inst = next(i for i in p["occupations"] if i["id"] == "D126")
+    assert inst["data"]["fc_idx"] == 1  # only the accepted pick advanced the pile
+    assert inst["data"]["fc_remaining"] == 0
+    assert s["prompts"] == []

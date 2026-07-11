@@ -81,11 +81,6 @@ UNIMPLEMENTED = {
             "player's placements per GUIDE.md), and there is no sane "
             "default space to auto-select -- the whole value of the "
             "card is the open-ended choice.",
-    "K310": "requires reacting to gaining stone/clay/reed/wood from ANY "
-            "source (action spaces, occupations, improvements, round-"
-            "start effects) in a fixed sequence; only space_used exposes "
-            "goods (via ctx[\"goods\"]), so gains from cards or round-"
-            "start hooks are invisible to this card.",
 }
 
 _TEXT_FIXES = {}
@@ -938,6 +933,30 @@ def _weaver_round_start(state, player, inst, ctx):
         ctx["log"].append(f"{player['name']}'s Weaver grants 1 food")
 
 compendium_card("K309", hooks={"round_start": _weaver_round_start})
+
+
+# ── K310 Resource Seller ────────────────────────────────────────────
+# "Pile (from bottom to top) 1 stone, clay, stone, clay, reed, clay, wood
+# on this card. You receive the top marker when you receive that type of
+# building resource." Top-to-bottom draw order (the reverse of the
+# bottom-to-top pile listing): wood, clay, reed, clay, stone, clay,
+# stone. gained now fires for every source (spaces, cards, round-start
+# effects, ...), so the fixed-sequence marker chain is a plain per-player
+# counter into inst["data"].
+_RESOURCE_SELLER_PILE = ("wood", "clay", "reed", "clay", "stone", "clay", "stone")
+
+def _resource_seller_gained(state, player, inst, ctx):
+    idx = inst["data"].get("idx", 0)
+    if idx >= len(_RESOURCE_SELLER_PILE):
+        return
+    want = _RESOURCE_SELLER_PILE[idx]
+    if not ctx["goods"].get(want):
+        return
+    inst["data"]["idx"] = idx + 1
+    add_goods(ctx["extra"], {want: 1})
+    ctx["log"].append(f"{player['name']}'s Resource Seller grants 1 {want}")
+
+compendium_card("K310", hooks={"gained": _resource_seller_gained})
 
 
 # ── K311 Magician ─────────────────────────────────────────────────────

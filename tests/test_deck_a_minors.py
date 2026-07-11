@@ -42,8 +42,8 @@ def test_registration_completeness():
     assert registered | unimplemented == codes, \
         f"missing: {codes - registered - unimplemented}"
     assert registered & unimplemented == set()
-    assert len(IMPLEMENTED) == 46
-    assert len(deck_a_minors.UNIMPLEMENTED) == 14
+    assert len(IMPLEMENTED) == 48
+    assert len(deck_a_minors.UNIMPLEMENTED) == 12
 
 
 # ── Smoke test: play every implemented card ───────────────────────────
@@ -660,6 +660,61 @@ def test_work_certificate_draws_stocked_space(engine):
     assert p["resources"]["stone"] == 1
     quarry = next(sp for sp in s["action_spaces"] if sp["id"] == "western_quarry")
     assert quarry["supply"]["stone"] == 3
+
+
+def test_shaving_horse_mandatory_exchange_at_7_wood(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "A048")
+    give(s, first, wood=6)
+    food_before = p["resources"]["food"]
+    add_space(s, "wood_test_a048", "Wood Test", acc=True, supply={"wood": 1})
+    s = place(engine, s, {"kind": "place", "space": "wood_test_a048"})
+    p = s["players"][first]
+    # 6 + 1 = 7 wood triggers the mandatory (no-prompt) exchange.
+    assert s["prompts"] == []
+    assert p["resources"]["wood"] == 6
+    assert p["resources"]["food"] == food_before + 3
+
+
+def test_shaving_horse_optional_exchange_at_5_wood(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "A048")
+    give(s, first, wood=4)
+    add_space(s, "wood_test_a048b", "Wood Test", acc=True, supply={"wood": 1})
+    s = place(engine, s, {"kind": "place", "space": "wood_test_a048b"})
+    p = s["players"][first]
+    # 4 + 1 = 5 wood only offers the exchange.
+    assert len(s["prompts"]) == 1
+    assert p["resources"]["wood"] == 5
+    food_before = p["resources"]["food"]
+    pid = p["player_id"]
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": 0}).new_state
+    p = s["players"][first]
+    assert p["resources"]["wood"] == 4
+    assert p["resources"]["food"] == food_before + 3
+
+
+def test_barley_mill_pays_per_grain_field_harvested(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "A064")
+    p["cells"][0]["type"] = "field"
+    p["cells"][0]["crops"] = {"type": "grain", "count": 2}
+    p["cells"][1]["type"] = "field"
+    p["cells"][1]["crops"] = {"type": "grain", "count": 1}
+    p["cells"][2]["type"] = "field"
+    p["cells"][2]["crops"] = {"type": "vegetable", "count": 1}
+    food_before = p["resources"]["food"]
+    log = []
+    engine._start_harvest(s, log)
+    p = s["players"][first]
+    # 2 grain field tiles harvested (vegetable field doesn't count).
+    assert p["resources"]["food"] == food_before + 2
 
 
 def test_silage_breeds_from_returning_home(engine):

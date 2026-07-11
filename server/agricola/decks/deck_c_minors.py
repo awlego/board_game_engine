@@ -16,6 +16,7 @@ from server.agricola.cards import (
     compendium_card, prompt_choice, add_goods, animal_totals_of,
     needs_occupations, needs_grain_field, card_fields,
 )
+from server.agricola import sub_actions
 from server.agricola.state import (
     ANIMAL_TYPES, HARVEST_ROUNDS, TOTAL_ROUNDS,
     compute_pastures, plowable_cells,
@@ -97,9 +98,6 @@ UNIMPLEMENTED = {
             "does not change a farmyard CELL (or any one slot) to hold "
             "two crop types at once, which is exactly what this "
             "exchange needs. Still gated.",
-    "C071": "reacts to the breeding phase (no hook exists) and grants a "
-            "free Sow action outside the normal action-space flow (not "
-            "exposed)",
     "C072": "invokes an out-of-sequence harvest field phase and grants a "
             "free Major/Minor Improvement action -- neither is exposed "
             "to card hooks",
@@ -374,6 +372,37 @@ compendium_card("C067", hooks={"round_start": _c067_round_start})
 # with a harvest, if you have at least 1 sheep in a pasture, you get 1
 # grain." (DB text continues with an unrelated "(Cost 2W. Req 1 occ.)
 # ... 1 vegetable" clause -- bleed, not implemented.)
+
+
+# ── C071 Slurry ───────────────────────────────────────────────────────
+# "In the breeding phase of each harvest, if you get newborn animals of
+# at least two types, you also get a 'Sow' action." Sow's field/crop
+# targets are an open-ended choice, which per GUIDE.md must arrive via a
+# params channel (not a prompt) -- banks a credit from the breeding
+# hook, redeemed via a card_action (the Educator/Scholar shape).
+# ctx["newborns"] is only animals actually PLACED (this engine's own
+# breeding rule: an animal that can't be placed doesn't breed at all),
+# matching "get newborn animals".
+def _c071_breeding(state, player, inst, ctx):
+    if len(ctx["newborns"]) >= 2:
+        inst["data"]["sow_credits"] = inst["data"].get("sow_credits", 0) + 1
+        ctx["log"].append(f"{player['name']}'s Slurry grants a free Sow action")
+
+def _c071_sow_available(state, player, inst):
+    return inst["data"].get("sow_credits", 0) > 0 and sub_actions.can_sow(player)
+
+def _c071_sow_apply(state, player, inst, ctx):
+    items = (ctx.get("params") or {}).get("sow_items")
+    if not items:
+        raise ValueError("Slurry: choose params.sow_items to sow")
+    sub_actions.sow(state, player, items, ctx["log"])
+    inst["data"]["sow_credits"] -= 1
+
+compendium_card("C071", hooks={"breeding": _c071_breeding},
+                card_action={"available": _c071_sow_available,
+                             "apply": _c071_sow_apply,
+                             "description": "Free Sow action (Slurry, after "
+                                            "breeding 2+ animal types)"})
 
 
 # ── Space-use triggers ───────────────────────────────────────────────

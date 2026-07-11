@@ -60,11 +60,6 @@ UNIMPLEMENTED = {
             "player-chosen targets; no channel carries those open-ended "
             "parameters (fence edges, per-field sow lists) outside the "
             "normal placement flow.",
-    "B132": "requires the amount of vegetable harvested in a given "
-            "harvest's field phase, but the harvest_field hook fires "
-            "after harvest resources are already merged into general "
-            "stock with no delta in ctx -- the per-harvest amount can't "
-            "be recovered.",
     "B138": "requires forcing another player to pay you before they can "
             "take wood from an accumulation space (a legality-gating "
             "replacement effect on other players' actions); directly "
@@ -633,6 +628,41 @@ def _equipper_space(state, player, inst, ctx):
 
 compendium_card("B131", hooks={"space_used": _equipper_space},
                 resolve_choice=_resolve_free_minor)
+
+
+# ── B132 Estate Master ────────────────────────────────────────────────
+# "Once you have no unused farmyard spaces left, you get 1 bonus point
+# for each vegetable that you harvest." Ruling: once triggered, the
+# bonus keeps applying to every future harvest even if the farmyard
+# later gains unused spaces again (e.g. via Overhaul) -- a permanent
+# per-instance flag, checked at both play and each harvest_field (the
+# only two hook points where the condition can be observed).
+def _estate_master_unlocked(player):
+    pasture_cells = {i for pas in compute_pastures(player) for i in pas}
+    return not any(c["type"] == "empty" and not c["stable"] and i not in pasture_cells
+                  for i, c in enumerate(player["cells"]))
+
+def _estate_master_check(player, inst):
+    if not inst["data"].get("unlocked") and _estate_master_unlocked(player):
+        inst["data"]["unlocked"] = True
+
+def _estate_master_play(state, player, inst, ctx):
+    _estate_master_check(player, inst)
+
+def _estate_master_harvest_field(state, player, inst, ctx):
+    _estate_master_check(player, inst)
+    if not inst["data"].get("unlocked"):
+        return
+    n = ctx["got"].get("vegetable", 0)
+    if n:
+        inst["data"]["bonus"] = inst["data"].get("bonus", 0) + n
+        ctx["log"].append(f"{player['name']}'s Estate Master earns {n} "
+                          "bonus point(s)")
+
+compendium_card(
+    "B132", hooks={"play": _estate_master_play,
+                   "harvest_field": _estate_master_harvest_field},
+    score_bonus=lambda s, p, i: i["data"].get("bonus", 0))
 
 
 # ── B133 Village Peasant ──────────────────────────────────────────────

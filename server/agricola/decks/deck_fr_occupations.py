@@ -36,11 +36,6 @@ UNIMPLEMENTED = {
              "food during feeding, but _apply_feed's raw/cook conversions "
              "fire no hook at all -- there is no per-conversion event to "
              "count against.",
-    "FR068": "Card Player: needs to react to receiving ANY of 4 resource "
-             "types 'in any way', plus an end-of-round stack rotation; no "
-             "generic 'you received resource X' event exists (only "
-             "specific space_used/occupation_played/etc. hooks), so the "
-             "trigger can't be observed comprehensively.",
     "FR072": "Cocotte: the Minor Improvement branch is a simple bonus "
              "play, but the Major Improvement branch ('pay 1 food to play "
              "a Major Improvement') needs the full build-improvement flow "
@@ -115,11 +110,6 @@ UNIMPLEMENTED = {
              "action spaces' needs 2-D adjacency/positioning between "
              "action spaces, which this engine doesn't model (same gap "
              "as B120).",
-    "FR098": "Pasteurization Expert: 'receive the top item when you "
-             "receive that type of animal outside of breeding' needs a "
-             "generic 'animal gained' event covering every source "
-             "(markets, other cards, occupations); only specific hooks "
-             "exist, so this can't be observed without missing sources.",
     "FR102": "Prefect: needs to count every player's feeding-phase "
              "conversions (Joinery/Pottery/Basketmaker/raw) to food; "
              "_apply_feed fires no hook per conversion (same gap as "
@@ -380,6 +370,42 @@ def _boatswain_space(state, player, inst, ctx):
                           f"{filled} empty field(s)")
 
 compendium_card("FR066", hooks={"space_used": _boatswain_space})
+
+
+# ── FR068 Card Player ───────────────────────────────────────────────
+# "From bottom to top, stack 1 Stone, Reed, Clay, and Wood on this card.
+# At the end of each round, move the top resource to the bottom of the
+# stack. Whenever you receive the top/bottom resource type, take 1
+# additional/fewer resource of that type." gained now fires for every
+# source, and returning_home fires once per player at the end of the
+# work phase (the closest hook to "end of each round").
+_CARD_PLAYER_STACK = ["stone", "reed", "clay", "wood"]  # index 0 = bottom
+
+def _card_player_gained(state, player, inst, ctx):
+    stack = inst["data"].setdefault("stack", list(_CARD_PLAYER_STACK))
+    if not stack:
+        return
+    top, bottom = stack[-1], stack[0]
+    # Credited directly (not via ctx["extra"]/fire_gained): the bonus is
+    # the SAME resource type it reacts to, so chaining it through gained
+    # again (source="card") would re-trigger itself -- 2 wood gained
+    # would cascade into +1, +1, +1 (capped only by the generic depth
+    # guard) instead of the card's flat, one-time "1 additional".
+    if ctx["goods"].get(top):
+        player["resources"][top] = player["resources"].get(top, 0) + 1
+        ctx["log"].append(f"{player['name']}'s Card Player adds 1 {top}")
+    if bottom != top and ctx["goods"].get(bottom):
+        lose = min(1, ctx["goods"][bottom])
+        player["resources"][bottom] = max(0, player["resources"][bottom] - lose)
+        ctx["log"].append(f"{player['name']}'s Card Player removes 1 {bottom}")
+
+def _card_player_returning_home(state, player, inst, ctx):
+    stack = inst["data"].setdefault("stack", list(_CARD_PLAYER_STACK))
+    if stack:
+        stack.insert(0, stack.pop())
+
+compendium_card("FR068", hooks={"gained": _card_player_gained,
+                                "returning_home": _card_player_returning_home})
 
 
 # ── FR069 Cat Lover ───────────────────────────────────────────────────
@@ -826,6 +852,31 @@ def _parquet_setter_round_start(state, player, inst, ctx):
     inst["data"]["last_unused"] = current
 
 compendium_card("FR097", hooks={"round_start": _parquet_setter_round_start})
+
+
+# ── FR098 Pasteurization Expert ──────────────────────────────────────
+# "Pile (from bottom to top) 1 Cattle, Sheep, Wild boar, Sheep on this
+# card. You receive the top item when you receive that type of animal
+# outside of the Breeding phase of Harvest." Top-to-bottom draw order:
+# sheep, boar, sheep, cattle. gained's source == "breeding" is exactly
+# "outside of the Breeding phase" -- newborns actually placed.
+_PASTEURIZATION_PILE = ("sheep", "boar", "sheep", "cattle")
+
+def _pasteurization_expert_gained(state, player, inst, ctx):
+    if ctx["source"] == "breeding":
+        return
+    idx = inst["data"].get("idx", 0)
+    if idx >= len(_PASTEURIZATION_PILE):
+        return
+    want = _PASTEURIZATION_PILE[idx]
+    if not ctx["goods"].get(want):
+        return
+    inst["data"]["idx"] = idx + 1
+    add_goods(ctx["extra"], {want: 1})
+    ctx["log"].append(f"{player['name']}'s Pasteurization Expert grants "
+                      f"1 {want}")
+
+compendium_card("FR098", hooks={"gained": _pasteurization_expert_gained})
 
 
 # ── FR099 Pear Peeler ─────────────────────────────────────────────────

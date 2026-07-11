@@ -374,9 +374,8 @@
    "wood": 1
   },
   "deck": "A",
-  "implemented": false,
+  "min_players": 1,
   "name": "Shaving Horse",
-  "reason": "Shaving Horse reacts to 'each time you obtain 1 wood' from any source at all \u2014 there is no generic 'resource gained' hook (only specific ones like space_used/round_start/bake), so a universal wood-gain trigger can't be expressed",
   "text": "Each time you obtain 1 wood, if afterward you have at least 5/7 wood in your supply, you can/must exchange 1 wood for 3 food.",
   "type": "minor"
  },
@@ -497,12 +496,14 @@
   "type": "minor"
  },
  "A064": {
-  "cost_text": "1W 4C/2S",
+  "cost": {
+   "clay": 4,
+   "wood": 1
+  },
   "deck": "A",
-  "implemented": false,
+  "min_players": 1,
   "name": "Barley Mill",
   "points": 1,
-  "reason": "Barley Mill pays 1 food per grain field harvested this harvest, but harvest_field fires after the field-phase loop has already decremented (and possibly cleared to None) each field's crop count, and its ctx carries no per-player harvested-count \u2014 the number of grain fields harvested this turn can't be recovered",
   "text": "In the field phase of each harvest, you get 1 food for each grain field that you harvest.",
   "type": "minor"
  },
@@ -1325,12 +1326,14 @@
   "type": "minor"
  },
  "B011": {
-  "cost_text": "1C 1 Grain",
+  "cost": {
+   "clay": 1,
+   "grain": 1
+  },
   "deck": "B",
-  "implemented": false,
+  "min_players": 1,
   "name": "Feedyard",
   "points": 1,
-  "reason": "requires a breeding-phase hook (the engine breeds animals without firing any card event) and card-held animal accommodation slots outside house/pasture capacity",
   "text": "This card can hold 1 animal for each pasture you have, even different types. After the breeding phase of each harvest, you receive 1 food for each unused spot on this card.",
   "type": "minor"
  },
@@ -1405,10 +1408,10 @@
    "wood": 3
   },
   "deck": "B",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Hayloft Barn",
-  "prereq_text": "1 occ",
-  "reason": "requires a generic 'player just obtained grain' hook covering every source (harvest, cards, spaces) plus a 'family growth without room' bypass action; neither exists",
+  "prereq_text": "1 occupations",
   "text": "Place 4 food on this card. Each time you obtain at least 1 grain, you also get 1 food from this card. Once it is empty, you get a \"Family Growth Even without Room\" action.",
   "type": "minor"
  },
@@ -2101,10 +2104,8 @@
  },
  "B132": {
   "deck": "B",
-  "implemented": false,
   "min_players": 3,
   "name": "Estate Master",
-  "reason": "requires the amount of vegetable harvested in a given harvest's field phase, but the harvest_field hook fires after harvest resources are already merged into general stock with no delta in ctx -- the per-harvest amount can't be recovered.",
   "text": "Once you have no unused farmyard spaces left, you get 1 bonus point for each vegetable that you harvest.",
   "type": "occupation"
  },
@@ -3102,9 +3103,9 @@
  },
  "C071": {
   "deck": "C",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Slurry",
-  "reason": "reacts to the breeding phase (no hook exists) and grants a free Sow action outside the normal action-space flow (not exposed)",
   "text": "In the breeding phase of each harvest, if you get newborn animals of at least two types, you also get a \"Sow\" action.",
   "type": "minor"
  },
@@ -3399,9 +3400,8 @@
  },
  "C120": {
   "deck": "C",
-  "implemented": false,
+  "min_players": 1,
   "name": "Agricultural Labourer",
-  "reason": "'for each grain you obtain, get 1 clay from this card' needs a generic 'resource gained' event; grain enters a player's supply through many different, not-unified sources (grain_seeds, harvest, other cards' conversions/hooks), so this can't be tracked comprehensively without a new engine-wide hook",
   "text": "Place 8 clay on this card. For each grain you obtain, you also get 1 clay from this card. (1-5 players) When you play this card, you immediately get 1 wood and 2 clay. Each time after you use a \"Grain Seeds\" or \"Vegetable Seeds\" action space, you get 1 clay. (1-5 players) Each improvement and each renovation costs you 1 clay less. Each room costs you 2 clay less. (1-5 players) As long as you live in a clay/stone house with exactly 2 rooms, at the start of each work phase, you get 2 clay/stone.)",
   "type": "occupation"
  },
@@ -3998,10 +3998,9 @@
  },
  "D036": {
   "deck": "D",
-  "implemented": false,
+  "min_players": 1,
   "name": "Breed Registry",
-  "prereq_text": "No sheep",
-  "reason": "requires tracking, over the whole game, how many sheep were bred vs. gained from other sources and whether any were ever cooked -- breeding (_finish_harvest) fires no card hook at all, so bred sheep can't be distinguished from other gains",
+  "prereq_text": "no sheep",
   "text": "During scoring, if you gained at most 2 sheep from sources other than breeding during the game and have not turned any sheep into food, you get 3 bonus points.",
   "type": "minor"
  },
@@ -4262,9 +4261,8 @@
    "wood": 1
   },
   "deck": "D",
-  "implemented": false,
+  "min_players": 1,
   "name": "Grain Sieve",
-  "reason": "primary effect needs to know how much grain was harvested this harvest; harvest_field's ctx only carries harvest_index (no yield amounts), and the field counts are already decremented by the time the hook fires",
   "text": "In the field phase of each harvest, if you harvest at least 2 grain, you get 1 additional grain from the general supply.) Each time before you take a \"Bake Bread\" action, you can exchange exactly 1 clay for 1 grain.",
   "type": "minor"
  },
@@ -4288,10 +4286,9 @@
  },
  "D070": {
   "deck": "D",
-  "implemented": false,
+  "min_players": 1,
   "name": "Straw Manure",
-  "prereq_text": "2 fields",
-  "reason": "needs to add crops to fields before the harvest's field-phase deduction; harvest_field only fires after that deduction, so there's no hook point early enough",
+  "prereq_text": "2 field(s)",
   "text": "Before the field phase of each harvest, you can pay 1 grain from your supply to add 1 vegetable to each of up to 2 vegetable fields.",
   "type": "minor"
  },
@@ -4570,9 +4567,8 @@
  },
  "D126": {
   "deck": "D",
-  "implemented": false,
+  "min_players": 1,
   "name": "Field Cultivator",
-  "reason": "Field Cultivator: 'each time you harvest a field tile, take the top good from the pile' needs the count of field tiles harvested this phase, but the harvest_field hook fires after crops are already applied with no such count in ctx, and no baseline to diff against.",
   "text": "Pile 1 wood, 1 clay, 1 reed, 1 stone, 1 reed, 1 clay, and 1 wood on this card. Each time you harvest a field tile, you can also take the top good from the pile.",
   "type": "occupation"
  },
@@ -7288,9 +7284,8 @@
  },
  "FR068": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Card Player",
-  "reason": "Card Player: needs to react to receiving ANY of 4 resource types 'in any way', plus an end-of-round stack rotation; no generic 'you received resource X' event exists (only specific space_used/occupation_played/etc. hooks), so the trigger can't be observed comprehensively.",
   "text": "From bottom to top, stack 1 Stone, Reed, Clay, and Wood on this card. At the end of each round, move the top resource to the bottom of the stack. Whenever you receive the top/bottom resource type, take 1 additional/fewer resource of that type. (Take from or move the resource to the supply).",
   "type": "occupation"
  },
@@ -7521,10 +7516,8 @@
  },
  "FR098": {
   "deck": "FR",
-  "implemented": false,
   "min_players": 3,
   "name": "Pasteurization Expert",
-  "reason": "Pasteurization Expert: 'receive the top item when you receive that type of animal outside of breeding' needs a generic 'animal gained' event covering every source (markets, other cards, occupations); only specific hooks exist, so this can't be observed without missing sources.",
   "text": "Pile (from bottom to top) 1 Cattle, Sheep, Wild boar, Sheep on this card. You receive the top item when you receive that type of animal outside of the Breeding phase of Harvest.",
   "type": "occupation"
  },
@@ -8952,9 +8945,8 @@
  },
  "I226": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Gardener",
-  "reason": "requires the field-phase harvest to not decrement the crop count on vegetable fields, but crops are already decremented in _start_harvest's unconditional per-player loop before any hook fires, with no delta passed to harvest_field -- there is nothing left to intercept or restore.",
   "text": "Take vegetables from the general supply and not from your vegetable field whenever you harvest them - you keep the vegetables on the fields.",
   "type": "occupation"
  },
@@ -10571,9 +10563,8 @@
  },
  "K310": {
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Resource Seller",
-  "reason": "requires reacting to gaining stone/clay/reed/wood from ANY source (action spaces, occupations, improvements, round-start effects) in a fixed sequence; only space_used exposes goods (via ctx[\"goods\"]), so gains from cards or round-start hooks are invisible to this card.",
   "text": "Pile (from bottom to top) 1 stone, clay, stone, clay, reed, clay, wood on this card. You receive the top marker when you receive that type of building resource.",
   "type": "occupation"
  },

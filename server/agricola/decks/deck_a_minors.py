@@ -35,7 +35,7 @@ rather than repeated on every card):
 
 from server.agricola.cards import (
     compendium_card, new_instance, spec, in_play,
-    add_goods, goods_str, prompt_choice,
+    add_goods, goods_str, prompt_choice, fire_gained,
     space_bonus, on_play_gain,
     animal_totals_of, needs_occupations, combine, check_prereq, card_fields,
 )
@@ -766,11 +766,38 @@ def _trellises_play(state, player, inst, ctx):
 compendium_card("A047", hooks={"play": _trellises_play})
 
 
-UNIMPLEMENTED["A048"] = (
-    "Shaving Horse reacts to 'each time you obtain 1 wood' from any "
-    "source at all — there is no generic 'resource gained' hook (only "
-    "specific ones like space_used/round_start/bake), so a universal "
-    "wood-gain trigger can't be expressed")
+# ── A048 Shaving Horse ─────────────────────────────────────────────────
+# "Each time you obtain 1 wood, if afterward you have at least 5/7 wood
+# in your supply, you can/must exchange 1 wood for 3 food." -- 5-6 wood:
+# optional (prompt); 7+ wood: mandatory (auto-applied). gained fires
+# after the wood is already credited, so player["resources"]["wood"] is
+# the post-gain amount the card's own text checks against.
+def _shaving_horse_gained(state, player, inst, ctx):
+    if not ctx["goods"].get("wood"):
+        return
+    wood = player["resources"]["wood"]
+    if wood >= 7:
+        player["resources"]["wood"] -= 1
+        player["resources"]["food"] += 3
+        ctx["log"].append(f"{player['name']}'s Shaving Horse exchanges 1 "
+                          "wood for 3 food")
+        fire_gained(state, player, {"food": 3}, "card", ctx["log"])
+    elif wood >= 5:
+        prompt_choice(state, player, inst["id"],
+                     "Exchange 1 wood for 3 food (Shaving Horse)?",
+                     ["yes", "no"])
+
+def _shaving_horse_resolve(state, player, inst, ctx):
+    if ctx["option"] != "yes" or player["resources"]["wood"] < 1:
+        return
+    player["resources"]["wood"] -= 1
+    player["resources"]["food"] += 3
+    ctx["log"].append(f"{player['name']}'s Shaving Horse exchanges 1 wood "
+                      "for 3 food")
+    fire_gained(state, player, {"food": 3}, "card", ctx["log"])
+
+compendium_card("A048", hooks={"gained": _shaving_horse_gained},
+                resolve_choice=_shaving_horse_resolve)
 
 UNIMPLEMENTED["A049"] = (
     "Nest Site's head effect triggers on reed being added to a "
@@ -957,12 +984,23 @@ compendium_card(
 )
 
 
-UNIMPLEMENTED["A064"] = (
-    "Barley Mill pays 1 food per grain field harvested this harvest, but "
-    "harvest_field fires after the field-phase loop has already decremented "
-    "(and possibly cleared to None) each field's crop count, and its ctx "
-    "carries no per-player harvested-count — the number of grain fields "
-    "harvested this turn can't be recovered")
+# ── A064 Barley Mill ─────────────────────────────────────────────────
+# "In the field phase of each harvest, you get 1 food for each grain
+# field that you harvest." harvest_field's ctx["tiles"] now carries the
+# farmyard-field-tile breakdown (card fields excluded, matching "field"
+# in the rulebook sense) already decremented for, so the count is
+# available even though the field-phase loop ran first. Cost "1W 4C/2S"
+# is an alternative payment (4 clay OR 2 stone) parse_cost can't
+# represent as one dict; the first option (clay) is used, same judgment
+# call as K116/Granary elsewhere in this codebase.
+def _barley_mill_harvest_field(state, player, inst, ctx):
+    n = ctx["tiles"].get("grain", 0)
+    if n:
+        add_goods(ctx["extra"], {"food": n})
+        ctx["log"].append(f"{player['name']}'s Barley Mill provides {n} food")
+
+compendium_card("A064", cost={"wood": 1, "clay": 4},
+                hooks={"harvest_field": _barley_mill_harvest_field})
 
 
 # ── A065 Seed Pellets ──────────────────────────────────────────────────

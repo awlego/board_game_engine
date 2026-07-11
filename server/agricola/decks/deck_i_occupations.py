@@ -39,12 +39,6 @@ UNIMPLEMENTED = {
     "I224": "reacts to another player's sow action, but 'sow' only fires "
             "to the acting player's own cards (fire_player, not a "
             "broadcast) -- no card can observe another player's sow.",
-    "I226": "requires the field-phase harvest to not decrement the crop "
-            "count on vegetable fields, but crops are already "
-            "decremented in _start_harvest's unconditional per-player "
-            "loop before any hook fires, with no delta passed to "
-            "harvest_field -- there is nothing left to intercept or "
-            "restore.",
     "I228": "grants a bonus Major OR Minor Improvement action; the minor "
             "half has a precedent (_offer_free_minor-style), but the "
             "major-improvement half needs cell/cost/available-"
@@ -287,6 +281,14 @@ def _field_watchman_choice(state, player, inst, ctx):
 
 compendium_card("I225", hooks={"space_used": _field_watchman_space},
                 resolve_choice=_field_watchman_choice)
+
+
+# ── I226 Gardener ────────────────────────────────────────────────────
+# "Take vegetables from the general supply and not from your vegetable
+# field whenever you harvest them - you keep the vegetables on the
+# fields." Not optional (ruling). This is exactly the motivating example
+# for keep_crops_on_harvest -- credit as usual, but don't decrement.
+compendium_card("I226", keep_crops_on_harvest=("vegetable",))
 
 
 # ── I227 Church Warden ────────────────────────────────────────────────

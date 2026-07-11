@@ -19,6 +19,7 @@ from server.agricola.cards import (
     animal_totals_of, needs_occupations, exact_occupations,
     needs_grain_field, combine, card_fields, modified_cost, fire,
 )
+from server.agricola import sub_actions
 from server.agricola.state import (
     ANIMAL_TYPES, TOTAL_ROUNDS, HARVEST_ROUNDS, BUILDING_RESOURCES,
     MAJOR_IMPROVEMENTS, compute_pastures, plowable_cells,
@@ -32,18 +33,12 @@ UNIMPLEMENTED = {
     "B007": "requires major-improvement board-row ('bottom row') "
             "metadata, which the engine's MAJOR_IMPROVEMENTS table "
             "doesn't track",
-    "B011": "requires a breeding-phase hook (the engine breeds animals "
-            "without firing any card event) and card-held animal "
-            "accommodation slots outside house/pasture capacity",
     "B012": "requires card-based animal storage capacity outside "
             "house/pastures; accommodation only consults house_capacity "
             "and pasture_capacity_bonus",
     "B015": "requires restricting a pasture build to only the specific "
             "wood taken this turn and to exactly one pasture; no such "
             "gating hook exists",
-    "B021": "requires a generic 'player just obtained grain' hook "
-            "covering every source (harvest, cards, spaces) plus a "
-            "'family growth without room' bypass action; neither exists",
     "B022": "requires placing an extra temporary family member mid-game "
             "and removing them later — the guest-token/extra-people "
             "mechanic the guide marks unsupported",
@@ -245,6 +240,27 @@ compendium_card("B009", cost={},
                 resolve_choice=_beating_rod_resolve)
 
 
+# ── B011 Feedyard ─────────────────────────────────────────────────────
+# "This card can hold 1 animal for each pasture you have, even different
+# types. After the breeding phase of each harvest, you receive 1 food
+# for each unused spot on this card." No "types" restriction (any mix).
+def _feedyard_holds(state, player, inst):
+    return {"total": len(compute_pastures(player))}
+
+def _feedyard_breeding(state, player, inst, ctx):
+    cap = len(compute_pastures(player))
+    held = sum(inst.get("held", {}).values())
+    unused = max(0, cap - held)
+    if unused:
+        add_goods(ctx["extra"], {"food": unused})
+        ctx["log"].append(f"{player['name']}'s Feedyard provides {unused} "
+                          "food for its unused spots")
+
+compendium_card("B011", cost={"clay": 1, "grain": 1},
+                holds_animals=_feedyard_holds,
+                hooks={"breeding": _feedyard_breeding})
+
+
 # ── B014 Hawktower ────────────────────────────────────────────────────
 def _hawktower_round_start(state, player, inst, ctx):
     if state["round"] != 12:
@@ -374,6 +390,44 @@ compendium_card("B020", cost={"wood": 3},
                 hooks={"play": _chain_float_play,
                        "round_start": _chain_float_round_start},
                 resolve_choice=_chain_float_resolve)
+
+
+# ── B021 Hayloft Barn ─────────────────────────────────────────────────
+# "Place 4 food on this card. Each time you obtain at least 1 grain, you
+# also get 1 food from this card. Once it is empty, you get a 'Family
+# Growth Even without Room' action." Ruling: "Harvesting 2+ grain at
+# once only counts as obtaining once" -- matches gained firing once per
+# originating credit event regardless of amount. The bypass action maps
+# onto sub_actions.family_growth(require_room=False), redeemed once via
+# a card_action once the food pile is empty (the Educator/Scholar
+# banked-credit shape, minus the "banking" -- the credit is just "pile
+# is empty", checked directly).
+def _hayloft_barn_gained(state, player, inst, ctx):
+    if not ctx["goods"].get("grain"):
+        return
+    remaining = inst["data"].get("food", 4)
+    if remaining <= 0:
+        return
+    inst["data"]["food"] = remaining - 1
+    add_goods(ctx["extra"], {"food": 1})
+    ctx["log"].append(f"{player['name']}'s Hayloft Barn grants 1 food "
+                      f"({remaining - 1} left on the card)")
+
+def _hayloft_barn_fg_available(state, player, inst):
+    if inst["data"].get("food", 4) > 0 or inst["data"].get("used_family_growth"):
+        return False
+    return sub_actions.can_family_growth(state, player, require_room=False)
+
+def _hayloft_barn_fg_apply(state, player, inst, ctx):
+    sub_actions.family_growth(state, player, ctx["log"], require_room=False)
+    inst["data"]["used_family_growth"] = True
+
+compendium_card("B021", cost={"wood": 3}, prereq=needs_occupations(1),
+                hooks={"gained": _hayloft_barn_gained},
+                card_action={"available": _hayloft_barn_fg_available,
+                             "apply": _hayloft_barn_fg_apply,
+                             "description": "Family Growth even without "
+                                            "room (Hayloft Barn, once empty)"})
 
 
 # ── B027 Toolbox ──────────────────────────────────────────────────────

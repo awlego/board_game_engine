@@ -572,3 +572,25 @@ def test_rancher_most_used_spaces(engine):
     ctx = {"round": s["round"], "log": [], "actor": 0, "extra": {}}
     cards.CARDS["I340"]["hooks"]["round_start"](s, p0, inst, ctx)
     assert p0["resources"]["wood"] == wood_before + 1
+
+
+def test_gardener_keeps_vegetables_on_the_field(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "I226")
+    p["cells"][0]["type"] = "field"
+    p["cells"][0]["crops"] = {"type": "vegetable", "count": 2}
+    p["cells"][1]["type"] = "field"
+    p["cells"][1]["crops"] = {"type": "grain", "count": 2}
+    veg_before = p["resources"]["vegetable"]
+    grain_before = p["resources"]["grain"]
+    log = []
+    engine._start_harvest(s, log)
+    p = s["players"][first]
+    # Vegetables are credited as usual but the field count doesn't drop.
+    assert p["resources"]["vegetable"] == veg_before + 1
+    assert p["cells"][0]["crops"]["count"] == 2
+    # Grain is unaffected -- it still decrements normally.
+    assert p["resources"]["grain"] == grain_before + 1
+    assert p["cells"][1]["crops"]["count"] == 1

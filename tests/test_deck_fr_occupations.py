@@ -791,3 +791,54 @@ def test_workaholic_claims_bank(engine):
     assert p["resources"]["clay"] == 4
     assert p["resources"]["stone"] == 3
     assert not cards.CARDS["FR119"]["card_action"]["available"](s, p, inst)
+
+
+def test_card_player_bonus_malus_and_rotation(engine):
+    """FR068: bottom-to-top stack starts stone/reed/clay/wood, so top=wood
+    (bonus), bottom=stone (malus). returning_home rotates top->bottom."""
+    s = make_state(engine, 1)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "FR068")
+    wood_before = p["resources"]["wood"]
+    stone_before = p["resources"]["stone"]
+    add_space(s, "wood_test_fr068", "Wood Test", acc=True, supply={"wood": 2})
+    add_space(s, "stone_test_fr068", "Stone Test", acc=True, supply={"stone": 1})
+    # Top (wood) matches -> +1 bonus wood.
+    s = place(engine, s, {"kind": "place", "space": "wood_test_fr068"})
+    p = s["players"][first]
+    assert p["resources"]["wood"] == wood_before + 2 + 1  # space + bonus
+    # Bottom (stone) matches -> -1 malus stone. This is the 1-player
+    # game's 2nd (last) placement of the round, so it also drives the
+    # round to completion -- returning_home fires and rotates the stack
+    # before this call returns.
+    s = place(engine, s, {"kind": "place", "space": "stone_test_fr068"})
+    p = s["players"][first]
+    assert p["resources"]["stone"] == stone_before + 1 - 1  # space, minus malus
+    assert s["round"] == 2
+
+    inst = next(i for i in p["occupations"] if i["id"] == "FR068")
+    # Rotated once: [wood, stone, reed, clay] -> top=clay, bottom=wood.
+    assert inst["data"]["stack"] == ["wood", "stone", "reed", "clay"]
+
+
+def test_pasteurization_expert_ignores_breeding_source(engine):
+    """FR098: top-to-bottom draw order sheep/boar/sheep/cattle, and only
+    fires outside the breeding phase (source == "breeding" is exactly
+    that). Exercised by calling the registered gained hook directly, the
+    same way FR119's card_action is tested elsewhere in this file."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, "FR098")
+    hook = cards.CARDS["FR098"]["hooks"]["gained"]
+
+    ctx = {"goods": {"sheep": 1}, "source": "breeding", "log": [], "extra": {}}
+    hook(s, p, inst, ctx)
+    assert inst["data"].get("idx", 0) == 0  # pile untouched
+    assert ctx["extra"] == {}
+
+    ctx2 = {"goods": {"sheep": 1}, "source": "space", "log": [], "extra": {}}
+    hook(s, p, inst, ctx2)
+    assert ctx2["extra"] == {"sheep": 1}  # matches the top ("sheep")
+    assert inst["data"]["idx"] == 1

@@ -790,3 +790,25 @@ def test_animal_trainer_buys_from_traveling_players(engine):
     }).new_state
     p = s["players"][first]
     assert p["resources"]["food"] == food_before + 3 - 3
+
+
+def test_resource_seller_fixed_sequence(engine):
+    """K310: top-to-bottom draw order is wood, clay, reed, clay, stone,
+    clay, stone. A gain that doesn't match the current top does nothing;
+    a match grants 1 and advances the pile."""
+    s = make_state(engine, 1)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "K310")
+    add_space(s, "clay_test_k310", "Clay Test", acc=True, supply={"clay": 1})
+    add_space(s, "wood_test_k310", "Wood Test", acc=True, supply={"wood": 1})
+    # Top is "wood": a clay gain first doesn't match, so nothing happens.
+    s = place(engine, s, {"kind": "place", "space": "clay_test_k310"})
+    p = s["players"][first]
+    assert p["resources"]["clay"] == 1  # just the space's own clay
+    # A wood gain matches the top -> +1 wood, pile advances to "clay".
+    s = place(engine, s, {"kind": "place", "space": "wood_test_k310"})
+    p = s["players"][first]
+    assert p["resources"]["wood"] == 2  # 1 from the space + 1 from the card
+    inst = next(i for i in p["occupations"] if i["id"] == "K310")
+    assert inst["data"]["idx"] == 1
