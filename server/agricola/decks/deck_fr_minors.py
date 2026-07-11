@@ -8,9 +8,10 @@ prereq of "1 field; )"), a parser glitch on the trailing parenthesis;
 see _TEXT_FIXES below, following the pattern deck_b_occupations.py uses
 for its own DB corruption fixes.
 
-A few cards have alternative ("1W or 1S"-style) costs that a plain cost
-dict cannot represent; per deck_a_minors.py's A004 precedent, the first
-listed option is used and noted in a comment.
+A few cards have printed alternative ("1W or 1S"-style) costs; per
+GUIDE.md ground rule 1 these are registered as cost=[{...}, {...}] and
+noted in a comment. FR020 is the one exception still collapsed to a
+single fixed option -- see its own comment for why.
 """
 
 from server.agricola.cards import (
@@ -420,9 +421,10 @@ compendium_card("FR008", hooks={"play": _barber_shop_play},
 
 
 # ── FR010 Breakfast Outdoors ──────────────────────────────────────────
-# DB cost "1 vegetable or 2 grains" doesn't fit a plain cost dict; per
-# deck_a_minors.py's A004 precedent, the first option is used.
-compendium_card("FR010", cost={"vegetable": 1}, points=1,
+# DB cost "1 vegetable or 2 grains" is a printed alternative (GUIDE.md
+# ground rule 1, note the alternatives are NOT symmetric quantities) --
+# cost=[{...}, {...}]; the effect doesn't depend on which was paid.
+compendium_card("FR010", cost=[{"vegetable": 1}, {"grain": 2}], points=1,
                 hooks=harvest_food(lambda s, p: 1))
 
 
@@ -599,8 +601,20 @@ compendium_card("FR019", prereq=exact_occupations(0),
 
 
 # ── FR020 Five Rings ──────────────────────────────────────────────────
-# DB cost "1W or 1S" doesn't fit a plain cost dict; per the A004
-# precedent, the Wood option is used, so the discount is always Wood.
+# DB cost "1W or 1S": "pay 1 Wood/Stone less if you chose Wood/Stone as
+# the cost of this card" -- unlike the plain alternative-cost cards
+# elsewhere in this codebase, here WHICH alternative is paid determines
+# which resource the standing discount applies to. The engine's cost
+# model does support a printed alternative now (cost=[{...}, {...}],
+# GUIDE.md ground rule 1), but play_minor's play-hook ctx never learns
+# which alternative/cost_option was actually resolved, and cost_mod
+# fires later with no per-instance memory of it either -- there's no
+# channel to record the choice made at play time. Registering
+# cost=[{wood:1}, {stone:1}] here would let a player pay stone yet
+# still only ever receive the wood discount, which is less faithful
+# than the status quo. So this stays collapsed to the Wood option (cost
+# always Wood, discount always Wood) pending that channel -- same gap
+# as B065/deck_b_minors.py and C040/deck_c_minors.py.
 def _five_rings_mod(state, player, kind, cost, ctx):
     if kind == "improvement" and cost.get("wood"):
         cost = dict(cost)

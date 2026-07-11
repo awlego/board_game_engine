@@ -1338,10 +1338,11 @@ compendium_card("D077", prereq=needs_occupations(3),
                 hooks={"renovate_any": _recycled_brick_renovate})
 
 # ── D080 Brick Hammer ──────────────────────────────────────────────────
-# Cost "1W or 1F" (hand-parsed to 1W; the OR-alternative payment isn't
-# representable, see judgment calls). Building a >=2-clay improvement
-# grants 1 stone. Relies on the engine's improvement_built event (fired
-# for every major build, though not yet documented in decks/GUIDE.md).
+# Cost "1W or 1F" is a printed alternative (GUIDE.md ground rule 1).
+# Building a >=2-clay improvement grants 1 stone -- doesn't depend on
+# which alternative was paid. Relies on the engine's improvement_built
+# event (fired for every major build, though not yet documented in
+# decks/GUIDE.md).
 
 
 def _brick_hammer_built(state, player, inst, ctx):
@@ -1351,7 +1352,7 @@ def _brick_hammer_built(state, player, inst, ctx):
         ctx["log"].append(f"{player['name']}'s Brick Hammer grants 1 stone")
 
 
-compendium_card("D080", cost={"wood": 1},
+compendium_card("D080", cost=[{"wood": 1}, {"food": 1}],
                 hooks={"improvement_built": _brick_hammer_built})
 
 # ── D081 Roof Ladder ───────────────────────────────────────────────────

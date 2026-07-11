@@ -6,7 +6,7 @@ import os
 import pytest
 
 from server.agricola.engine import AgricolaEngine
-from server.agricola import cards
+from server.agricola import cards, sub_actions
 from server.agricola.decks import deck_a_minors
 from server.agricola.state import cell_edges
 
@@ -178,7 +178,9 @@ def test_smoke_play_every_card(engine, cid):
     s = make_state(engine, 2, seed=7)
     pidx = s["current_player"]
     p = s["players"][pidx]
-    for good, amount in cards.CARDS[cid]["cost"].items():
+    # First alternative of an "or" cost (GUIDE.md ground rule 1) --
+    # headroom below covers affording any alternative regardless.
+    for good, amount in sub_actions.cost_alternatives(cards.CARDS[cid]["cost"])[0].items():
         give(s, pidx, **{good: amount})
     give(s, pidx, food=20, wood=20, clay=20, reed=20, stone=20, grain=20,
         vegetable=20)  # headroom for any optional choice paths taken
@@ -239,6 +241,25 @@ def test_baseboards_wood_per_room(engine):
                           "minor": {"card": "A004"}})
     # 2 rooms, not more rooms than people (2 == 2) -> +2 wood, no bonus.
     assert s["players"][first]["resources"]["wood"] == wood + 2
+
+
+def test_baseboards_alt_cost_grain(engine):
+    """Cost "2F or 1 Grain" -- paying the non-first (grain) alternative
+    via cost_option still plays the card and grants the same effect
+    (and leaves the food alternative's food untouched)."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give(s, first, grain=1)
+    give_card(s, first, "A004")
+    add_space(s, "major_improvement", "Major Improvement")
+    wood = s["players"][first]["resources"]["wood"]
+    food = s["players"][first]["resources"]["food"]
+    s = place(engine, s, {"kind": "place", "space": "major_improvement",
+                          "minor": {"card": "A004", "cost_option": 1}})
+    p = s["players"][first]
+    assert p["resources"]["grain"] == 0
+    assert p["resources"]["food"] == food
+    assert p["resources"]["wood"] == wood + 2
 
 
 def test_storage_barn_per_improvement(engine):
@@ -715,6 +736,23 @@ def test_barley_mill_pays_per_grain_field_harvested(engine):
     p = s["players"][first]
     # 2 grain field tiles harvested (vegetable field doesn't count).
     assert p["resources"]["food"] == food_before + 2
+
+
+def test_barley_mill_alt_cost_stone(engine):
+    """Cost "1W 4C/2S" (1 wood plus 4 clay, OR 1 wood plus 2 stone) --
+    paying the non-first (wood+stone) alternative via cost_option still
+    plays the card."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give(s, first, wood=1, stone=2)
+    give_card(s, first, "A064")
+    add_space(s, "major_improvement", "Major Improvement")
+    s = place(engine, s, {"kind": "place", "space": "major_improvement",
+                          "minor": {"card": "A064", "cost_option": 1}})
+    p = s["players"][first]
+    assert p["resources"]["wood"] == 0 and p["resources"]["stone"] == 0
+    assert p["resources"]["clay"] == 0
+    assert any(i["id"] == "A064" for i in p["minors"])
 
 
 def test_silage_breeds_from_returning_home(engine):

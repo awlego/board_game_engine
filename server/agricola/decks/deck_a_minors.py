@@ -171,8 +171,9 @@ compendium_card(
 # ── A004 Baseboards ───────────────────────────────────────────────────
 # Head clause only: "You immediately get 1 wood for each room you have.
 # If you have more rooms than people, you get 1 additional wood." DB cost
-# "2F or 1 Grain" doesn't parse (alternative costs aren't supported by a
-# plain cost dict); the first option (2 food) is used.
+# "2F or 1 Grain" is a printed alternative (GUIDE.md ground rule 1); the
+# grant doesn't depend on which was paid, so it's a plain
+# cost=[{...}, {...}] list.
 def _baseboards_play(state, player, inst, ctx):
     rooms = sum(1 for c in player["cells"] if c["type"] == "room")
     wood = rooms + (1 if rooms > player["people_total"] else 0)
@@ -181,7 +182,7 @@ def _baseboards_play(state, player, inst, ctx):
 
 compendium_card(
     "A004",
-    cost={"food": 2},
+    cost=[{"food": 2}, {"grain": 1}],
     hooks={"play": _baseboards_play},
 )
 
@@ -1017,16 +1018,16 @@ compendium_card(
 # farmyard-field-tile breakdown (card fields excluded, matching "field"
 # in the rulebook sense) already decremented for, so the count is
 # available even though the field-phase loop ran first. Cost "1W 4C/2S"
-# is an alternative payment (4 clay OR 2 stone) parse_cost can't
-# represent as one dict; the first option (clay) is used, same judgment
-# call as K116/Granary elsewhere in this codebase.
+# is a printed alternative (1 wood plus 4 clay, OR 1 wood plus 2 stone);
+# the harvest effect doesn't depend on which was paid, so it's a plain
+# cost=[{...}, {...}] list (GUIDE.md ground rule 1).
 def _barley_mill_harvest_field(state, player, inst, ctx):
     n = ctx["tiles"].get("grain", 0)
     if n:
         add_goods(ctx["extra"], {"food": n})
         ctx["log"].append(f"{player['name']}'s Barley Mill provides {n} food")
 
-compendium_card("A064", cost={"wood": 1, "clay": 4},
+compendium_card("A064", cost=[{"wood": 1, "clay": 4}, {"wood": 1, "stone": 2}],
                 hooks={"harvest_field": _barley_mill_harvest_field})
 
 

@@ -249,17 +249,17 @@ compendium_card("I70", hooks={"plow_any": _punner_plow},
 
 # ── I71 Holiday House ─────────────────────────────────────────────────
 # Cost "3W or 3C, 2R" (ruling: "either 3 wood & 2 reeds or 3 clay & 2
-# reeds"); per this file's/deck_fr_minors.py's established convention
-# for an alternative-payment cost a plain dict can't represent, the
-# first listed option is used. 8VP. "In round 14, you cannot place any
-# people. Play this card at the latest during round 13." The motivating
-# example for placement_blocked (engine phase 11) -- see decks/GUIDE.md's
-# "Placement lockout" section. The "round 13 or before" playability
-# window is real rules text (not just flavor -- "effects of this card
-# are not optional"), so it's enforced as a prereq even though the DB's
-# own parsed prereq field came back empty for this entry. Two rulings
-# not modeled (both narrow cross-card interactions out of this card's
-# own scope): you may not discount this build with the Clay/Brushwood/
+# reeds") is a printed alternative (GUIDE.md ground rule 1) --
+# cost=[{...}, {...}]; the card's own effect doesn't depend on which was
+# paid. 8VP. "In round 14, you cannot place any people. Play this card
+# at the latest during round 13." The motivating example for
+# placement_blocked (engine phase 11) -- see decks/GUIDE.md's "Placement
+# lockout" section. The "round 13 or before" playability window is real
+# rules text (not just flavor -- "effects of this card are not
+# optional"), so it's enforced as a prereq even though the DB's own
+# parsed prereq field came back empty for this entry. Two rulings not
+# modeled (both narrow cross-card interactions out of this card's own
+# scope): you may not discount this build with the Clay/Brushwood/
 # Straw-thatched Roof cards, and the Church Warden (I227) denies its
 # points if you've built this -- both would require editing those OTHER
 # cards' own logic, not this one.
@@ -270,7 +270,7 @@ def _holiday_house_blocked(state, player, inst):
 
 
 compendium_card(
-    "I71", cost={"wood": 3, "reed": 2}, points=8,
+    "I71", cost=[{"wood": 3, "reed": 2}, {"clay": 3, "reed": 2}], points=8,
     prereq=(lambda s, p: s["round"] <= 13,
             "play this card at the latest during round 13"),
     placement_blocked=_holiday_house_blocked)
@@ -390,10 +390,9 @@ compendium_card("I83", score_bonus=_street_score)
 
 # ── I84 Chicken Coop ──────────────────────────────────────────────────
 # Cost "2W or 2C, 1R" (ruling: either 2 wood & 1 reed, or 2 clay & 1
-# reed) -- the OR-alternative payment isn't representable by a plain
-# cost dict (see deck_a_minors A004 / deck_d_minors D080); the wood
-# variant is used.
-compendium_card("I84", cost={"wood": 2, "reed": 1},
+# reed) is a printed alternative (GUIDE.md ground rule 1) --
+# cost=[{...}, {...}]; the effect doesn't depend on which was paid.
+compendium_card("I84", cost=[{"wood": 2, "reed": 1}, {"clay": 2, "reed": 1}],
                 hooks=schedule_on_play("food", rounds_ahead=8))
 
 
@@ -410,7 +409,8 @@ compendium_card(
 
 # ── I86 Corn Storehouse ───────────────────────────────────────────────
 # Cost "2W or 2C, 2R" (ruling: either 2 wood & 2 reed, or 2 clay & 2
-# reed); the wood variant is used (see I84 above).
+# reed) is a printed alternative (GUIDE.md ground rule 1) --
+# cost=[{...}, {...}]; the effect doesn't depend on which was paid.
 def _corn_storehouse_harvest(state, player, inst, ctx):
     eligible = [i for i, c in enumerate(player["cells"])
                if c["type"] == "field" and not c["crops"]]
@@ -445,7 +445,7 @@ def _corn_storehouse_resolve(state, player, inst, ctx):
     _corn_storehouse_next(state, player, inst)
 
 
-compendium_card("I86", cost={"wood": 2, "reed": 2},
+compendium_card("I86", cost=[{"wood": 2, "reed": 2}, {"clay": 2, "reed": 2}],
                 hooks={"harvest_field": _corn_storehouse_harvest},
                 resolve_choice=_corn_storehouse_resolve)
 
@@ -587,9 +587,10 @@ compendium_card("I95", hooks={"space_used": _fish_trap_space_used})
 
 
 # ── I96 Reed Exchange ─────────────────────────────────────────────────
-# Cost "2W or 2C" (OR-alternative payment isn't representable, see I84
-# above); the wood variant is used.
-compendium_card("I96", cost={"wood": 2}, hooks={"play": on_play_gain({"reed": 2})})
+# Cost "2W or 2C" is a printed alternative (GUIDE.md ground rule 1) --
+# cost=[{...}, {...}]; the effect doesn't depend on which was paid.
+compendium_card("I96", cost=[{"wood": 2}, {"clay": 2}],
+                hooks={"play": on_play_gain({"reed": 2})})
 
 
 # ── I98 Schnaps Distillery ────────────────────────────────────────────

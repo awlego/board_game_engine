@@ -4,7 +4,7 @@
 import pytest
 
 from server.agricola.engine import AgricolaEngine
-from server.agricola import cards
+from server.agricola import cards, sub_actions
 from server.agricola.decks import deck_fr_minors as m
 from server.agricola.state import (
     cell_edges, MAJOR_IMPROVEMENTS, plowable_cells, validate_fence_layout,
@@ -126,7 +126,7 @@ def test_smoke_play_every_card(engine, cid):
     s = make_state(engine, 2)
     first = s["current_player"]
     _prep_prereqs(s, first, cid)
-    give(s, first, **cards.CARDS[cid]["cost"])
+    give(s, first, **sub_actions.cost_alternatives(cards.CARDS[cid]["cost"])[0])
     give_card(s, first, cid)
     minor = {"card": cid}
     if cid in _PLAY_PARAMS:
@@ -229,6 +229,21 @@ def test_barber_shop_banks_points_for_remaining_harvests(engine):
     # Round 1: all 6 harvests still remain.
     assert inst["data"]["bonus"] == 6
     assert cards.score_bonuses(s, p) == 6
+
+
+def test_breakfast_outdoors_alt_cost_grain(engine):
+    """Cost "1 vegetable or 2 grains" (note: NOT a symmetric quantity)
+    -- paying the non-first (2 grain) alternative via cost_option still
+    plays the card."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give(s, first, grain=2)
+    give_card(s, first, "FR010")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "FR010", "cost_option": 1}})
+    p = s["players"][first]
+    assert p["resources"]["grain"] == 0 and p["resources"]["vegetable"] == 0
+    assert any(i["id"] == "FR010" for i in p["minors"])
 
 
 def test_brickyard_stashes_and_releases_clay(engine):

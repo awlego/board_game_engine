@@ -54,9 +54,14 @@ UNIMPLEMENTED = {
             "personal action space (a 'Traveling Players' proxy) -- "
             "adding action spaces dynamically isn't supported",
     "C040": "cost is a player choice between two alternative payments "
-            "(1 grain or 1 reed) with different resulting gains -- the "
-            "engine's cost model is one fixed dict, no alternative-"
-            "payment mechanism",
+            "(1 grain or 1 reed) with different resulting gains. The "
+            "engine's cost model now supports a printed alternative "
+            "(cost=[{...}, {...}], GUIDE.md ground rule 1), but "
+            "play_minor's play-hook ctx never learns which alternative/"
+            "cost_option was actually resolved -- there's no channel "
+            "from resolve_spec_cost's choice back to the hook -- so "
+            "which of the two differing gains to grant still can't be "
+            "determined here (same gap as B065 in deck_b_minors.py).",
     "C048": "detecting 'the first unused farmyard space used this turn' "
             "needs a turn-boundary hook; the existing per-structure "
             "hooks can co-occur within one turn (e.g. Farm Expansion), "

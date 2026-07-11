@@ -66,9 +66,12 @@ UNIMPLEMENTED = {
             "was played from; the play hook's ctx carries no space_id "
             "and engine.py can't be edited to add it",
     "B065": "the reward tier depends on which resource the player chose "
-            "to pay the cost in; the engine's cost model is a single "
-            "fixed dict, not a player-chosen-material-with-differing-"
-            "effect cost",
+            "to pay the cost in. The engine's cost model now supports a "
+            "printed alternative (cost=[{...}, {...}], GUIDE.md ground "
+            "rule 1), but play_minor's play-hook ctx never learns which "
+            "alternative/cost_option was actually resolved -- there's no "
+            "channel from resolve_spec_cost's choice back to the hook --"
+            " so the reward tier still can't be determined here.",
     "B072": "requires letting 1-2-space pastures also act as sowable "
             "fields with reduced capacity; needs changes to sow "
             "validation and pasture capacity in the engine",
@@ -719,6 +722,8 @@ compendium_card(
 
 # ── B043 Chophouse ────────────────────────────────────────────────────
 # (Using "3" of the ambiguous "3/2" in the parsed text — see report.)
+# Cost "2W or 2C" is a printed alternative (GUIDE.md ground rule 1) --
+# cost=[{...}, {...}]; the effect doesn't depend on which was paid.
 def _chophouse_space_used(state, player, inst, ctx):
     if ctx["actor"] != player["index"] or \
             ctx["space_id"] not in ("grain_seeds", "vegetable_seeds"):
@@ -730,13 +735,15 @@ def _chophouse_space_used(state, player, inst, ctx):
         ctx["log"].append(f"{player['name']}'s Chophouse places food on "
                           "future round spaces")
 
-compendium_card("B043", cost={"wood": 2}, points=1,
+compendium_card("B043", cost=[{"wood": 2}, {"clay": 2}], points=1,
                 hooks={"space_used": _chophouse_space_used})
 
 
 # ── B044 Chick Stable ─────────────────────────────────────────────────
 # (First sentence only; "(2VP. Cost 1W. Req 2 vegetable fields.)..." is
-# a different, merged-in card.)
+# a different, merged-in card.) Cost "1W or 1C" is a printed alternative
+# (GUIDE.md ground rule 1) -- cost=[{...}, {...}]; the effect doesn't
+# depend on which was paid.
 def _chick_stable_play(state, player, inst, ctx):
     rnd = state["round"]
     targets = [rnd + off for off in (3, 4) if rnd + off <= TOTAL_ROUNDS]
@@ -745,12 +752,16 @@ def _chick_stable_play(state, player, inst, ctx):
         ctx["log"].append("Chick Stable places 2 food on rounds "
                           + ", ".join(map(str, targets)))
 
-compendium_card("B044", cost={"wood": 1}, hooks={"play": _chick_stable_play})
+compendium_card("B044", cost=[{"wood": 1}, {"clay": 1}],
+                hooks={"play": _chick_stable_play})
 
 
 # ── B046 Club House ───────────────────────────────────────────────────
 # (First clause only; "(Cost 1C.) Each time you use..." is a merged-in
-# card duplicating the already-registered Fish Trap-style effect.)
+# card duplicating the already-registered Fish Trap-style effect.) Cost
+# "3W or 2C" is a printed alternative (GUIDE.md ground rule 1, note the
+# alternatives are NOT symmetric quantities) -- cost=[{...}, {...}]; the
+# effect doesn't depend on which was paid.
 def _club_house_play(state, player, inst, ctx):
     rnd = state["round"]
     food_rounds = [r for r in range(rnd + 1, min(TOTAL_ROUNDS, rnd + 4) + 1)]
@@ -760,10 +771,14 @@ def _club_house_play(state, player, inst, ctx):
         _schedule_good(player, state, "stone", [stone_round])
     ctx["log"].append("Club House schedules food and stone on future rounds")
 
-compendium_card("B046", cost={"wood": 3}, points=1, hooks={"play": _club_house_play})
+compendium_card("B046", cost=[{"wood": 3}, {"clay": 2}], points=1,
+                hooks={"play": _club_house_play})
 
 
 # ── B048 Forest Stone ─────────────────────────────────────────────────
+# Cost "2W or 1S" is a printed alternative (GUIDE.md ground rule 1, note
+# the alternatives are NOT symmetric quantities) -- cost=[{...}, {...}];
+# the effect doesn't depend on which was paid.
 def _forest_stone_play(state, player, inst, ctx):
     inst["data"]["food"] = 2
 
@@ -778,7 +793,8 @@ def _forest_stone_space_used(state, player, inst, ctx):
         inst["data"]["food"] = inst["data"].get("food", 0) + 2
         ctx["log"].append(f"{player['name']}'s Forest Stone stores 2 food")
 
-compendium_card("B048", cost={"wood": 2}, points=1, prereq=needs_occupations(1),
+compendium_card("B048", cost=[{"wood": 2}, {"stone": 1}], points=1,
+                prereq=needs_occupations(1),
                 hooks={"play": _forest_stone_play,
                        "space_used": _forest_stone_space_used})
 

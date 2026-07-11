@@ -21,6 +21,15 @@
   "cost": {
    "food": 2
   },
+  "cost_alternatives": [
+   {
+    "food": 2
+   },
+   {
+    "grain": 1
+   }
+  ],
+  "cost_text": "2 food or 1 grain",
   "deck": "A",
   "min_players": 1,
   "name": "Baseboards",
@@ -499,6 +508,17 @@
    "clay": 4,
    "wood": 1
   },
+  "cost_alternatives": [
+   {
+    "clay": 4,
+    "wood": 1
+   },
+   {
+    "stone": 2,
+    "wood": 1
+   }
+  ],
+  "cost_text": "1 wood + 4 clay or 1 wood + 2 stone",
   "deck": "A",
   "min_players": 1,
   "name": "Barley Mill",
@@ -1571,6 +1591,15 @@
   "cost": {
    "wood": 2
   },
+  "cost_alternatives": [
+   {
+    "wood": 2
+   },
+   {
+    "clay": 2
+   }
+  ],
+  "cost_text": "2 wood or 2 clay",
   "deck": "B",
   "min_players": 1,
   "name": "Chophouse",
@@ -1582,6 +1611,15 @@
   "cost": {
    "wood": 1
   },
+  "cost_alternatives": [
+   {
+    "wood": 1
+   },
+   {
+    "clay": 1
+   }
+  ],
+  "cost_text": "1 wood or 1 clay",
   "deck": "B",
   "min_players": 1,
   "name": "Chick Stable",
@@ -1592,6 +1630,15 @@
   "cost": {
    "wood": 3
   },
+  "cost_alternatives": [
+   {
+    "wood": 3
+   },
+   {
+    "clay": 2
+   }
+  ],
+  "cost_text": "3 wood or 2 clay",
   "deck": "B",
   "min_players": 1,
   "name": "Club House",
@@ -1603,6 +1650,15 @@
   "cost": {
    "wood": 2
   },
+  "cost_alternatives": [
+   {
+    "wood": 2
+   },
+   {
+    "stone": 1
+   }
+  ],
+  "cost_text": "2 wood or 1 stone",
   "deck": "B",
   "min_players": 1,
   "name": "Forest Stone",
@@ -1727,7 +1783,7 @@
   "deck": "B",
   "implemented": false,
   "name": "Grain Depot",
-  "reason": "the reward tier depends on which resource the player chose to pay the cost in; the engine's cost model is a single fixed dict, not a player-chosen-material-with-differing-effect cost",
+  "reason": "the reward tier depends on which resource the player chose to pay the cost in. The engine's cost model now supports a printed alternative (cost=[{...}, {...}], GUIDE.md ground rule 1), but play_minor's play-hook ctx never learns which alternative/cost_option was actually resolved -- there's no channel from resolve_spec_cost's choice back to the hook -- so the reward tier still can't be determined here.",
   "text": "If you paid wood/clay/stone for this card, place 1 grain on each of the next 2/3/4 round spaces. At the start of these rounds, you get the grain. (Req 2 occ. Cost 2W.) Place 1 grain each on the remaining spaces for rounds 5, 8, 11, and 14. At the start of these rounds, you get the grain.",
   "type": "minor"
  },
@@ -2833,7 +2889,7 @@
   "name": "Canvas Sack",
   "points": 1,
   "prereq_text": "no occ",
-  "reason": "cost is a player choice between two alternative payments (1 grain or 1 reed) with different resulting gains -- the engine's cost model is one fixed dict, no alternative-payment mechanism",
+  "reason": "cost is a player choice between two alternative payments (1 grain or 1 reed) with different resulting gains. The engine's cost model now supports a printed alternative (cost=[{...}, {...}], GUIDE.md ground rule 1), but play_minor's play-hook ctx never learns which alternative/cost_option was actually resolved -- there's no channel from resolve_spec_cost's choice back to the hook -- so which of the two differing gains to grant still can't be determined here (same gap as B065 in deck_b_minors.py).",
   "text": "When play this card, paying grain/reed for it, you immediately get 1 vegetable/4 wood. (Cost 2W 2C.) After the feeding phase of each harvest, you can exchange exactly 1 food for 2 different building resources of your choice or 1 vegetable.",
   "type": "minor"
  },
@@ -4324,6 +4380,15 @@
   "cost": {
    "wood": 1
   },
+  "cost_alternatives": [
+   {
+    "wood": 1
+   },
+   {
+    "food": 1
+   }
+  ],
+  "cost_text": "1 wood or 1 food",
   "deck": "D",
   "min_players": 1,
   "name": "Brick Hammer",
@@ -6652,6 +6717,15 @@
   "cost": {
    "vegetable": 1
   },
+  "cost_alternatives": [
+   {
+    "vegetable": 1
+   },
+   {
+    "grain": 2
+   }
+  ],
+  "cost_text": "1 vegetable or 2 grain",
   "deck": "FR",
   "min_players": 1,
   "name": "Breakfast Outdoors",
@@ -9337,6 +9411,17 @@
    "reed": 2,
    "wood": 3
   },
+  "cost_alternatives": [
+   {
+    "reed": 2,
+    "wood": 3
+   },
+   {
+    "clay": 3,
+    "reed": 2
+   }
+  ],
+  "cost_text": "3 wood + 2 reed or 3 clay + 2 reed",
   "deck": "I",
   "min_players": 1,
   "name": "Holiday House",
@@ -9484,6 +9569,17 @@
    "reed": 1,
    "wood": 2
   },
+  "cost_alternatives": [
+   {
+    "reed": 1,
+    "wood": 2
+   },
+   {
+    "clay": 2,
+    "reed": 1
+   }
+  ],
+  "cost_text": "2 wood + 1 reed or 2 clay + 1 reed",
   "deck": "I",
   "min_players": 1,
   "name": "Chicken Coop",
@@ -9515,6 +9611,17 @@
    "reed": 2,
    "wood": 2
   },
+  "cost_alternatives": [
+   {
+    "reed": 2,
+    "wood": 2
+   },
+   {
+    "clay": 2,
+    "reed": 2
+   }
+  ],
+  "cost_text": "2 wood + 2 reed or 2 clay + 2 reed",
   "deck": "I",
   "min_players": 1,
   "name": "Corn Storehouse",
@@ -9617,6 +9724,15 @@
   "cost": {
    "wood": 2
   },
+  "cost_alternatives": [
+   {
+    "wood": 2
+   },
+   {
+    "clay": 2
+   }
+  ],
+  "cost_text": "2 wood or 2 clay",
   "deck": "I",
   "min_players": 1,
   "name": "Reed Exchange",
@@ -9816,6 +9932,15 @@
   "cost": {
    "wood": 3
   },
+  "cost_alternatives": [
+   {
+    "wood": 3
+   },
+   {
+    "clay": 3
+   }
+  ],
+  "cost_text": "3 wood or 3 clay",
   "deck": "K",
   "min_players": 1,
   "name": "Granary",
@@ -10115,6 +10240,15 @@
   "cost": {
    "wood": 2
   },
+  "cost_alternatives": [
+   {
+    "wood": 2
+   },
+   {
+    "clay": 2
+   }
+  ],
+  "cost_text": "2 wood or 2 clay",
   "deck": "K",
   "min_players": 1,
   "name": "Stone Exchange",

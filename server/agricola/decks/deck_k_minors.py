@@ -350,12 +350,11 @@ compendium_card(
 
 
 # ── K116 Granary ──────────────────────────────────────────────────────
-# Cost "3W or 3C" doesn't parse (alternative payments aren't representable
-# by a single cost dict, same judgment call as A004 in deck_a_minors.py);
-# the first option (wood) is used. The effect itself doesn't depend on
-# which resource paid the cost.
+# Cost "3W or 3C" is a printed alternative (GUIDE.md ground rule 1) --
+# cost=[{...}, {...}]. The effect itself doesn't depend on which
+# resource paid the cost.
 compendium_card(
-    "K116", cost={"wood": 3}, points=1,
+    "K116", cost=[{"wood": 3}, {"clay": 3}], points=1,
     hooks=schedule_on_play("grain", fixed_rounds=(8, 10, 12)),
 )
 
@@ -790,10 +789,10 @@ compendium_card(
 
 
 # ── K143 Stone Exchange ───────────────────────────────────────────────
-# Cost "2W or 2C" doesn't parse (alternative payments; see K116's note);
-# the first option (wood) is used -- the effect doesn't depend on which
-# resource paid the cost.
-compendium_card("K143", cost={"wood": 2},
+# Cost "2W or 2C" is a printed alternative (GUIDE.md ground rule 1) --
+# cost=[{...}, {...}] (see K116's note). The effect doesn't depend on
+# which resource paid the cost.
+compendium_card("K143", cost=[{"wood": 2}, {"clay": 2}],
                 hooks={"play": on_play_gain({"stone": 2})})
 
 

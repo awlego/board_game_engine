@@ -86,7 +86,7 @@ def test_smoke_play_every_card(engine, cid):
     s = make_state(engine, 2)
     first = s["current_player"]
     _prep_prereqs(s, first, cid)
-    give(s, first, **cards.CARDS[cid]["cost"])
+    give(s, first, **sub_actions.cost_alternatives(cards.CARDS[cid]["cost"])[0])
     give_card(s, first, cid)
     s = place(engine, s, {"kind": "place", "space": "meeting_place",
                           "minor": {"card": cid}})
@@ -352,6 +352,58 @@ def test_chophouse_schedules_food_on_grain_seeds(engine):
         assert s["round_goods"][str(r)][str(first)]["food"] == 1
 
 
+def test_chophouse_alt_cost_clay(engine):
+    """Cost "2W or 2C" -- paying the non-first (clay) alternative via
+    cost_option still plays the card."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give(s, first, clay=2)
+    give_card(s, first, "B043")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "B043", "cost_option": 1}})
+    p = s["players"][first]
+    assert p["resources"]["clay"] == 0 and p["resources"]["wood"] == 0
+    assert any(i["id"] == "B043" for i in p["minors"])
+
+
+def test_chick_stable_alt_cost_clay(engine):
+    """Cost "1W or 1C" -- paying the non-first (clay) alternative via
+    cost_option still plays the card and schedules food."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give(s, first, clay=1)
+    give_card(s, first, "B044")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "B044", "cost_option": 1}})
+    p = s["players"][first]
+    assert p["resources"]["clay"] == 0 and p["resources"]["wood"] == 0
+    rnd = s["round"]
+    for off in (3, 4):
+        r = rnd + off
+        if r <= 14:
+            assert s["round_goods"][str(r)][str(first)]["food"] == 2
+
+
+def test_club_house_alt_cost_clay(engine):
+    """Cost "3W or 2C" (note: NOT a symmetric quantity) -- paying the
+    non-first (2 clay) alternative via cost_option still plays the card
+    and schedules food/stone."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give(s, first, clay=2)
+    give_card(s, first, "B046")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "B046", "cost_option": 1}})
+    p = s["players"][first]
+    assert p["resources"]["clay"] == 0 and p["resources"]["wood"] == 0
+    rnd = s["round"]
+    for r in range(rnd + 1, min(14, rnd + 4) + 1):
+        assert s["round_goods"][str(r)][str(first)]["food"] == 1
+    stone_round = rnd + 5
+    if stone_round <= 14:
+        assert s["round_goods"][str(stone_round)][str(first)]["stone"] == 1
+
+
 def test_forest_stone_stores_and_releases_food(engine):
     s = make_state(engine, 2)
     first = s["current_player"]
@@ -375,6 +427,23 @@ def test_forest_stone_stores_and_releases_food(engine):
     s = place(engine, s, {"kind": "place", "space": "western_quarry"})  # back to first
     inst = next(i for i in s["players"][first]["minors"] if i["id"] == "B048")
     assert inst["data"]["food"] == 3
+
+
+def test_forest_stone_alt_cost_stone(engine):
+    """Cost "2W or 1S" (note: NOT a symmetric quantity) -- paying the
+    non-first (1 stone) alternative via cost_option still plays the
+    card."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "occ_woodcutter")
+    give(s, first, stone=1)
+    give_card(s, first, "B048")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "B048", "cost_option": 1}})
+    p = s["players"][first]
+    assert p["resources"]["stone"] == 0 and p["resources"]["wood"] == 0
+    inst = next(i for i in p["minors"] if i["id"] == "B048")
+    assert inst["data"]["food"] == 2
 
 
 def test_scales_grants_food_on_matching_counts(engine):

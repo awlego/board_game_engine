@@ -4,7 +4,7 @@
 import pytest
 
 from server.agricola.engine import AgricolaEngine
-from server.agricola import cards
+from server.agricola import cards, sub_actions
 from server.agricola.decks import deck_i_minors
 from server.agricola.state import plowable_cells
 
@@ -98,7 +98,7 @@ def test_smoke_play_every_card(engine, cid):
     s = make_state(engine, 2)
     first = s["current_player"]
     _prep_prereqs(s, first, cid)
-    give(s, first, **cards.CARDS[cid]["cost"])
+    give(s, first, **sub_actions.cost_alternatives(cards.CARDS[cid]["cost"])[0])
     give_card(s, first, cid)
     s = place(engine, s, {"kind": "place", "space": "meeting_place",
                           "minor": {"card": cid}})
@@ -326,6 +326,23 @@ def test_chicken_coop_schedules_food_x8(engine):
         assert s["round_goods"][str(r)][str(first)]["food"] == 1
 
 
+def test_chicken_coop_alt_cost_clay(engine):
+    """Cost "2W or 2C, 1R" -- paying the non-first (clay+reed)
+    alternative via cost_option still plays the card and schedules food."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give(s, first, clay=2, reed=1)
+    give_card(s, first, "I84")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "I84", "cost_option": 1}})
+    p = s["players"][first]
+    assert p["resources"]["clay"] == 0 and p["resources"]["reed"] == 0
+    assert p["resources"]["wood"] == 0
+    rnd = s["round"]
+    for r in range(rnd + 1, min(14, rnd + 8) + 1):
+        assert s["round_goods"][str(r)][str(first)]["food"] == 1
+
+
 def test_cooking_corner_returns_hearth_and_provides_cook_bake(engine):
     s = make_state(engine, 2)
     first = s["current_player"]
@@ -356,6 +373,21 @@ def test_corn_storehouse_resows_empty_fields(engine):
     s = place(engine, s, {"kind": "choice", "index": 0})
     assert s["players"][first]["cells"][3]["crops"] == {"type": "grain",
                                                         "count": 2}
+
+
+def test_corn_storehouse_alt_cost_clay(engine):
+    """Cost "2W or 2C, 2R" -- paying the non-first (clay+reed)
+    alternative via cost_option still plays the card."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give(s, first, clay=2, reed=2)
+    give_card(s, first, "I86")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "I86", "cost_option": 1}})
+    p = s["players"][first]
+    assert p["resources"]["clay"] == 0 and p["resources"]["reed"] == 0
+    assert p["resources"]["wood"] == 0
+    assert any(i["id"] == "I86" for i in p["minors"])
 
 
 def test_flagon_distributes_food_when_well_built(engine):
@@ -463,6 +495,20 @@ def test_reed_exchange_on_play_and_travels(engine):
                           "minor": {"card": "I96"}})
     assert s["players"][first]["resources"]["reed"] == 2
     assert "I96" in s["players"][other]["hand_minors"]
+
+
+def test_reed_exchange_alt_cost_clay(engine):
+    """Cost "2W or 2C" -- paying the non-first (clay) alternative via
+    cost_option still plays the card."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give(s, first, clay=2)
+    give_card(s, first, "I96")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "I96", "cost_option": 1}})
+    p = s["players"][first]
+    assert p["resources"]["clay"] == 0 and p["resources"]["wood"] == 0
+    assert p["resources"]["reed"] == 2
 
 
 def test_schnaps_distillery_conversion_and_score(engine):
@@ -652,6 +698,21 @@ def test_holiday_house_cannot_be_played_after_round_13(engine):
     with pytest.raises(ValueError):
         place(engine, s, {"kind": "place", "space": "meeting_place",
                           "minor": {"card": "I71"}})
+
+
+def test_holiday_house_alt_cost_clay(engine):
+    """Cost "3W or 3C, 2R" -- paying the non-first (clay+reed)
+    alternative via cost_option still plays the card."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give(s, first, clay=3, reed=2)
+    give_card(s, first, "I71")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "I71", "cost_option": 1}})
+    p = s["players"][first]
+    assert p["resources"]["clay"] == 0 and p["resources"]["reed"] == 0
+    assert p["resources"]["wood"] == 0
+    assert any(i["id"] == "I71" for i in p["minors"])
 
 
 def test_punner_plows_a_field_after_another_players_plow(engine):

@@ -88,7 +88,7 @@ def test_smoke_play_every_card(engine, cid):
     s = make_state(engine, 2)
     first = s["current_player"]
     _prep_prereqs(s, first, cid)
-    give(s, first, **cards.CARDS[cid]["cost"])
+    give(s, first, **sub_actions.cost_alternatives(cards.CARDS[cid]["cost"])[0])
     give_card(s, first, cid)
     s = place(engine, s, {"kind": "place", "space": "meeting_place",
                           "minor": {"card": cid}})
@@ -257,6 +257,23 @@ def test_granary_cost_override_and_schedule(engine):
                           "minor": {"card": "K116"}})
     p = s["players"][first]
     assert p["resources"]["wood"] == 0
+    rnd = s["round"]
+    for r in (8, 10, 12):
+        if r > rnd:
+            assert s["round_goods"][str(r)][str(first)]["grain"] == 1
+
+
+def test_granary_alt_cost_clay(engine):
+    """Cost "3W or 3C" -- paying the non-first (clay) alternative via
+    cost_option still plays the card and schedules the grain."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give(s, first, clay=3)
+    give_card(s, first, "K116")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "K116", "cost_option": 1}})
+    p = s["players"][first]
+    assert p["resources"]["clay"] == 0 and p["resources"]["wood"] == 0
     rnd = s["round"]
     for r in (8, 10, 12):
         if r > rnd:
@@ -643,6 +660,20 @@ def test_stone_exchange_cost_override_gain_and_travels(engine):
     assert p["resources"]["wood"] == 0
     assert p["resources"]["stone"] == 2
     assert "K143" in s["players"][other]["hand_minors"]
+
+
+def test_stone_exchange_alt_cost_clay(engine):
+    """Cost "2W or 2C" -- paying the non-first (clay) alternative via
+    cost_option still plays the card."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give(s, first, clay=2)
+    give_card(s, first, "K143")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "K143", "cost_option": 1}})
+    p = s["players"][first]
+    assert p["resources"]["clay"] == 0 and p["resources"]["wood"] == 0
+    assert p["resources"]["stone"] == 2
 
 
 def test_mansion_scores_stone_house_rooms(engine):

@@ -4,7 +4,7 @@
 import pytest
 
 from server.agricola.engine import AgricolaEngine
-from server.agricola import cards
+from server.agricola import cards, sub_actions
 from server.agricola.decks import deck_d_minors
 from server.agricola.state import HARVEST_ROUNDS, cell_edges
 
@@ -115,7 +115,7 @@ def test_smoke_play_every_card(engine, cid):
     s = make_state(engine, 2)
     first = s["current_player"]
     _prep_prereqs(s, first, cid)
-    give(s, first, **cards.CARDS[cid]["cost"])
+    give(s, first, **sub_actions.cost_alternatives(cards.CARDS[cid]["cost"])[0])
     give_card(s, first, cid)
     minor = {"card": cid}
     if cid in _MINOR_PARAMS:
@@ -683,6 +683,21 @@ def test_brick_hammer_grants_stone_on_clay_heavy_build(engine):
     s = place(engine, s, {"kind": "place", "space": "major_improvement",
                           "improvement": "fireplace_2"})
     assert s["players"][first]["resources"]["stone"] == 1
+
+
+def test_brick_hammer_alt_cost_food(engine):
+    """Cost "1W or 1F" -- paying the non-first (food) alternative via
+    cost_option still plays the card (and leaves wood untouched)."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    food = s["players"][first]["resources"]["food"]
+    give(s, first, food=1)
+    give_card(s, first, "D080")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "D080", "cost_option": 1}})
+    p = s["players"][first]
+    assert p["resources"]["food"] == food and p["resources"]["wood"] == 0
+    assert any(i["id"] == "D080" for i in p["minors"])
 
 
 def test_roof_ladder_cost_mod_and_bonus_stone(engine):
