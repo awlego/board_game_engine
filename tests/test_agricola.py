@@ -4763,6 +4763,35 @@ def test_multi_stack_field_can_sow_both_in_one_call(engine, temp_card):
     assert inst["stacks"][1] == {"type": "grain", "count": 3}
 
 
+def test_multi_stack_sow_entries_carry_planted_stack_wrapper(engine, temp_card):
+    """ctx["sown"] targets for a stacks>1 card are {"id", "crops"}
+    wrappers whose "crops" IS the planted stack's dict -- so the K118
+    Liquid Manure consumer shape (target["crops"]["count"] += 1) bumps
+    exactly the stack that was just sown. stacks=1 sows still pass the
+    instance itself (E47-style identity checks)."""
+    cid = "test_acreage_sown"
+    seen = []
+
+    def sow_hook(state, player, inst, ctx):
+        for target, crop in ctx["sown"]:
+            seen.append(target)
+            if not isinstance(target, int):
+                target["crops"]["count"] += 1
+
+    temp_card(cid, "Test Acreage Sown", "minor", "test",
+              field={"crops": ("grain",), "stacks": 2},
+              hooks={"sow": sow_hook})
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    inst = put_in_play(s, first, cid)
+    give(s, first, grain=1)
+    sub_actions.sow(s, p, [{"card": cid, "crop": "grain", "stack": 1}], [])
+    assert seen and seen[0]["id"] == cid  # wrapper, not the instance
+    assert inst["stacks"][1] == {"type": "grain", "count": 4}  # 3 + hook's 1
+    assert inst["stacks"][0] is None
+
+
 def test_multi_stack_field_sow_same_stack_twice_rejected(engine, temp_card):
     cid = "test_acreage_dup"
     temp_card(cid, "Test Acreage Dup", "minor", "test",

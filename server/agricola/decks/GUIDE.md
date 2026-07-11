@@ -64,7 +64,7 @@ through the accommodation prompt automatically):
 | `stable_built` | after own stables built | `cells` |
 | `rooms_built` | after own rooms built | `cells` |
 | `plow` | after own plow | `cell` |
-| `sow` | after own sow action | `sown`: [(cell-or-inst, crop)] |
+| `sow` | after own sow action | `sown`: [(cell-or-inst-or-stack-wrapper, crop)] (see "Field stacks") |
 | `bake` | after own bake | `grain` count baked |
 | `renovate` | after own renovation | `free_stable_cell` param |
 | `family_growth` | own family growth | — |
@@ -1363,18 +1363,19 @@ disposition** (grep for `\["crops"\]`/`card_fields(` across
   n` from the `sow` event's `ctx["sown"]` list). These are UNCHANGED and
   safe TODAY, because every field card actually registered defaults to
   stacks=1, for which `inst["crops"]` is exactly the old shape. They are
-  NOT stack-aware: a stacks>1 card's `inst["crops"]` is always `None`
-  (its crops live in `inst["stacks"]` instead), so a future card
-  registration that combines a stacks>1 field with one of these
-  sow-reactive cards would need updating them to use `cards.
-  get_field_stack`/`field_stacks` -- flagged here for whoever registers
-  K105/FR089 for real. The `sow` event's `ctx["sown"]` list itself was
-  deliberately left as `(target, crop)` 2-tuples (target = the card
-  instance or cell index, exactly as before) rather than growing a
-  third "which stack" element, specifically to avoid a mass rewrite of
-  these ~10 existing consumers; `sub_actions.sow`'s own stack bookkeeping
-  (which stack was just planted, and the same-stack-twice check) is
-  purely internal to that function and never needs to leak into `sown`.
+  NOT stack-aware for a card's own direct `inst["crops"]` reads: a
+  stacks>1 card's `inst["crops"]` is always `None` (its crops live in
+  `inst["stacks"]` instead) -- a card's own field logic should use
+  `cards.field_stacks`/`get_field_stack`. The `sow` event's
+  `ctx["sown"]` list stays `(target, crop)` 2-tuples, but for a
+  stacks>1 card the target is a `{"id": cid, "crops": <planted stack's
+  crop dict>}` wrapper instead of the instance (the instance can't say
+  WHICH stack this entry planted): the ~10 existing sow-reactive
+  consumers' `target["crops"]["count"] += n` pattern works unchanged on
+  cells, stacks=1 instances, and wrappers alike, and identity checks
+  against a card's own instance (E47) still see the real instance for
+  stacks=1 sows. `sub_actions.sow`'s docstring is the authoritative
+  contract.
 
 ### Fence tokens (B030 Wood Palisades)
 

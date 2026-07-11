@@ -780,7 +780,17 @@ def sow(state, player, sow_items, log):
     to plant -- omit it for a stacks=1 card, defaults to 0). Multiple
     items may target the SAME card id at different stack indices in one
     call (K105/FR089-style multi-stack cards) -- see decks/GUIDE.md's
-    "Field stacks" section."""
+    "Field stacks" section.
+
+    The sow event's ctx["sown"] entries are `(target, crop)` where
+    `target` is the cell index, the card-field INSTANCE (stacks=1 -- so
+    `target["crops"]` and identity checks like E47's `target is inst`
+    both work), or, for a stacks>1 card, a `{"id": cid, "crops":
+    <planted stack's crop dict>}` wrapper -- the instance itself can't
+    stand in, since `inst["crops"]` doesn't exist and wouldn't say
+    WHICH stack this entry planted. Consumers that bump
+    `target["crops"]["count"]` (the K118 Liquid Manure shape) work
+    unchanged on all three."""
     if not isinstance(sow_items, list) or not sow_items:
         raise ValueError("Choose fields to sow")
     seen_cells = set()
@@ -815,7 +825,12 @@ def sow(state, player, sow_items, log):
             seen_stacks.add((cid, stack))
             cards.set_field_stack(
                 inst, stack, {"type": crop, "count": 3 if crop == "grain" else 2})
-            sown.append((inst, crop))
+            if n_stacks > 1:
+                sown.append(({"id": cid,
+                              "crops": cards.get_field_stack(inst, stack)},
+                             crop))
+            else:
+                sown.append((inst, crop))
         else:
             cell = item.get("cell")
             if not isinstance(cell, int) or not (0 <= cell < NUM_CELLS) \
