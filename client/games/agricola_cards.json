@@ -5990,7 +5990,7 @@
   "implemented": false,
   "name": "Farm Cart",
   "points": 1,
-  "reason": "not yet implemented",
+  "reason": "requires sowing a second crop type onto a field cell/stack slot that already holds a different crop -- the same still-gated class of gap as C069 Land Consolidation (decks/GUIDE.md item 19): one {type,count} slot can only ever hold one crop type; the multi-stack mechanism gives a CARD extra independent slots, not a way for one existing slot to hold two crops at once.",
   "text": "Whenever you use the \"Sow\" action, you can Sow 1 Grain on an existing Vege field or 1 Vegetable on an existing Grain field.",
   "type": "minor"
  },
@@ -6003,17 +6003,17 @@
   "implemented": false,
   "name": "Beguine Courtyard",
   "points": 1,
-  "reason": "not yet implemented",
+  "reason": "the '5-room home shaped like the picture below' geometry is only shown as an image on the physical card, never captured in the parsed compendium text -- there is no reliable source for which specific 5-cell polyomino qualifies, and guessing at a shape would be exactly the silent approximation rule 2 forbids.",
   "text": "Once your home is shaped like the picture below (5 room home shaped like a \"C\"), you must immediately move all the people still in your supply into your home. They may take actions starting that round.",
   "type": "minor"
  },
  "FL003": {
   "deck": "FL",
-  "implemented": false,
+  "house_capacity": -1,
+  "min_players": 1,
   "name": "Belgian Shepherd",
   "points": 1,
   "prereq_text": "1 sheep",
-  "reason": "not yet implemented",
   "text": "You may keep up to 2 Sheep on exactly 1 Unused space in your farmyard. The space still counts as unused. You may not keep any animal other than the Belgian Shepherd in your home.",
   "type": "minor"
  },
@@ -6023,17 +6023,15 @@
    "reed": 1
   },
   "deck": "FL",
-  "implemented": false,
+  "min_players": 1,
   "name": "Educational Building",
-  "reason": "not yet implemented",
   "text": "This card is an additional Action space for you only. The rd th first time you use your 3 and/or 4 Family member this game, you may use it on this card and alternate placing 1 Wood and 1 Stone on each remaining Round space. Start with Wood. At the start of these rounds, you receive the resource.",
   "type": "minor"
  },
  "FL005": {
   "deck": "FL",
-  "implemented": false,
+  "min_players": 1,
   "name": "Brabant",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you receive 5 Bonus points if have 2 or 3 animal categories where you score 1 negative point.",
   "type": "minor"
  },
@@ -6042,10 +6040,14 @@
    "food": 2
   },
   "deck": "FL",
-  "implemented": false,
+  "field": {
+   "crops": [
+    "vegetable"
+   ]
+  },
+  "min_players": 1,
   "name": "Endive Field",
-  "prereq_text": "2 occ",
-  "reason": "not yet implemented",
+  "prereq_text": "2 occupations",
   "text": "When you play this card, you receive 1 Vegetable. In Rounds that end with a Harvest, you may Sow Vegetables on this card as if it were 1 field.",
   "type": "minor"
  },
@@ -6055,11 +6057,11 @@
    "wood": 3
   },
   "deck": "FL",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Diamond Trading Post",
   "points": 1,
-  "prereq_text": "3 occ",
-  "reason": "not yet implemented",
+  "prereq_text": "3 occupations",
   "text": "Place 3 Stone from the general supply on this card. At any time, you can move these Stone in your supply. At the start of each Harvest, if you have more Stone in your supply than there are on this card, you may return 1 Stone on this card for a pair of animals. You receive Sheep/ Wild boar/ Cattle st nd rd with the 1 / 2 / 3 return.",
   "type": "minor"
  },
@@ -6070,7 +6072,7 @@
   "deck": "FL",
   "implemented": false,
   "name": "Wooden Draisine",
-  "reason": "not yet implemented",
+  "reason": "requires a single person placement to use TWO orthogonally adjacent accumulation spaces at once, each left with a partial ('leave 2 items') withdrawal -- the engine's placement model ties one worker to exactly one action space with an all-or-nothing take; no dual-space placement or partial-withdrawal primitive exists.",
   "text": "You can use 2 orthogonally adjacent Accumulation spaces on the same game board with 1 person by placing the person between the spaces. You must leave 2 of the items on each space.",
   "type": "minor"
  },
@@ -6081,7 +6083,7 @@
   "deck": "FL",
   "implemented": false,
   "name": "Ebony Shoe",
-  "reason": "not yet implemented",
+  "reason": "the '3 bonus points to whichever player first has no unused farmyard spaces' clause needs points credited to a player who may not be this card's own owner -- score_bonus is only ever evaluated while summing the OWNING player's own in-play cards (cards.score_bonuses/scoring.score_player), so there is no way to award bonus points to an arbitrary other player triggered by their own board state.",
   "text": "If there are still 1/3/6/9 rounds to play, you immediately receive 1/2/3/4 Clay. After playing this card, the next player to have no Unused farmyard spaces receives 3 Bonus points.",
   "type": "minor"
  },
@@ -6093,7 +6095,7 @@
   "implemented": false,
   "name": "Stuck Cart",
   "prereq_text": "2 people placed",
-  "reason": "not yet implemented",
+  "reason": "'immediately place and use all the Family members that are in your home' needs a card hook to trigger one or more actual action-space placements -- there is no generic 'place a person on an arbitrary action space and resolve it' primitive exposed to card code; sub_actions only covers the named build/play/sow/family-growth transactions, and engine._resolve_space's per-space dispatch is private to engine.py (see decks/GUIDE.md's B023 note making the same point).",
   "text": "Immediately place and use all the Family members that are in your home.",
   "type": "minor"
  },
@@ -6103,7 +6105,7 @@
   "implemented": false,
   "name": "Towhead",
   "prereq_text": "Round 4 or before",
-  "reason": "not yet implemented",
+  "reason": "forces a specific stage-2 round card ('Family growth also 1 Minor Improvement') to appear face-down at round 6 and grants early access the round before -- modifying the action-space card deck's reveal order/identity is explicitly unsupported (decks/GUIDE.md's 'Not supported' list).",
   "text": "Place the after \"Family growth also 1 Minor Improvement\" Action space face-down on Round 6. In Round 5, you can use it as if it were already face-up.",
   "type": "minor"
  },
@@ -6114,7 +6116,7 @@
   "deck": "FL",
   "implemented": false,
   "name": "Cart",
-  "reason": "not yet implemented",
+  "reason": "'only you can use this space with your first person' whenever its supply crosses a threshold requires DENYING other players' otherwise-legal placements -- no spec key exists for that (occupied_ok only grants extra access on top of the normal rule, it never revokes it; placement_blocked blocks a player from every space, not one specific space).",
   "text": "Whenever there are at least 6 Wood, 5 Clay, 4 Reed, or 3 Stone on an Action space, only you can take this space with your first person in the Work phase.",
   "type": "minor"
  },
@@ -6123,7 +6125,7 @@
   "deck": "FL",
   "implemented": false,
   "name": "Gift Table",
-  "reason": "not yet implemented",
+  "reason": "the purchased Sheep must never breed while every other identical sheep in the player's herd keeps breeding normally -- breeding (engine._finish_harvest) operates on aggregate per-type counts via state.animal_counts, with no per-unit animal tagging to exempt one individual.",
   "text": "Pile 1 of each on this card (from bottom to top) : Vegetable, Wood, Sheep, Wood, Grain. At any time, you may buy the top item for 1 Food. When you buy the Sheep: it moves to your supply, it can be exchanged for 2 Food at any time, it does not breed, and it counts for scoring.",
   "type": "minor"
  },
@@ -6133,10 +6135,10 @@
    "stone": 1
   },
   "deck": "FL",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Jenever Distillery",
   "points": 1,
-  "reason": "not yet implemented",
   "text": "When you play this card, place 1 to 4 Wood from your supply on this card. You can move this Wood back to your supply at any time. In the Field phase of each Harvest, you receive 1 Food for each Wood on this card (without removing the Wood).",
   "type": "minor"
  },
@@ -6146,10 +6148,9 @@
    "wood": 3
   },
   "deck": "FL",
-  "implemented": false,
+  "min_players": 1,
   "name": "Courtyard Garden",
   "prereq_text": "Wooden Hut",
-  "reason": "not yet implemented",
   "text": "At the end of the game, you receive 2 Bonus points for each Unused farmyard space orthogonally adjacent to your Stone house.",
   "type": "minor"
  },
@@ -6158,10 +6159,9 @@
    "stone": 1
   },
   "deck": "FL",
-  "implemented": false,
+  "min_players": 1,
   "name": "Janneken Pis",
-  "prereq_text": "a Well; )",
-  "reason": "not yet implemented",
+  "prereq_text": "a Well",
   "text": "Your Well is an additional Action space for you only. Whenever you use your Well, you activate its effect again.",
   "type": "minor"
  },
@@ -6170,9 +6170,8 @@
    "wood": 1
   },
   "deck": "FL",
-  "implemented": false,
+  "min_players": 1,
   "name": "Bobbin Table",
-  "reason": "not yet implemented",
   "text": "This card is an additional Action space for you only. Whenever you use this space, you may afterward (and until the next Harvest) use Action spaces even if they are occupied.",
   "type": "minor"
  },
@@ -6183,20 +6182,19 @@
    "wood": 3
   },
   "deck": "FL",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Office",
   "points": 1,
-  "reason": "not yet implemented",
   "text": "At any time, you may exchange 1 Clay for 1 Stone. At any time you may exchange 1 Grain in your supply for 1 Vegetable. At any time you may exchange 1 Wild boar for 1 Cattle.",
   "type": "minor"
  },
  "FL019": {
   "deck": "FL",
-  "implemented": false,
+  "min_players": 1,
   "name": "Lantern Wonder",
   "points": 8,
-  "prereq_text": "no occ",
-  "reason": "not yet implemented",
+  "prereq_text": "exactly 0 occupations",
   "text": "At the end of the game, you receive 1 Negative point for each card in your hand. (Cards must be played and cannot be discarded.)",
   "type": "minor"
  },
@@ -6205,10 +6203,9 @@
    "food": 2
   },
   "deck": "FL",
-  "implemented": false,
+  "min_players": 1,
   "name": "Love Garden",
-  "prereq_text": "\"Familly growth\" Action space in play",
-  "reason": "not yet implemented",
+  "prereq_text": "\"Family growth\" Action space in play",
   "text": "At the end of a Work phase, whenever you have more rooms than people and all \"Family growth\" and \"Build room(s)\" Action spaces are occupied, you immediately receive a Family member token as a newborn.",
   "type": "minor"
  },
@@ -6217,11 +6214,10 @@
    "clay": 5
   },
   "deck": "FL",
-  "implemented": false,
+  "min_players": 1,
   "name": "Lions Mound",
   "points": 1,
-  "prereq_text": "see below",
-  "reason": "not yet implemented",
+  "prereq_text": "after round 13/11/9/7 in a 1/2/3/4-player game",
   "text": "You may only play this card after Round 13/11/9/7/4 in a 1/2/3/4/5 player game. At the end of each Work phase, you receive 1 Bonus point if no other player occupies an Action space with a lower round number than you do.",
   "type": "minor"
  },
@@ -6230,10 +6226,9 @@
    "food": 1
   },
   "deck": "FL",
-  "implemented": false,
+  "min_players": 1,
   "name": "Corn Maze",
-  "prereq_text": "2 Grain fields",
-  "reason": "not yet implemented",
+  "prereq_text": "2 grain field(s)",
   "text": "At the start of each round, you receive 1 Wood and 1 Reed if you have 4 Grain fields arranged in 2x2 (In the Field phase of each Harvest, you may not skip harvesting).",
   "type": "minor"
  },
@@ -6243,29 +6238,26 @@
    "wood": 1
   },
   "deck": "FL",
-  "implemented": false,
+  "min_players": 1,
   "name": "Carrot Museum",
   "points": 1,
   "prereq_text": "Round 7 or before",
-  "reason": "not yet implemented",
   "text": "At the end of Rounds 8, 10, and 12, you receive 1 Stone for each Vegetable field that you have; you also receive 1 Wood for each Vegetable that you have in your supply.",
   "type": "minor"
  },
  "FL024": {
   "deck": "FL",
-  "implemented": false,
+  "min_players": 1,
   "name": "Lover's Tryst",
-  "prereq_text": "2 occ",
-  "reason": "not yet implemented",
+  "prereq_text": "2 occupations",
   "text": "If you play this Minor Improvement on the \"Starting player\" Action space, instead of taking Starting player, you may take a \"Family growth\" action. You must have room in your home.",
   "type": "minor"
  },
  "FL025": {
   "deck": "FL",
-  "implemented": false,
+  "min_players": 1,
   "name": "Cockaigne",
-  "prereq_text": "at most 1 occ",
-  "reason": "not yet implemented",
+  "prereq_text": "at most 1 occupation",
   "text": "Once during the game, when you have at least 1 Food, 1 Grain, and 1 Vegetable in your personal supply and 1 Sheep and 1 Wild boar on your farmyard, you may choose to not place any people in a round and instead receive 7 Bonus points.",
   "type": "minor"
  },
@@ -6275,10 +6267,9 @@
    "wood": 2
   },
   "deck": "FL",
-  "implemented": false,
+  "min_players": 1,
   "name": "Speculoos Bakery",
   "points": 1,
-  "reason": "not yet implemented",
   "text": "Whenever you use the \"Bake bread\" action on an Action space, you may also exchange 1 Grain for 1 Guest token to place in the same round.",
   "type": "minor"
  },
@@ -6287,16 +6278,15 @@
   "implemented": false,
   "name": "Trappist Beer",
   "prereq_text": "Play with \"Major improvement\" action",
-  "reason": "not yet implemented",
+  "reason": "'at the start of each Harvest, you may pay 1 Grain to skip all 3 phases of that Harvest' (a DB ruling confirms the base text is repeatable every harvest, not the 1-time cap a separate '(FotM)'-tagged ruling adds) needs a per-player exemption from three separate systemic engine phases (field, feeding, breeding) for one harvest -- no such 'skip this harvest' primitive exists; harvest_start can react before the field phase but cannot suppress it or the feeding/breeding phases that follow.",
   "text": "At the start of each Harvest, you may pay 1 Grain to skip all 3 phases of that Harvest.",
   "type": "minor"
  },
  "FL028": {
   "deck": "FL",
-  "implemented": false,
+  "min_players": 1,
   "name": "Hash with Fries",
-  "prereq_text": "1 Grain, 1 Vegetable and 1 cattle",
-  "reason": "not yet implemented",
+  "prereq_text": "1 grain, 1 vegetable, and 1 cattle",
   "text": "Immediately convert 1 Grain, 1 Vegetable and 1 Cattle to 3 Bonus points and 5 Food.",
   "type": "minor"
  },
@@ -6305,10 +6295,9 @@
    "wood": 2
   },
   "deck": "FL",
-  "implemented": false,
+  "min_players": 1,
   "name": "Bird Trap",
-  "prereq_text": "1 Grain field",
-  "reason": "not yet implemented",
+  "prereq_text": "1 grain field(s)",
   "text": "In the Field phase of each Harvest, you receive 1 Food from the general supply and you can Harvest 1 additional resource from 1 field of your choice.",
   "type": "minor"
  },
@@ -6318,7 +6307,7 @@
   "name": "Wild Boar Hunt",
   "points": 1,
   "prereq_text": "2 occ",
-  "reason": "not yet implemented",
+  "reason": "the accumulation top-up (replenish +1 wild boar on even rounds) is expressible on its own, but the card's other clause -- 'other players can only use that space with their first person' -- needs the same missing 'deny an opponent's normal placement' primitive as FL012, so the whole card stays unimplemented rather than silently dropping that clause.",
   "text": "In the Replenish phase of each even-numbered round, place 1 additional Wild boar on the \"Take 1 Wild boar\" Action space. Every round, other players can only use the \"Take 1 Wild boar\" Action space with their first person.",
   "type": "minor"
  },
