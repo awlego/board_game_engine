@@ -161,6 +161,162 @@ def _place_animal_best_effort(state, player, animal_type, count=1):
     return True
 
 
+# ── Shared: card-driven "take the target space's action" recipe ───────
+# (K269 Acrobat / K289 Countryman -- decks/GUIDE.md's "K269 Acrobat /
+# K289 Countryman: no engine change needed" section documents the base
+# recipe. These helpers let both cards' deferred moves perform the
+# TARGET space's full action -- plow, sow, and/or bake -- instead of
+# just its fixed/primary grant, by calling the exact same event-firing
+# helpers (cards.fire_player/fire_gained, sub_actions.apply_extras/
+# fire_any/sow) the real action-space dispatch uses, without editing
+# engine.py/sub_actions.py to add a "bake"/"plow" transaction of their
+# own (sub_actions.py has no such transaction to call -- see decks/
+# GUIDE.md's sub_actions table, which lists sow/build/renovate/family
+# growth but no bake or bare plow).
+
+def _occupants_of(state, sid):
+    sp = next((s for s in state["action_spaces"] if s["id"] == sid), None)
+    if sp is None:
+        return []
+    return ([sp["occupied_by"]] if sp["occupied_by"] is not None else []) \
+        + sp.get("extra_occupants", [])
+
+
+def _space_free(state, sid):
+    sp = next((s for s in state["action_spaces"] if s["id"] == sid), None)
+    if sp is None:
+        return False  # not revealed yet -- cannot be a move target
+    return not _occupants_of(state, sid)
+
+
+def _local_plow(state, player, cell, log):
+    """Plow `cell`, firing `plow`/`plow_any` exactly like
+    engine._do_plow -- for a card-driven move that never went through
+    the real farmland/cultivation action-space dispatch."""
+    player["cells"][cell]["type"] = "field"
+    log.append(f"{player['name']} plows a field")
+    ctx = {"cell": cell, "log": log, "actor": player["index"], "extra": {}}
+    cards.fire_player(state, player, "plow", ctx)
+    sub_actions.apply_extras(state, player, ctx["extra"], log)
+    sub_actions.fire_any(state, "plow", player, {"cell": cell}, log)
+
+
+def _bake_sources(player):
+    """(key, limit, food_per_grain) for every baking-capable major
+    improvement or in-play card this player owns -- the same union
+    engine._bake_spec_of/_can_bake read off MAJOR_IMPROVEMENTS/
+    cards.CARDS' own "bake" spec key, duplicated locally since there is
+    no public helper for it in cards.py/sub_actions.py."""
+    sources = []
+    for imp in player["improvements"]:
+        bspec = MAJOR_IMPROVEMENTS.get(imp, {}).get("bake")
+        if bspec:
+            sources.append((imp, bspec[0], bspec[1]))
+    for inst in cards.in_play(player):
+        bspec = cards.spec(inst).get("bake")
+        if bspec:
+            sources.append((inst["id"], bspec[0], bspec[1]))
+    return sources
+
+
+def _bake_max_grain(sources, grain_owned):
+    total_limit = 0
+    for _key, limit, _value in sources:
+        if limit is None:
+            return grain_owned
+        total_limit += limit
+    return min(grain_owned, total_limit)
+
+
+def _bake_allocate(sources, grain):
+    """Greedy allocation of `grain` grain across `sources`, highest
+    food-per-grain first -- the food a rational player gets baking
+    exactly `grain` grain with these ovens. Returns (bake_dict,
+    total_food)."""
+    remaining = grain
+    total_food = 0
+    bake_dict = {}
+    for key, limit, value in sorted(sources, key=lambda s: -s[2]):
+        if remaining <= 0:
+            break
+        take = remaining if limit is None else min(remaining, limit)
+        if take <= 0:
+            continue
+        bake_dict[key] = take
+        total_food += take * value
+        remaining -= take
+    return bake_dict, total_food
+
+
+def _bake_allowed_on(player, sid):
+    """Whether the deferred move's target space grants a Bake Bread
+    action at all: inherent to grain_utilization ("Sow and/or Bake
+    Bread"), gated on a Threshing-Board-style bake_on_spaces grant for
+    cultivation (matches engine._resolve_space's own
+    cards.bake_on_space(p, sid) check for farmland/cultivation)."""
+    if sid == "grain_utilization":
+        return True
+    if sid == "cultivation":
+        return cards.bake_on_space(player, "cultivation")
+    return False
+
+
+def _bake_offer(state, player, inst, stage):
+    """Offer 'bake K grain' for every K from 1 to the max this player's
+    ovens/grain can support, K115/Wet-Nurse-style (a single enumerated
+    prompt, not a repeat chain, since -- unlike sowing -- there is only
+    one meaningful "how much" decision here, not a sequence of
+    independent per-target choices)."""
+    sources = _bake_sources(player)
+    if not sources:
+        return
+    max_grain = _bake_max_grain(sources, player["resources"]["grain"])
+    if max_grain <= 0:
+        return
+    options, amounts = ["Decline"], []
+    for k in range(1, max_grain + 1):
+        _bd, food = _bake_allocate(sources, k)
+        options.append(f"Bake {k} grain ({food} food)")
+        amounts.append(k)
+    prompt_choice(state, player, inst["id"], "Bake bread?", options,
+                 data={"stage": stage, "amounts": amounts})
+
+
+def _bake_resolve(state, player, inst, ctx):
+    if ctx["index"] == 0:
+        return
+    k = ctx["data"]["amounts"][ctx["index"] - 1]
+    sources = _bake_sources(player)
+    if not sources or player["resources"]["grain"] < k:
+        return
+    bake_dict, _food = _bake_allocate(sources, k)
+    if sum(bake_dict.values()) != k:
+        return
+    _apply_bake(state, player, bake_dict, ctx["log"])
+
+
+def _apply_bake(state, player, bake_dict, log):
+    """Credit a bake_dict {oven_key: grain_count} exactly like
+    engine._do_bake (grain -> food via the owned ovens' own tables plus
+    cards.bake_bonus, firing gained(source="bake")/bake/bake_any) for a
+    card-driven move that never went through the real
+    grain_utilization/cultivation action-space dispatch."""
+    values = {key: value for key, _limit, value in _bake_sources(player)}
+    total_grain = sum(bake_dict.values())
+    food = sum(count * values[key] for key, count in bake_dict.items())
+    food += cards.bake_bonus(player, total_grain)
+    player["resources"]["grain"] -= total_grain
+    player["resources"]["food"] += food
+    log.append(f"{player['name']} bakes {total_grain} grain into {food} food")
+    if food:
+        cards.fire_gained(state, player, {"food": food}, "bake", log)
+    ctx = {"grain": total_grain, "log": log, "actor": player["index"],
+          "extra": {}}
+    cards.fire_player(state, player, "bake", ctx)
+    sub_actions.apply_extras(state, player, ctx["extra"], log)
+    sub_actions.fire_any(state, "bake", player, {"grain": total_grain}, log)
+
+
 # ── K266 Serf ─────────────────────────────────────────────────────────
 def _serf_space(state, player, inst, ctx):
     if ctx["actor"] != player["index"] or ctx["space_id"] != "grain_utilization":
@@ -253,71 +409,196 @@ compendium_card("K268", hooks={"space_used": _pieceworker_space},
 # Field and Sow' action spaces, if it's free, and take the action." The
 # documented returning_home recipe (decks/GUIDE.md's "K269 Acrobat /
 # K289 Countryman: no engine change needed" section, engine phase 11):
-# performs the TARGET space's own effect directly (grant/raw plow)
-# instead of literally relocating the person -- see that section for
-# the explicit fidelity simplification (the moved person never actually
-# occupies the destination space for occupied_ok/space_used/adjacency
-# purposes). "Plough Field and Sow" (cultivation) is offered here as a
-# PLOW-only target, same as "Plough 1 Field" (farmland) -- its own
-# additional "and sow" clause is not exposed through this recipe (that
-# would stack a second open-ended crop/target choice on an already
-# fully-enumerated prompt for a card whose primary value is the plow;
-# K289 Countryman below, whose whole point IS a sow, does expose one).
-# Ordering/timing nuances not modeled: the ruling that a card played the
-# same round as its own Traveling Players placement may only move a
-# person placed AFTER it was played (this engine's card instances don't
-# record a play-order timestamp within a round).
+# performs the TARGET space's own effect directly instead of literally
+# relocating the person -- see that section for the fidelity
+# simplification (the moved person never actually occupies the
+# destination space for occupied_ok/space_used/adjacency purposes). The
+# "Plough Field and Sow" (cultivation) target offers the space's FULL
+# action -- an optional plow, then a repeatable sow chain, then an
+# optional bake if a Threshing-Board-style card grants baking on
+# cultivation -- via the same D126 Field Cultivator-style chained-prompt
+# recipe (decks/GUIDE.md's Field Cultivator writeup), one plow/sow/bake
+# decision per prompt, terminating because each accepted step consumes a
+# resource (grain/vegetable for a sow, grain for a bake) or a
+# now-occupied field (plow), and Decline is always offered.
+#
+# Ruling D (same-round restriction): in the round this card is played,
+# the move is only offered if the Traveling Players person was placed
+# AFTER the card was played. Modeled via the `play` hook recording
+# state["round"] and whether the player already occupied
+# traveling_players at that moment; `returning_home` skips the offer
+# only when both match (played this round, and already there at play
+# time) -- any other round, or a person placed later the same round,
+# is offered normally.
+#
+# Known limitations (rulings that cannot be modeled, per decks/GUIDE.md
+# rule 2 -- documented, not faked):
+# - Multi-player move ordering with Countryman K289/Pond Watchman G046
+#   ("moved in player order starting with the player left of the one who
+#   placed the last regular person"): this engine's returning_home hooks
+#   fire in the engine's own fixed per-player loop order, not a
+#   recomputed "left of last placer" order; Pond Watchman (G046) isn't
+#   registered in this codebase at all (deck G is not implemented), so
+#   only the Countryman half of this ruling could ever apply, and even
+#   that ordering nuance is not modeled.
+# - The Juggler I237 ruling ("if another player uses the Juggler with a
+#   Traveling Players action, he pays you 1 food") is not modeled --
+#   the Juggler is not registered in this codebase.
+# - "Moving a person counts as taking an action (Opportunist G043) but
+#   not as placing your last person (Magician K311)": Opportunist
+#   (G043) isn't registered (deck G). Verified for Magician: K311's
+#   `space_used` hook only fires from the real action-space placement
+#   dispatch (`ctx["space_id"] == "traveling_players"` and
+#   `people_placed == people_total`); this recipe never re-enters that
+#   dispatch (it calls `sub_actions`/local helpers directly), so Magician
+#   cannot possibly misfire from an Acrobat-triggered move -- no
+#   fidelity gap here, by construction.
+# - "You cannot move the same person twice (e.g. via Acrobat to 'Take 1
+#   Grain', then also via Countryman)": Acrobat only ever triggers off
+#   `"traveling_players" in ctx["spaces"]`; Countryman only ever triggers
+#   off `"grain_seeds"/"vegetable_seeds" in ctx["spaces"]`. Those three
+#   space ids are mutually exclusive, and a single person placement can
+#   only occupy exactly one action space in a round, so the person
+#   Acrobat could move and the person Countryman could move are
+#   necessarily different physical placements even when a player owns
+#   both cards -- no shared flag is needed to prevent a double-move that
+#   structurally cannot happen.
 
-_ACROBAT_TARGETS = (("grain_seeds", "Take 1 Grain"),
-                    ("farmland", "Plough 1 Field"),
-                    ("cultivation", "Plough Field and Sow"))
+_BAKE_STAGE = "bake"
 
 
-def _space_free(state, sid):
-    sp = next((s for s in state["action_spaces"] if s["id"] == sid), None)
-    if sp is None:
-        return False
-    return sp["occupied_by"] is None and not sp.get("extra_occupants")
+def _acrobat_play(state, player, inst, ctx):
+    inst["data"]["played_round"] = state["round"]
+    inst["data"]["placed_before_play"] = \
+        player["index"] in _occupants_of(state, "traveling_players")
 
 
 def _acrobat_returning_home(state, player, inst, ctx):
     if "traveling_players" not in ctx["spaces"]:
         return
+    if (inst["data"].get("played_round") == state["round"]
+            and inst["data"].get("placed_before_play")):
+        return  # Ruling D: played this round, person was already there.
+    _acrobat_offer_top(state, player, inst)
+
+
+def _acrobat_offer_top(state, player, inst):
     options, data = ["Decline"], []
-    for sid, label in _ACROBAT_TARGETS:
-        if not _space_free(state, sid):
-            continue
-        if sid == "grain_seeds":
-            options.append(f"{label}: get 1 grain")
-            data.append(("grain", None))
-        else:
-            for cell in plowable_cells(player):
-                options.append(f"{label}: plow field at cell {cell}")
-                data.append(("plow", cell))
+    if _space_free(state, "grain_seeds"):
+        options.append("Take 1 Grain: get 1 grain")
+        data.append({"kind": "grain"})
+    if _space_free(state, "farmland"):
+        for cell in plowable_cells(player):
+            options.append(f"Plough 1 Field: plow field at cell {cell}")
+            data.append({"kind": "plow_only", "cell": cell})
+    if _space_free(state, "cultivation"):
+        options.append("Plough Field and Sow: plow and/or sow")
+        data.append({"kind": "cultivation"})
     if len(options) > 1:
         prompt_choice(state, player, inst["id"],
                      "Acrobat: move your Traveling Players person to "
                      "another free action space?", options,
-                     data={"choices": data})
+                     data={"stage": "top", "choices": data})
 
 
 def _acrobat_choice(state, player, inst, ctx):
+    stage = ctx["data"].get("stage", "top")
+    if stage == "top":
+        _acrobat_resolve_top(state, player, inst, ctx)
+    elif stage == "plow":
+        _acrobat_resolve_plow(state, player, inst, ctx)
+    elif stage == "sow":
+        _acrobat_resolve_sow(state, player, inst, ctx)
+    elif stage == _BAKE_STAGE:
+        _bake_resolve(state, player, inst, ctx)
+
+
+def _acrobat_resolve_top(state, player, inst, ctx):
     if ctx["index"] == 0:
         return
-    kind, arg = ctx["data"]["choices"][ctx["index"] - 1]
+    choice = ctx["data"]["choices"][ctx["index"] - 1]
+    kind = choice["kind"]
     if kind == "grain":
         if not _space_free(state, "grain_seeds"):
             return
         add_goods(ctx["extra"], {"grain": 1})
         ctx["log"].append(f"{player['name']}'s Acrobat moves to Take 1 "
                           "Grain and gets 1 grain")
-    elif arg in plowable_cells(player):
-        player["cells"][arg]["type"] = "field"
-        ctx["log"].append(f"{player['name']}'s Acrobat moves to plow a "
-                          "field")
+    elif kind == "plow_only":
+        cell = choice["cell"]
+        if not _space_free(state, "farmland") or cell not in plowable_cells(player):
+            return
+        _local_plow(state, player, cell, ctx["log"])
+        ctx["log"].append(f"{player['name']}'s Acrobat moves to Plough 1 "
+                          "Field")
+    elif kind == "cultivation":
+        if not _space_free(state, "cultivation"):
+            return
+        ctx["log"].append(f"{player['name']}'s Acrobat moves to Plough "
+                          "Field and Sow")
+        _acrobat_offer_plow(state, player, inst)
 
 
-compendium_card("K269", hooks={"returning_home": _acrobat_returning_home},
+def _acrobat_offer_plow(state, player, inst):
+    cells = plowable_cells(player)
+    if not cells:
+        _acrobat_offer_sow(state, player, inst)
+        return
+    options = ["Decline"] + [f"Plow field at cell {c}" for c in cells]
+    prompt_choice(state, player, inst["id"],
+                 "Acrobat (Plough Field and Sow): plow a field?",
+                 options, data={"stage": "plow", "cells": cells})
+
+
+def _acrobat_resolve_plow(state, player, inst, ctx):
+    if ctx["index"] != 0:
+        cell = ctx["data"]["cells"][ctx["index"] - 1]
+        if cell in plowable_cells(player):
+            _local_plow(state, player, cell, ctx["log"])
+    _acrobat_offer_sow(state, player, inst)
+
+
+def _acrobat_offer_sow(state, player, inst):
+    cells, card_targets = sub_actions.empty_fields(player)
+    options, data = ["Decline"], []
+    for cell in cells:
+        for crop in ("grain", "vegetable"):
+            if player["resources"][crop] > 0:
+                options.append(f"Sow 1 {crop} in field cell {cell}")
+                data.append({"cell": cell, "crop": crop})
+    for tinst in card_targets:
+        allowed = cards.CARDS[tinst["id"]]["field"]["crops"]
+        for crop in allowed:
+            if player["resources"][crop] > 0:
+                options.append(f"Sow 1 {crop} on {cards.spec(tinst)['name']}")
+                data.append({"card": tinst["id"], "crop": crop})
+    if len(options) > 1:
+        prompt_choice(state, player, inst["id"],
+                     "Acrobat (Plough Field and Sow): sow a field?",
+                     options, data={"stage": "sow", "choices": data})
+    else:
+        _acrobat_maybe_bake(state, player, inst)
+
+
+def _acrobat_resolve_sow(state, player, inst, ctx):
+    if ctx["index"] != 0:
+        item = ctx["data"]["choices"][ctx["index"] - 1]
+        try:
+            sub_actions.sow(state, player, [item], ctx["log"])
+        except ValueError:
+            pass
+        _acrobat_offer_sow(state, player, inst)
+        return
+    _acrobat_maybe_bake(state, player, inst)
+
+
+def _acrobat_maybe_bake(state, player, inst):
+    if _bake_allowed_on(player, "cultivation"):
+        _bake_offer(state, player, inst, _BAKE_STAGE)
+
+
+compendium_card("K269", hooks={"play": _acrobat_play,
+                               "returning_home": _acrobat_returning_home},
                 resolve_choice=_acrobat_choice)
 
 
@@ -725,25 +1006,116 @@ compendium_card("K288", hooks={"space_used": _storehouse_keeper_space},
 # class as K269 Acrobat above (see its header comment and decks/
 # GUIDE.md). The two "sow" action spaces are grain_utilization (stage 1)
 # and cultivation (stage 5) per the ruling ("the second appears during
-# stage 5"). Scoped to a single sow (one field, one crop) per deferred
-# move -- a real placement there could sow several fields with one
-# person, but enumerating every subset of open fields x crop types as
-# prompt options is combinatorially unbounded; this recipe offers one
-# (field, crop) pair at a time, which is the common case and matches the
-# single deferred person's own "take the action" scope. The ruling that
-# using BOTH source spaces the same round only lets you move ONE of the
-# two people falls out for free: this hook only ever queues a single
-# prompt per returning_home firing.
+# stage 5"). Both target spaces offer their FULL action, not just sow:
+# grain_utilization is sow AND/OR bake bread; cultivation is plow
+# AND/OR sow -- via the same D126-style chained-prompt recipe as K269
+# above (repeatable sow prompts, one (field, crop) pair per accept, until
+# Decline; an optional plow-or-skip before cultivation's sow chain; an
+# optional bake after either chain if this player owns a baking
+# improvement/card, gated on cards.bake_on_space for cultivation exactly
+# like the real farmland/cultivation dispatch). The top-level prompt
+# picks the TARGET SPACE (grain_utilization vs cultivation, whichever is
+# free) -- this single choice also stands in for "which person moves":
+# regardless of which source space (grain_seeds/vegetable_seeds) is
+# eligible, or whether both are, only one target chain is ever started
+# per returning_home firing, matching the ruling that using both source
+# spaces the same round still only lets you move ONE of the two people.
+#
+# Ruling (g), verified: "if you have already used a family member on one
+# of the two action spaces before you play this card, you may move this
+# family member at the end of the round" needs no special-casing here --
+# `_countryman_returning_home` only reads `ctx["spaces"]` (this player's
+# occupied spaces this round) and `state["action_spaces"]`'s current
+# occupancy, never anything about WHEN the card was played relative to
+# the placement, so a grain_seeds/vegetable_seeds placement from earlier
+# in the round (before Countryman was even played) is offered exactly
+# the same as one placed after -- see
+# test_countryman_moves_person_placed_before_the_card_was_played below.
+#
+# Known limitations (rulings that cannot be modeled, per decks/GUIDE.md
+# rule 2 -- documented, not faked): the same multi-player move-ordering
+# ruling (Acrobat K269/Pond Watchman G046, Pond Watchman unregistered),
+# the same "counts as an action but not your last placement" ruling
+# (Opportunist G043 unregistered; Magician K311 verified not to misfire,
+# see K269's header comment above for the full argument -- identical
+# here since this recipe never re-enters the space_used dispatch
+# either), and the same "cannot move the same person twice" argument (K269/
+# K289 key off disjoint space ids, so no shared flag is needed) all apply
+# unchanged. Additionally: Field Warden E163 ("you may also move a family
+# member to the Plough Field and Sow space if it's occupied") is not
+# modeled -- E163 itself is UNIMPLEMENTED (deck_e_occupations.py: placing
+# on an action space already occupied by another player isn't what
+# `occupied_ok` was built for here), so there is no registered card whose
+# interaction with this recipe would need to be verified.
 
 _COUNTRYMAN_SOURCES = ("grain_seeds", "vegetable_seeds")
 _COUNTRYMAN_SOW_SPACES = ("grain_utilization", "cultivation")
+_COUNTRYMAN_TARGET_LABEL = {"grain_utilization": "Sow and/or Bake Bread",
+                            "cultivation": "Plough Field and Sow"}
 
 
 def _countryman_returning_home(state, player, inst, ctx):
     if not any(sid in ctx["spaces"] for sid in _COUNTRYMAN_SOURCES):
         return
-    if not any(_space_free(state, sid) for sid in _COUNTRYMAN_SOW_SPACES):
+    free_targets = [sid for sid in _COUNTRYMAN_SOW_SPACES
+                    if _space_free(state, sid)]
+    if not free_targets:
         return
+    options = ["Decline"] + [f"Move your person to "
+                             f"{_COUNTRYMAN_TARGET_LABEL[sid]}"
+                             for sid in free_targets]
+    prompt_choice(state, player, inst["id"],
+                 "Countryman: move your person to a free sow space?",
+                 options, data={"stage": "top", "targets": free_targets})
+
+
+def _countryman_choice(state, player, inst, ctx):
+    stage = ctx["data"].get("stage", "top")
+    if stage == "top":
+        _countryman_resolve_top(state, player, inst, ctx)
+    elif stage == "plow":
+        _countryman_resolve_plow(state, player, inst, ctx)
+    elif stage == "sow":
+        _countryman_resolve_sow(state, player, inst, ctx)
+    elif stage == _BAKE_STAGE:
+        _bake_resolve(state, player, inst, ctx)
+
+
+def _countryman_resolve_top(state, player, inst, ctx):
+    if ctx["index"] == 0:
+        return
+    sid = ctx["data"]["targets"][ctx["index"] - 1]
+    if not _space_free(state, sid):
+        return
+    ctx["log"].append(f"{player['name']}'s Countryman moves their person "
+                      f"to the {sid} space")
+    if sid == "cultivation":
+        _countryman_offer_plow(state, player, inst, sid)
+    else:
+        _countryman_offer_sow(state, player, inst, sid)
+
+
+def _countryman_offer_plow(state, player, inst, target):
+    cells = plowable_cells(player)
+    if not cells:
+        _countryman_offer_sow(state, player, inst, target)
+        return
+    options = ["Decline"] + [f"Plow field at cell {c}" for c in cells]
+    prompt_choice(state, player, inst["id"],
+                 "Countryman (Plough Field and Sow): plow a field?",
+                 options, data={"stage": "plow", "cells": cells,
+                                "target": target})
+
+
+def _countryman_resolve_plow(state, player, inst, ctx):
+    if ctx["index"] != 0:
+        cell = ctx["data"]["cells"][ctx["index"] - 1]
+        if cell in plowable_cells(player):
+            _local_plow(state, player, cell, ctx["log"])
+    _countryman_offer_sow(state, player, inst, ctx["data"]["target"])
+
+
+def _countryman_offer_sow(state, player, inst, target):
     cells, card_targets = sub_actions.empty_fields(player)
     options, data = ["Decline"], []
     for cell in cells:
@@ -758,23 +1130,29 @@ def _countryman_returning_home(state, player, inst, ctx):
                 options.append(f"Sow 1 {crop} on {cards.spec(tinst)['name']}")
                 data.append({"card": tinst["id"], "crop": crop})
     if len(options) > 1:
-        prompt_choice(state, player, inst["id"],
-                     "Countryman: move your person to a free sow space?",
-                     options, data={"choices": data})
+        prompt_choice(state, player, inst["id"], "Countryman: sow a field?",
+                     options, data={"stage": "sow", "target": target,
+                                    "choices": data})
+    else:
+        _countryman_maybe_bake(state, player, inst, target)
 
 
-def _countryman_choice(state, player, inst, ctx):
-    if ctx["index"] == 0:
+def _countryman_resolve_sow(state, player, inst, ctx):
+    target = ctx["data"]["target"]
+    if ctx["index"] != 0:
+        item = ctx["data"]["choices"][ctx["index"] - 1]
+        try:
+            sub_actions.sow(state, player, [item], ctx["log"])
+        except ValueError:
+            pass
+        _countryman_offer_sow(state, player, inst, target)
         return
-    if not any(_space_free(state, sid) for sid in _COUNTRYMAN_SOW_SPACES):
-        return
-    item = ctx["data"]["choices"][ctx["index"] - 1]
-    ctx["log"].append(f"{player['name']}'s Countryman moves their person "
-                      "to a free sow space")
-    try:
-        sub_actions.sow(state, player, [item], ctx["log"])
-    except ValueError:
-        pass
+    _countryman_maybe_bake(state, player, inst, target)
+
+
+def _countryman_maybe_bake(state, player, inst, target):
+    if _bake_allowed_on(player, target):
+        _bake_offer(state, player, inst, _BAKE_STAGE)
 
 
 compendium_card("K289", hooks={"returning_home": _countryman_returning_home},

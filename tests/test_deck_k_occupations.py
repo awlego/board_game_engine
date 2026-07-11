@@ -885,6 +885,125 @@ def test_acrobat_not_offered_without_traveling_players(engine):
     assert not s["prompts"]
 
 
+def test_acrobat_cultivation_full_action_plows_and_sows(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "K269")
+    add_space(s, "traveling_players", "Traveling Players", acc=True,
+             supply={"food": 1})
+    add_space(s, "cultivation", "Cultivation")
+    space = next(sp for sp in s["action_spaces"]
+                if sp["id"] == "traveling_players")
+    space["occupied_by"] = first
+    p["cells"][0]["type"] = "field"  # already an empty field
+    give(s, first, grain=1, vegetable=1)
+    fields_before = sum(1 for c in p["cells"] if c["type"] == "field")
+    for pl in s["players"]:
+        pl["people_placed"] = pl["people_total"]
+
+    log = []
+    engine._end_work_phase(s, log)
+    pid = p["player_id"]
+    options = s["prompts"][0]["options"]
+    idx = next(i for i, o in enumerate(options) if "Plough Field and Sow" in o)
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": idx}).new_state
+
+    # Plow stage: plow a second field.
+    assert s["prompts"][0]["options"][0] == "Decline"
+    options = s["prompts"][0]["options"]
+    plow_idx = next(i for i, o in enumerate(options) if o.startswith("Plow field"))
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": plow_idx}).new_state
+    p = s["players"][first]
+    fields_after_plow = sum(1 for c in p["cells"] if c["type"] == "field")
+    assert fields_after_plow == fields_before + 1
+
+    # Sow stage: sow both empty fields, one crop per accepted step.
+    for _ in range(2):
+        options = s["prompts"][0]["options"]
+        idx = next(i for i, o in enumerate(options) if o.startswith("Sow 1"))
+        s = engine.apply_action(s, pid, {"kind": "choice", "index": idx}).new_state
+    p = s["players"][first]
+    sown = sum(1 for c in p["cells"] if c.get("crops"))
+    assert sown == 2
+    assert p["resources"]["grain"] == 0
+    assert p["resources"]["vegetable"] == 0
+    assert not s["prompts"]
+
+
+def test_acrobat_same_round_restriction_skips_when_already_there_at_play(engine):
+    # Ruling D: in the round Acrobat is played, the move is only offered
+    # if the Traveling Players person was placed AFTER the card was
+    # played -- here the person is already there BEFORE the card is
+    # played, so no offer should follow.
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    add_space(s, "traveling_players", "Traveling Players", acc=True,
+             supply={"food": 1})
+    space = next(sp for sp in s["action_spaces"]
+                if sp["id"] == "traveling_players")
+    space["occupied_by"] = first
+    give_card(s, first, "K269")
+    from server.agricola import sub_actions
+    sub_actions.play_occupation(s, p, "K269", [])
+
+    for pl in s["players"]:
+        pl["people_placed"] = pl["people_total"]
+    log = []
+    engine._end_work_phase(s, log)
+    assert not s["prompts"]
+
+
+def test_acrobat_same_round_allows_when_placed_after_play(engine):
+    # Same scenario, but the person is placed on Traveling Players AFTER
+    # the card is played -- the move should be offered.
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    add_space(s, "traveling_players", "Traveling Players", acc=True,
+             supply={"food": 1})
+    give_card(s, first, "K269")
+    from server.agricola import sub_actions
+    sub_actions.play_occupation(s, p, "K269", [])
+
+    space = next(sp for sp in s["action_spaces"]
+                if sp["id"] == "traveling_players")
+    space["occupied_by"] = first  # placed after the card was played
+
+    for pl in s["players"]:
+        pl["people_placed"] = pl["people_total"]
+    log = []
+    engine._end_work_phase(s, log)
+    assert s["prompts"], "Acrobat should offer the move"
+
+
+def test_acrobat_restriction_does_not_apply_in_a_later_round(engine):
+    # The same-round restriction only applies in the round the card is
+    # played; in a later round the offer is unconditional even if the
+    # person was already there before this round started.
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    give_card(s, first, "K269")
+    from server.agricola import sub_actions
+    sub_actions.play_occupation(s, p, "K269", [])
+    inst = next(i for i in p["occupations"] if i["id"] == "K269")
+    assert inst["data"]["played_round"] == s["round"]
+
+    s["round"] += 1  # simulate a later round
+    add_space(s, "traveling_players", "Traveling Players", acc=True,
+             supply={"food": 1})
+    space = next(sp for sp in s["action_spaces"]
+                if sp["id"] == "traveling_players")
+    space["occupied_by"] = first
+    for pl in s["players"]:
+        pl["people_placed"] = pl["people_total"]
+    log = []
+    engine._end_work_phase(s, log)
+    assert s["prompts"], "Acrobat should offer the move in a later round"
+
+
 def test_countryman_moves_to_free_sow_space(engine):
     s = make_state(engine, 2)
     first = s["current_player"]
@@ -901,14 +1020,120 @@ def test_countryman_moves_to_free_sow_space(engine):
     log = []
     engine._end_work_phase(s, log)
     assert s["prompts"][0]["type"] == "choice"
+    # Stage 1: pick the target space.
+    options = s["prompts"][0]["options"]
+    idx = next(i for i, o in enumerate(options) if "Sow and/or Bake" in o)
+    pid = p["player_id"]
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": idx}).new_state
+    # Stage 2: sow chain -- sow the one available field.
     options = s["prompts"][0]["options"]
     idx = next(i for i, o in enumerate(options)
               if "grain" in o and "field cell 0" in o)
-    pid = p["player_id"]
     s = engine.apply_action(s, pid, {"kind": "choice", "index": idx}).new_state
     p = s["players"][first]
     assert p["cells"][0]["crops"] == {"type": "grain", "count": 3}
     assert p["resources"]["grain"] == 0
+    # No oven in play -- the sow chain ends with nothing left to sow, and
+    # no bake prompt follows.
+    assert not s["prompts"]
+
+
+def test_countryman_grain_utilization_offers_bake_after_declining_sow(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "K289")
+    p["improvements"].append("fireplace_2")  # bake=(None, 2)
+    give(s, first, grain=3)
+    add_space(s, "grain_utilization", "Grain Utilization")
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == "grain_seeds")
+    space["occupied_by"] = first
+    for pl in s["players"]:
+        pl["people_placed"] = pl["people_total"]
+
+    log = []
+    engine._end_work_phase(s, log)
+    pid = p["player_id"]
+    options = s["prompts"][0]["options"]
+    idx = next(i for i, o in enumerate(options) if "Sow and/or Bake" in o)
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": idx}).new_state
+    # No sowable field -- the sow-chain prompt is skipped and the bake
+    # prompt is offered directly.
+    assert s["prompts"][0]["type"] == "choice"
+    options = s["prompts"][0]["options"]
+    assert options[0] == "Decline"
+    idx = next(i for i, o in enumerate(options) if o.startswith("Bake 3"))
+    food_before = p["resources"]["food"]
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": idx}).new_state
+    p = s["players"][first]
+    assert p["resources"]["grain"] == 0
+    assert p["resources"]["food"] == food_before + 6  # 3 grain * 2 food
+    assert not s["prompts"]
+
+
+def test_countryman_cultivation_plows_then_sows_multiple_fields(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "K289")
+    p["cells"][0]["type"] = "field"  # already an empty field
+    give(s, first, grain=1, vegetable=1)
+    add_space(s, "cultivation", "Cultivation")
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == "grain_seeds")
+    space["occupied_by"] = first
+    for pl in s["players"]:
+        pl["people_placed"] = pl["people_total"]
+
+    log = []
+    engine._end_work_phase(s, log)
+    pid = p["player_id"]
+    options = s["prompts"][0]["options"]
+    idx = next(i for i, o in enumerate(options) if "Plough Field and Sow" in o)
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": idx}).new_state
+
+    # Plow stage: plow a second field.
+    assert s["prompts"][0]["options"][0] == "Decline"
+    options = s["prompts"][0]["options"]
+    plow_idx = next(i for i, o in enumerate(options) if o.startswith("Plow field"))
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": plow_idx}).new_state
+    p = s["players"][first]
+    assert sum(1 for c in p["cells"] if c["type"] == "field") == 2
+
+    # Sow stage: sow both empty fields, one crop per accepted step, then
+    # decline once nothing is left.
+    for _ in range(2):
+        options = s["prompts"][0]["options"]
+        idx = next(i for i, o in enumerate(options) if o.startswith("Sow 1"))
+        s = engine.apply_action(s, pid, {"kind": "choice", "index": idx}).new_state
+    p = s["players"][first]
+    sown = sum(1 for c in p["cells"] if c.get("crops"))
+    assert sown == 2
+    assert p["resources"]["grain"] == 0
+    assert p["resources"]["vegetable"] == 0
+    # No oven -- chain ends, no bake offered (and cultivation without a
+    # Threshing-Board-style card grants none anyway).
+    assert not s["prompts"]
+
+
+def test_countryman_moves_person_placed_before_the_card_was_played(engine):
+    # Ruling (g): a family member already used on Take 1 Grain/Vegetable
+    # BEFORE Countryman was played is still eligible to move at the end
+    # of the round.
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == "grain_seeds")
+    space["occupied_by"] = first  # placed before the card is even in play
+    put_in_play(s, first, "K289")
+    p["cells"][0]["type"] = "field"
+    give(s, first, grain=1)
+    add_space(s, "grain_utilization", "Grain Utilization")
+    for pl in s["players"]:
+        pl["people_placed"] = pl["people_total"]
+
+    log = []
+    engine._end_work_phase(s, log)
+    assert s["prompts"], "Countryman should still offer the move"
 
 
 def test_countryman_not_offered_when_no_sow_space_free(engine):
