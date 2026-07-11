@@ -842,3 +842,48 @@ def test_wood_palisades_bonus_uncapped_in_base_play():
     p = {"fence_tokens": {i: "B030" for i in range(5)}}
     inst = {"id": "B030"}
     assert cards.CARDS["B030"]["score_bonus"](None, p, inst) == 5
+
+
+# ── B001 Upscale Lifestyle ───────────────────────────────────────────
+
+def test_upscale_lifestyle_clay_and_renovation(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "B001")
+    give(s, first, wood=3, reed=1)
+    pid = s["players"][first]["player_id"]
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "B001", "params": {"renovate": True}}})
+    p = s["players"][first]
+    assert p["house_type"] == "clay"
+    # 5 clay granted, then renovation costs {clay: rooms(2), reed: 1}.
+    assert p["resources"]["clay"] == 3
+    assert p["resources"]["reed"] == 0
+
+
+def test_upscale_lifestyle_renovation_then_free_fence(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "B001")
+    give(s, first, wood=3, reed=1)  # 3 wood pays to play the card itself
+    pid = s["players"][first]["player_id"]
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "B001",
+                                   "params": {"renovate": True,
+                                              "fences": list(cell_edges(0))}}})
+    p = s["players"][first]
+    assert p["resources"]["wood"] == 0  # fences cost no wood
+    assert len(compute_pastures(p)) == 1
+
+
+def test_upscale_lifestyle_skip_renovation(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "B001")
+    give(s, first, wood=3)  # to play the card itself
+    pid = s["players"][first]["player_id"]
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "B001"}})
+    p = s["players"][first]
+    assert p["house_type"] == "wood"
+    assert p["resources"]["clay"] == 5

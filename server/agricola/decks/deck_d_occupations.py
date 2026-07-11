@@ -58,24 +58,11 @@ UNIMPLEMENTED = {
     "D116": "Tree Inspector: 'this card is an accumulation space for you "
             "only' is a private per-player action space; the engine's "
             "action spaces are a single shared/global list.",
-    "D117": "Wood Expert: 'each improvement costs up to 2 wood less, if "
-            "you pay 1 food instead' is the same optional-substitution "
-            "shape as D088 -- now expressible via ctx['payment'] "
-            "(engine phase 7), so this is a plain implementation gap, "
-            "not a plumbing one.",
     "D127": "Hardworking Man: 'this card is an action space for you only' "
             "-- same private-action-space gap as D116.",
     "D128": "Building Tycoon: reacts to *another* player building rooms, "
             "but rooms_built fires via fire_player (owner-only) -- other "
             "players' cards never see it.",
-    "D129": "Lumber Virtuoso: grants an extra Build Stables/Wood Rooms "
-            "action during harvest outside the normal action-space "
-            "dispatch; faithfully replicating cell-adjacency/cost-by-"
-            "house-type validation outside the engine's private build "
-            "methods risks diverging from the real rules.",
-    "D130": "Recreational Carpenter: same as D129 -- a free Build Rooms "
-            "action outside the action-space dispatch, replicating "
-            "private room-building validation.",
     "D131": "Craftsmanship Promoter: 'build majors from the bottom row "
             "even via a Minor Improvement action' assumes an original-"
             "edition major-improvement-row / minor-vs-major action "
@@ -495,6 +482,35 @@ def _fish_farmer_hook(state, player, inst, ctx):
 compendium_card("D110", hooks={"space_used": _fish_farmer_hook})
 
 
+# ── D117 Wood Expert ─────────────────────────────────────────────────
+# "When you play this card, you immediately get 2 wood. Each improvement
+# costs you up to 2 wood less, if you pay 1 food instead." (the trailing
+# DB text after the second sentence is bleed from unrelated cards, per
+# this module's docstring.) Same optional-substitution shape as D088
+# Millwright, now expressible via ctx["payment"] (engine phase 7) --
+# scoped to kind="improvement" instead of the four building kinds.
+def _wood_expert_play(state, player, inst, ctx):
+    add_goods(ctx["extra"], {"wood": 2})
+    ctx["log"].append(f"{player['name']}'s Wood Expert grants 2 wood")
+
+
+def _wood_expert_mod(state, player, kind, cost, ctx):
+    if kind != "improvement":
+        return cost
+    payment = ctx.get("payment")
+    if not isinstance(payment, dict) or "wood_expert_food" not in payment:
+        return cost  # not addressed to this card
+    n = payment["wood_expert_food"]
+    if not isinstance(n, int) or n <= 0 or n > 2 or n > cost.get("wood", 0):
+        raise ValueError("Wood Expert: invalid payment")
+    cost = dict(cost)
+    cost["wood"] -= n
+    cost["food"] = cost.get("food", 0) + n
+    return cost
+
+compendium_card("D117", hooks={"play": _wood_expert_play}, cost_mod=_wood_expert_mod)
+
+
 # ── D122 Clay Seller ──────────────────────────────────────────────────
 # "When you play this card, you immediately get 2 clay. At any time, but
 # only once per round, you can buy 2 clay for 2 food."
@@ -668,6 +684,98 @@ def _field_cultivator_resolve(state, player, inst, ctx):
 
 compendium_card("D126", hooks={"harvest_field": _field_cultivator_harvest_field},
                 resolve_choice=_field_cultivator_resolve)
+
+
+# ── D129 Lumber Virtuoso ─────────────────────────────────────────────
+# "Each harvest in which you have at least 5 wood in your supply, you
+# can discard down to 5 wood to take a Build Stables or Build Wood Rooms
+# action by paying the usual costs." sub_actions.build_stables/
+# build_rooms are the real transactions now (the old "risks diverging"
+# reason predates them); "Wood Rooms" restricts the room option to a
+# wood house (room material always follows house_type). The discard-
+# down-to-5 cost is applied at spend time (not bank time), and rechecked
+# there since wood may have moved between harvest and use; banked as a
+# credit (usable during that harvest's feeding phase or a later work
+# turn) since room/stable cells are open-ended.
+def _lumber_virtuoso_harvest(state, player, inst, ctx):
+    if player["resources"]["wood"] >= 5:
+        inst["data"]["credits"] = inst["data"].get("credits", 0) + 1
+        ctx["log"].append(f"{player['name']}'s Lumber Virtuoso grants a "
+                          "discard-down-to-5 Build Stables/Wood Rooms action")
+
+
+def _lumber_virtuoso_available(state, player, inst):
+    if inst["data"].get("credits", 0) <= 0 or player["resources"]["wood"] < 5:
+        return False
+    can_stables = sub_actions.can_build_stables(state, player)
+    can_rooms = player["house_type"] == "wood" and sub_actions.can_build_rooms(state, player)
+    return can_stables or can_rooms
+
+
+def _lumber_virtuoso_apply(state, player, inst, ctx):
+    if inst["data"].get("credits", 0) <= 0 or player["resources"]["wood"] < 5:
+        raise ValueError("Lumber Virtuoso: no discard-down-to-5 action available")
+    params = ctx.get("params") or {}
+    kind = params.get("kind")
+    if kind not in ("stables", "rooms"):
+        raise ValueError("Lumber Virtuoso: choose kind 'stables' or 'rooms'")
+    if kind == "rooms" and player["house_type"] != "wood":
+        raise ValueError("Lumber Virtuoso: Wood Rooms needs a wood house")
+    discarded = player["resources"]["wood"] - 5
+    player["resources"]["wood"] = 5
+    if discarded:
+        ctx["log"].append(f"{player['name']} discards {discarded} wood "
+                          "(Lumber Virtuoso)")
+    cells = params.get("cells") or []
+    if kind == "stables":
+        sub_actions.build_stables(state, player, cells, ctx["log"])
+    else:
+        sub_actions.build_rooms(state, player, cells, ctx["log"])
+    inst["data"]["credits"] -= 1
+
+compendium_card(
+    "D129", hooks={"harvest_field": _lumber_virtuoso_harvest},
+    card_action={"available": _lumber_virtuoso_available,
+                "apply": _lumber_virtuoso_apply,
+                "description": "Discard wood down to 5 for a Build Stables "
+                               "or Wood Rooms action (Lumber Virtuoso, "
+                               "once per qualifying harvest)"})
+
+
+# ── D130 Recreational Carpenter ──────────────────────────────────────
+# "At the end of each work phase in which you did not use the Meeting
+# Place action space, you can take a Build Rooms action without placing
+# a person." returning_home fires once per player at the end of the
+# work phase with ctx["spaces"] = every space that player occupied that
+# round -- exactly the "did not use Meeting Place" check. Room cells are
+# open-ended, so this is the banked-credit/card_action shape (the
+# K269/K289 returning_home recipe, generalized from "perform the target
+# space's effect" to "grant a bonus build").
+def _rec_carpenter_returning_home(state, player, inst, ctx):
+    if "meeting_place" in ctx["spaces"]:
+        return
+    inst["data"]["credits"] = inst["data"].get("credits", 0) + 1
+    ctx["log"].append(f"{player['name']}'s Recreational Carpenter grants a "
+                      "Build Rooms action")
+
+
+def _rec_carpenter_available(state, player, inst):
+    return inst["data"].get("credits", 0) > 0 and sub_actions.can_build_rooms(state, player)
+
+
+def _rec_carpenter_apply(state, player, inst, ctx):
+    if inst["data"].get("credits", 0) <= 0:
+        raise ValueError("Recreational Carpenter: no Build Rooms action available")
+    cells = (ctx.get("params") or {}).get("cells") or []
+    sub_actions.build_rooms(state, player, cells, ctx["log"])
+    inst["data"]["credits"] -= 1
+
+compendium_card(
+    "D130", hooks={"returning_home": _rec_carpenter_returning_home},
+    card_action={"available": _rec_carpenter_available,
+                "apply": _rec_carpenter_apply,
+                "description": "Build rooms without placing a person "
+                               "(Recreational Carpenter)"})
 
 
 # ── D133 Beer Tent Operator ───────────────────────────────────────────

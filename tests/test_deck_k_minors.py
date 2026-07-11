@@ -775,3 +775,39 @@ def test_acreage_two_independent_grain_stacks(engine):
     assert p["resources"]["grain"] == grain_before + 2
     assert inst["stacks"][0]["count"] == 2
     assert inst["stacks"][1]["count"] == 2
+
+
+# ── K111 Bread Paddle ────────────────────────────────────────────────
+
+def test_bread_paddle_bakes_after_occupation_play(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "K111")
+    p = s["players"][first]
+    p["improvements"] = ["fireplace_2"]
+    give(s, first, grain=2)
+    food_before = p["resources"]["food"]
+    log = []
+    engine._fire(s, "occupation_played", p, {"card_id": "occ_woodcutter"}, log)
+    inst = next(i for i in p["minors"] if i["id"] == "K111")
+    assert inst["data"]["credits"] == 1
+    pid = p["player_id"]
+    s = engine.apply_action(s, pid, {
+        "kind": "card_action", "card": "K111",
+        "params": {"bake": {"fireplace_2": 2}}}).new_state
+    p = s["players"][first]
+    assert p["resources"]["grain"] == 0
+    assert p["resources"]["food"] == food_before + 4
+
+
+def test_bread_paddle_no_credit_for_other_players_plays(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    put_in_play(s, first, "K111")
+    p = s["players"][first]
+    opp = s["players"][other]
+    log = []
+    engine._fire(s, "occupation_played", opp, {"card_id": "occ_woodcutter"}, log)
+    inst = next(i for i in p["minors"] if i["id"] == "K111")
+    assert inst["data"].get("credits", 0) == 0

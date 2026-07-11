@@ -10,7 +10,7 @@ implemented; the trailing bleed is not this card's effect.
 
 from server.agricola.cards import (
     compendium_card, add_goods, prompt_choice, space_bonus, on_play_gain,
-    animal_totals_of, fire, extra_rooms, card_fields,
+    animal_totals_of, fire, extra_rooms, card_fields, CARDS,
     new_instance, spec, pasture_capacity as card_pasture_capacity,
 )
 from server.agricola.state import (
@@ -25,9 +25,6 @@ UNIMPLEMENTED = {
             "geometry-based predicate.",
     "A094": "requires placing a person on an occupied action space "
             "(guest-token style); not supported.",
-    "A095": "grants a full Major/Minor Improvement action outside the "
-            "normal action space; building improvements is engine-internal "
-            "transaction logic not exposed to card hooks.",
     "A096": "needs a 'stage card revealed in the preparation phase' hook "
             "(none exists) and grants a Minor Improvement action "
             "(engine-internal, not exposed).",
@@ -61,12 +58,6 @@ UNIMPLEMENTED = {
             "the returning home phase'; occupied_by is reset to None "
             "before any round-boundary hook fires, so that state can't be "
             "observed.",
-    "A149": "grants a full discounted Build Rooms sub-action reactively; "
-            "room building (adjacency, house-type cost) is engine-internal "
-            "and not exposed to card hooks.",
-    "A150": "grants a full Build Fences/Stables/Rooms sub-action "
-            "reactively to another player's trigger; none of those build "
-            "transactions are exposed to card hooks.",
     "A151": "needs a 'returning home phase' hook to check which round "
             "1-4 spaces are unoccupied; occupied_by is reset before any "
             "card hook fires at that point, and it would also grant a "
@@ -209,6 +200,54 @@ def _bed_maker_choice(state, player, inst, ctx):
 
 compendium_card("A093", hooks={"rooms_built": _bed_maker_rooms_built},
                 resolve_choice=_bed_maker_choice)
+
+
+# ── A095 Angler ──────────────────────────────────────────────────────
+# "Each time after you use the Fishing accumulation space while there are
+# at most 2 food on that space, you get a Major or Minor Improvement
+# action." Fishing sweeps its whole supply on use, so ctx["goods"]["food"]
+# IS the amount that was on the space -- no extra state lookup needed.
+# Both targets (a major improvement id, a minor in hand) are enumerable,
+# so this resolves immediately via prompt_choice/resolve_choice (the
+# D089 Stablehand shape) rather than a banked card_action.
+def _angler_space_used(state, player, inst, ctx):
+    if ctx["actor"] != player["index"] or ctx["space_id"] != "fishing":
+        return
+    if ctx["goods"].get("food", 0) > 2:
+        return
+    majors = sub_actions.buildable_improvements(state, player)
+    minors = [cid for cid in player["hand_minors"]
+             if sub_actions.can_play_minor(state, player, cid)]
+    if not majors and not minors:
+        return
+    options = ["Decline"]
+    choices = []
+    for imp in majors:
+        options.append(f"Build {MAJOR_IMPROVEMENTS[imp]['name']}")
+        choices.append(("major", imp))
+    for cid in minors:
+        options.append(f"Play {CARDS[cid]['name']}")
+        choices.append(("minor", cid))
+    prompt_choice(state, player, inst["id"],
+                 "Angler: Major or Minor Improvement action?", options,
+                 data={"choices": choices})
+
+
+def _angler_choice(state, player, inst, ctx):
+    if ctx["index"] == 0:
+        return
+    kind, target = ctx["data"]["choices"][ctx["index"] - 1]
+    if kind == "major":
+        if target in state["available_improvements"] and \
+                sub_actions.can_build_improvement(state, player, target):
+            sub_actions.build_improvement(state, player, target, ctx["log"])
+    else:
+        if target in player["hand_minors"] and \
+                sub_actions.can_play_minor(state, player, target):
+            sub_actions.play_minor(state, player, target, ctx["log"])
+
+compendium_card("A095", hooks={"space_used": _angler_space_used},
+                resolve_choice=_angler_choice)
 
 
 # ── A099 Fellow Grazer ───────────────────────────────────────────────
@@ -733,6 +772,98 @@ def _woolgrower_holds(state, player, inst):
     return {"types": {"sheep": max(0, n)}}
 
 compendium_card("A148", holds_animals=_woolgrower_holds)
+
+
+# ── A149 House Artist ────────────────────────────────────────────────
+# "Each time you use the Traveling Players accumulation space, you also
+# receive a Build Rooms action during which each room costs you 1 less
+# reed." Room cells are an open-ended target -- no prompt shape for them
+# -- so this banks a credit, spent via card_action (the Educator/Scholar
+# shape). The discount is computed on top of the normal (possibly
+# already-modified-by-other-cards) cost, then reduced by 1 reed/room, so
+# it still stacks with e.g. a Stonecutter-style discount.
+def _house_artist_travelers(state, player, inst, ctx):
+    if ctx["actor"] != player["index"] or ctx["space_id"] != "traveling_players":
+        return
+    inst["data"]["credits"] = inst["data"].get("credits", 0) + 1
+    ctx["log"].append(f"{player['name']}'s House Artist grants a discounted "
+                      "Build Rooms action")
+
+
+def _house_artist_discounted_cost(state, player, count):
+    cost = dict(sub_actions.room_cost(state, player, count))
+    cost["reed"] = max(0, cost.get("reed", 0) - count)
+    return cost
+
+
+def _house_artist_available(state, player, inst):
+    if inst["data"].get("credits", 0) <= 0 or not sub_actions.buildable_room_cells(player):
+        return False
+    return sub_actions.can_afford(player, _house_artist_discounted_cost(state, player, 1))
+
+
+def _house_artist_apply(state, player, inst, ctx):
+    if inst["data"].get("credits", 0) <= 0:
+        raise ValueError("House Artist: no Build Rooms action available")
+    cells = (ctx.get("params") or {}).get("cells") or []
+    if not cells:
+        raise ValueError("House Artist: choose rooms to build (params.cells)")
+    cost = _house_artist_discounted_cost(state, player, len(cells))
+    sub_actions.build_rooms(state, player, cells, ctx["log"], cost_override=cost)
+    inst["data"]["credits"] -= 1
+
+compendium_card(
+    "A149", hooks={"space_used": _house_artist_travelers},
+    card_action={"available": _house_artist_available, "apply": _house_artist_apply,
+                "description": "Build rooms for 1 less reed each (House "
+                               "Artist, after using Traveling Players)"})
+
+
+# ── A150 Stagehand ───────────────────────────────────────────────────
+# "Each time another player uses the Traveling Players accumulation
+# space, you can take your choice of a Build Fences, Build Stables, or
+# Build Rooms action with costs." space_used already broadcasts to every
+# player's cards (see CARDS.md), so no extra plumbing is needed to
+# observe another player's use -- just check ctx["actor"] != owner.
+def _stagehand_travelers(state, player, inst, ctx):
+    if ctx["actor"] == player["index"] or ctx["space_id"] != "traveling_players":
+        return
+    inst["data"]["credits"] = inst["data"].get("credits", 0) + 1
+    ctx["log"].append(f"{player['name']}'s Stagehand grants a Build "
+                      "Fences/Stables/Rooms action")
+
+
+def _stagehand_available(state, player, inst):
+    if inst["data"].get("credits", 0) <= 0:
+        return False
+    return (sub_actions.can_build_fences(state, player)
+            or sub_actions.can_build_stables(state, player)
+            or sub_actions.can_build_rooms(state, player))
+
+
+def _stagehand_apply(state, player, inst, ctx):
+    if inst["data"].get("credits", 0) <= 0:
+        raise ValueError("Stagehand: no build action available")
+    params = ctx.get("params") or {}
+    kind = params.get("kind")
+    if kind == "fences":
+        fences = params.get("fences") or []
+        sub_actions.build_fences(state, player, fences, ctx["log"])
+    elif kind == "stables":
+        cells = params.get("cells") or []
+        sub_actions.build_stables(state, player, cells, ctx["log"])
+    elif kind == "rooms":
+        cells = params.get("cells") or []
+        sub_actions.build_rooms(state, player, cells, ctx["log"])
+    else:
+        raise ValueError("Stagehand: choose kind 'fences', 'stables', or 'rooms'")
+    inst["data"]["credits"] -= 1
+
+compendium_card(
+    "A150", hooks={"space_used": _stagehand_travelers},
+    card_action={"available": _stagehand_available, "apply": _stagehand_apply,
+                "description": "Build fences, stables, or rooms (Stagehand, "
+                               "after another player uses Traveling Players)"})
 
 
 # ── A153 Pig Owner ───────────────────────────────────────────────────

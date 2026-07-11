@@ -28,13 +28,6 @@ UNIMPLEMENTED = {
             "mechanism ('holds N wild boar') has no specified "
             "acquisition/release trigger once the contaminating text is "
             "removed.",
-    "B088": "grants a follow-up Build Fences action (with player-chosen "
-            "fence edges) after a free renovation; no channel carries "
-            "open-ended fence-layout parameters outside the normal "
-            "placement flow.",
-    "B093": "grants a full Sow or Build Fences action with player-chosen "
-            "field/crop or fence-edge targets at scheduled future round "
-            "starts; not expressible via the discrete choice prompt.",
     "B094": "grants an extra worker placement after Fencing; the "
             "engine's only double-placement mechanism (Lasso) is "
             "hardcoded to the animal markets.",
@@ -246,6 +239,34 @@ compendium_card("B090", hooks={"space_used": _cooperative_plower_space},
                 resolve_choice=_cooperative_plower_choice)
 
 
+# ── B088 Established Person ─────────────────────────────────────────
+# "If your house has exactly 2 rooms, immediately renovate it without
+# paying any building resources. If you do, you can immediately
+# afterward take a Build Fences action." (the trailing DB ruling text
+# after the first sentence -- "you immediately get 1 wood... build
+# exactly 1 stable for 1 wood" -- is bleed from an unrelated card, per
+# this module's docstring.) Ruling 1 ("may not play this card if you
+# cannot renovate") is exactly `prereq`. The follow-on fence build's
+# edges are open-ended, so they ride the play action's own params, all
+# resolved synchronously in this one hook (matching the free-renovation-
+# +-fence shape B001 also uses).
+def _established_person_rooms(player):
+    return sum(1 for c in player["cells"] if c["type"] == "room")
+
+
+def _established_person_play(state, player, inst, ctx):
+    sub_actions.renovate(state, player, ctx["log"], cost_override="free")
+    fences = (ctx.get("params") or {}).get("fences")
+    if fences:
+        sub_actions.build_fences(state, player, fences, ctx["log"])
+
+compendium_card(
+    "B088",
+    prereq=(lambda s, p: _established_person_rooms(p) == 2,
+           "exactly 2 rooms"),
+    hooks={"play": _established_person_play})
+
+
 # ── B092 Little Stick Knitter (Family Growth on Take 1 Sheep) ────────
 def _little_stick_knitter_a_space(state, player, inst, ctx):
     if ctx["actor"] != player["index"] or ctx["space_id"] != "sheep_market":
@@ -273,6 +294,80 @@ def _little_stick_knitter_a_choice(state, player, inst, ctx):
 
 compendium_card("B092", hooks={"space_used": _little_stick_knitter_a_space},
                 resolve_choice=_little_stick_knitter_a_choice)
+
+
+# ── B093 Little Stick Knitter (Sow/Build Fences via scheduled food) ──
+# "Place 1 food from your supply on each of the next 2, 3, or 4 round
+# spaces. At the start of these rounds, you get the food back and your
+# choice of a Sow or Build Fences action." The food refund is the
+# existing round_goods scheduling mechanism (Well-style); the Sow/Build
+# Fences choice's targets are open-ended (which fields/crops, which
+# fence edges), so -- like every other open-ended reactive bonus in this
+# deck -- it's banked at round_start and spent via card_action, but only
+# while active_round == the scheduled round it was granted for (matching
+# "your choice of an action" being a one-shot opportunity at that
+# round's start, not an indefinitely banked credit).
+def _stick_knitter_b_play(state, player, inst, ctx):
+    params = ctx.get("params") or {}
+    n = params.get("rounds")
+    if n not in (2, 3, 4):
+        raise ValueError("Little Stick Knitter: choose 2, 3, or 4 rounds "
+                         "(params.rounds)")
+    rnd = state["round"]
+    targets = [r for r in range(rnd + 1, rnd + 1 + n) if r <= TOTAL_ROUNDS]
+    if len(targets) != n:
+        raise ValueError("Little Stick Knitter: not enough rounds remain")
+    if player["resources"]["food"] < n:
+        raise ValueError("Little Stick Knitter: not enough food")
+    player["resources"]["food"] -= n
+    for r in targets:
+        slot = state["round_goods"].setdefault(str(r), {}) \
+            .setdefault(str(player["index"]), {})
+        add_goods(slot, {"food": 1})
+    inst["data"]["scheduled_rounds"] = targets
+    ctx["log"].append(f"{player['name']}'s Little Stick Knitter schedules "
+                      "food for rounds " + ", ".join(map(str, targets)))
+
+
+def _stick_knitter_b_round_start(state, player, inst, ctx):
+    if state["round"] in inst["data"].get("scheduled_rounds", []):
+        inst["data"]["active_round"] = state["round"]
+        inst["data"]["used_this_round"] = False
+        ctx["log"].append(f"{player['name']}'s Little Stick Knitter grants "
+                          "a Sow or Build Fences action this round")
+
+
+def _stick_knitter_b_available(state, player, inst):
+    if inst["data"].get("active_round") != state["round"] \
+            or inst["data"].get("used_this_round"):
+        return False
+    return sub_actions.can_sow(player) or sub_actions.can_build_fences(state, player)
+
+
+def _stick_knitter_b_apply(state, player, inst, ctx):
+    if inst["data"].get("active_round") != state["round"] \
+            or inst["data"].get("used_this_round"):
+        raise ValueError("Little Stick Knitter: no action available")
+    params = ctx.get("params") or {}
+    kind = params.get("kind")
+    if kind == "sow":
+        items = params.get("sow") or []
+        sub_actions.sow(state, player, items, ctx["log"])
+    elif kind == "fences":
+        fences = params.get("fences") or []
+        sub_actions.build_fences(state, player, fences, ctx["log"])
+    else:
+        raise ValueError("Little Stick Knitter: choose kind 'sow' or 'fences'")
+    inst["data"]["used_this_round"] = True
+
+compendium_card(
+    "B093",
+    hooks={"play": _stick_knitter_b_play,
+          "round_start": _stick_knitter_b_round_start},
+    card_action={"available": _stick_knitter_b_available,
+                "apply": _stick_knitter_b_apply,
+                "description": "Sow or Build Fences (Little Stick Knitter, "
+                               "scheduled rounds only)"})
 
 
 # ── B096 Tree Farm Joiner ─────────────────────────────────────────────

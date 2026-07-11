@@ -53,9 +53,6 @@ UNIMPLEMENTED = {
             "converted to food (cooked), but no hook fires for cooking/"
             "conversion -- the accommodate and feed 'cook' paths mutate "
             "resources directly with no card event.",
-    "E159": "Head of the Family: requires using a room-building/family-"
-            "growth action space already occupied by another player; "
-            "placing on occupied spaces is explicitly unsupported.",
     "E161": "Fisherman: the optional double-take on Fishing requires "
             "paying food to OTHER players who own any of several named "
             "original-edition minors (Fishing Rod, Raft, Canoe, Fish "
@@ -321,6 +318,25 @@ def _turner_apply(state, player, inst, ctx):
 compendium_card("E158", card_action={
     "available": _turner_available, "apply": _turner_apply,
     "description": "Convert wood to food (1:1)"})
+
+
+# ── E159 Head of the Family ─────────────────────────────────────────
+# "You can use any room building or family growth action space, even if
+# another player has already placed a person on it." A pure occupied_ok
+# (engine phase: placing on an occupied space) scoped to this engine's
+# room-building/family-growth spaces: Farm Expansion (rooms/stables),
+# Basic Wish, Urgent Wish. (The ruling's "Build 1 Room or Traveling
+# Players" example refers to a printed-board combo space this engine's
+# board doesn't have -- see the deck docstring's original-edition
+# mapping -- so nothing else qualifies.) occupied_ok is queried on every
+# get_valid_actions poll and must stay a pure predicate, which this is.
+_HEAD_OF_FAMILY_SPACES = ("farm_expansion", "basic_wish", "urgent_wish")
+
+
+def _head_of_family_occupied_ok(state, player, inst, space):
+    return space["id"] in _HEAD_OF_FAMILY_SPACES
+
+compendium_card("E159", occupied_ok=_head_of_family_occupied_ok)
 
 
 # ── E160 Farmer ───────────────────────────────────────────────────────

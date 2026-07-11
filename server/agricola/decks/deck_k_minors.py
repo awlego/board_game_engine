@@ -14,7 +14,7 @@ the cost field -- handled with a manual cost= override at that card.
 """
 
 from server.agricola.cards import (
-    compendium_card, CARDS, spec, prompt_choice,
+    compendium_card, CARDS, spec, prompt_choice, in_play, bake_bonus,
     harvest_food, on_play_gain, schedule_on_play, space_bonus,
     animal_totals_of, needs_occupations, combine,
     card_fields, fire_player, draw_minors, discard_hand_minors,
@@ -32,13 +32,6 @@ UNIMPLEMENTED = {
             "conversion loop nor _apply_accommodate's cook loop fires "
             "any card hook (same gap noted for C053 in deck_c_minors.py) "
             "-- there is no event to react to.",
-    "K111": "requires triggering a full bake-bread sub-action outside "
-            "the spaces/moments the engine currently allows one "
-            "(bake_on_spaces only wires into the farmland/cultivation "
-            "space handlers, and grain_utilization/bake_on_build cover "
-            "the rest); 'whenever you play an occupation' has no such "
-            "hook, and cards cannot invoke the engine's private "
-            "_do_bake from a deck module.",
     "K112": "requires granting food to the player BEFORE the "
             "occupation's food cost is deducted, so it can enable "
             "playing an occupation otherwise unaffordable. "
@@ -198,6 +191,86 @@ compendium_card(
                  "per_harvest": 1}],
     score_bonus=_brewery_score,
 )
+
+
+# ── K111 Bread Paddle ────────────────────────────────────────────────
+# "Whenever you play an occupation, you may also bake bread." Rulings:
+# fires off ANY route into playing an occupation (Puppeteer/Educator-
+# triggered plays too, since those route through sub_actions.
+# play_occupation -> the same occupation_played broadcast, with
+# ctx["actor"] set to whoever actually played it -- not who owns the
+# triggering card); can bake once per occupation played, even several in
+# one action; the baked food can't retroactively pay for the occupation
+# (naturally true here since baking happens strictly after play_
+# occupation already charged and paid the cost). Which oven + how much
+# grain is a small structured choice (not a flat enumerable list), so --
+# like E150 Baker -- this is a banked-credit card_action; _bake_specs/
+# _local_bake duplicate Baker's private helpers (deck modules can't
+# import each other's module-local functions, and engine._do_bake is
+# private to engine.py) rather than reimplementing the semantics anew.
+def _bake_specs(player):
+    specs = {}
+    for imp in player["improvements"]:
+        b = MAJOR_IMPROVEMENTS[imp].get("bake")
+        if b:
+            specs[imp] = b
+    for inst in in_play(player):
+        b = spec(inst).get("bake")
+        if b:
+            specs[inst["id"]] = b
+    return specs
+
+
+def _local_bake(player, bake, log):
+    specs = _bake_specs(player)
+    total_grain = 0
+    food = 0
+    for key, count in bake.items():
+        oven = specs.get(key)
+        if not oven or not isinstance(count, int) or count < 1:
+            raise ValueError(f"{key} cannot bake bread")
+        limit, value = oven
+        if limit is not None and count > limit:
+            raise ValueError(f"That oven bakes at most {limit} grain")
+        total_grain += count
+        food += count * value
+    if total_grain == 0:
+        return
+    if player["resources"]["grain"] < total_grain:
+        raise ValueError("Not enough grain")
+    food += bake_bonus(player, total_grain)
+    player["resources"]["grain"] -= total_grain
+    player["resources"]["food"] += food
+    log.append(f"{player['name']} bakes {total_grain} grain into "
+              f"{food} food (Bread Paddle)")
+
+
+def _bread_paddle_occ_played(state, player, inst, ctx):
+    if ctx["actor"] != player["index"]:
+        return
+    inst["data"]["credits"] = inst["data"].get("credits", 0) + 1
+
+
+def _bread_paddle_available(state, player, inst):
+    return (inst["data"].get("credits", 0) > 0
+            and player["resources"]["grain"] >= 1 and bool(_bake_specs(player)))
+
+
+def _bread_paddle_apply(state, player, inst, ctx):
+    if inst["data"].get("credits", 0) <= 0:
+        raise ValueError("Bread Paddle: no bake action available")
+    bake = (ctx.get("params") or {}).get("bake")
+    if not bake:
+        raise ValueError("Bread Paddle: choose grain to bake (params.bake)")
+    _local_bake(player, bake, ctx["log"])
+    inst["data"]["credits"] -= 1
+
+compendium_card(
+    "K111", hooks={"occupation_played": _bread_paddle_occ_played},
+    card_action={"available": _bread_paddle_available,
+                "apply": _bread_paddle_apply,
+                "description": "Bake bread after playing an occupation "
+                               "(Bread Paddle)"})
 
 
 # ── K113 Flail ────────────────────────────────────────────────────────

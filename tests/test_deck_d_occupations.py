@@ -759,3 +759,112 @@ def test_pig_stalker_no_bonus_without_vertical_neighbor(engine):
                if a["kind"] == "accommodate"), None)
     if acc:
         assert "boar" not in acc["gained"]
+
+
+# ── D117 Wood Expert ─────────────────────────────────────────────────
+
+def test_wood_expert_play_grants_wood(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "D117")
+    give(s, first, food=1)
+    wood_before = s["players"][first]["resources"]["wood"]
+    s = place(engine, s, {"kind": "place", "space": "lessons", "card": "D117"})
+    assert s["players"][first]["resources"]["wood"] == wood_before + 2
+
+
+def test_wood_expert_payment_substitutes_food_for_wood(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "D117")
+    p = s["players"][first]
+    give(s, first, stone=2, food=2)  # Joinery: {wood: 2, stone: 2}
+    food_before = p["resources"]["food"]
+    pid = p["player_id"]
+    s = place(engine, s, {
+        "kind": "place", "space": "major_improvement",
+        "improvement": "joinery", "payment": {"wood_expert_food": 2}})
+    p = s["players"][first]
+    assert "joinery" in p["improvements"]
+    assert p["resources"]["wood"] == 0
+    assert p["resources"]["stone"] == 0
+    assert p["resources"]["food"] == food_before - 2
+
+
+def test_wood_expert_payment_ignored_if_not_addressed(engine):
+    """A payment key belonging to some other card must leave this card's
+    cost_mod a no-op (it must not misinterpret another card's payment)."""
+    fn = cards.CARDS["D117"]["cost_mod"]
+    cost = fn(None, None, "improvement", {"wood": 2, "stone": 2},
+             {"payment": {"some_other_card": 1}})
+    assert cost == {"wood": 2, "stone": 2}
+
+
+# ── D129 Lumber Virtuoso ─────────────────────────────────────────────
+
+def test_lumber_virtuoso_discard_and_build_stables(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "D129")
+    give(s, first, wood=7)
+    p = s["players"][first]
+    log = []
+    engine._fire(s, "harvest_field", p, {"got": {}, "tiles": {}, "card_fields": {}},
+                log, to_all=False)
+    inst = next(i for i in p["occupations"] if i["id"] == "D129")
+    assert inst["data"]["credits"] == 1
+    cell = next(i for i, c in enumerate(p["cells"])
+               if c["type"] == "empty" and not c["stable"])
+    pid = p["player_id"]
+    s = engine.apply_action(s, pid, {
+        "kind": "card_action", "card": "D129",
+        "params": {"kind": "stables", "cells": [cell]}}).new_state
+    p = s["players"][first]
+    assert p["cells"][cell]["stable"] is True
+    assert p["resources"]["wood"] == 3  # discarded 7 -> 5, then 1 stable costs 2
+
+
+def test_lumber_virtuoso_no_bonus_below_5_wood(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "D129")
+    give(s, first, wood=4)
+    p = s["players"][first]
+    log = []
+    engine._fire(s, "harvest_field", p, {"got": {}, "tiles": {}, "card_fields": {}},
+                log, to_all=False)
+    inst = next(i for i in p["occupations"] if i["id"] == "D129")
+    assert inst["data"].get("credits", 0) == 0
+
+
+# ── D130 Recreational Carpenter ──────────────────────────────────────
+
+def test_recreational_carpenter_bonus_room(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "D130")
+    p = s["players"][first]
+    log = []
+    engine._fire(s, "returning_home", p, {"spaces": ["forest"]}, log, to_all=False)
+    inst = next(i for i in p["occupations"] if i["id"] == "D130")
+    assert inst["data"]["credits"] == 1
+    from server.agricola import sub_actions
+    cell = sub_actions.buildable_room_cells(p)[0]
+    give(s, first, wood=5, reed=2)
+    pid = p["player_id"]
+    s = engine.apply_action(s, pid, {
+        "kind": "card_action", "card": "D130",
+        "params": {"cells": [cell]}}).new_state
+    assert s["players"][first]["cells"][cell]["type"] == "room"
+
+
+def test_recreational_carpenter_no_bonus_after_meeting_place(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "D130")
+    p = s["players"][first]
+    log = []
+    engine._fire(s, "returning_home", p,
+                {"spaces": ["forest", "meeting_place"]}, log, to_all=False)
+    inst = next(i for i in p["occupations"] if i["id"] == "D130")
+    assert inst["data"].get("credits", 0) == 0

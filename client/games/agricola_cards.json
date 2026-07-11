@@ -670,9 +670,8 @@
  },
  "A095": {
   "deck": "A",
-  "implemented": false,
+  "min_players": 1,
   "name": "Angler",
-  "reason": "grants a full Major/Minor Improvement action outside the normal action space; building improvements is engine-internal transaction logic not exposed to card hooks.",
   "text": "Each time after you use the \"Fishing\" accumulation space while there are at most 2 food on that space, you get a \"Major or Minor Improvement\" action.",
   "type": "occupation"
  },
@@ -989,10 +988,9 @@
  },
  "A149": {
   "deck": "A",
-  "implemented": false,
+  "has_card_action": true,
   "min_players": 4,
   "name": "House Artist",
-  "reason": "grants a full discounted Build Rooms sub-action reactively; room building (adjacency, house-type cost) is engine-internal and not exposed to card hooks.",
   "text": "Each time you use the \"Traveling Players\" accumulation space, you also receive a \"Build Rooms\" action during which each room costs you 1 less reed.",
   "type": "occupation"
  },
@@ -1011,10 +1009,9 @@
  },
  "A150": {
   "deck": "A",
-  "implemented": false,
+  "has_card_action": true,
   "min_players": 4,
   "name": "Stagehand",
-  "reason": "grants a full Build Fences/Stables/Rooms sub-action reactively to another player's trigger; none of those build transactions are exposed to card hooks.",
   "text": "Each time another player uses the \"Traveling Players\" accumulation space, you can take your choice of a \"Build Fences\", \"Build Stables\", or \"Build Rooms\" action with costs.",
   "type": "occupation"
  },
@@ -1266,9 +1263,8 @@
    "wood": 3
   },
   "deck": "B",
-  "implemented": false,
+  "min_players": 1,
   "name": "Upscale Lifestyle",
-  "reason": "requires bundling a free renovation with a follow-on free fence build (player-chosen layout) as one atomic effect; no hook combines renovation + fencing sub-actions",
   "text": "You immediately get 5 clay and a \"Renovation\" action. If you take the action, you must pay the renovation cost. (Cost 2F.) Immediately fence a farmyard space, without paying wood for the fences. (If you already have pastures, the new one must be adjacent to an existing one.)",
   "type": "minor"
  },
@@ -1434,7 +1430,7 @@
   "deck": "B",
   "implemented": false,
   "name": "Agrarian Fences",
-  "reason": "requires substituting Build Fences for one of Grain Utilization's own sub-actions; there is no pre-action hook to alter a space's legal sub-actions",
+  "reason": "requires substituting Build Fences for one of Grain Utilization's own sub-actions. sub_actions.build_fences can perform the fence build itself now, but nothing exposes a hook to inject an alternate action CHOICE into an existing action space's own dispatch (_resolve_space's grain_utilization branch is a fixed sow/bake pair in engine.py); unlike bake_on_spaces (hard-wired specifically for adding Bake Bread to OTHER spaces), there's no analogous mechanism for adding Build Fences as a substitute action here.",
   "text": "Each time you use the \"Sow and/or Bake Bread\" action space, you can take a \"Build Fences\" action instead of one of the two actions provided by the action space.",
   "type": "minor"
  },
@@ -1885,9 +1881,9 @@
  },
  "B088": {
   "deck": "B",
-  "implemented": false,
+  "min_players": 1,
   "name": "Established Person",
-  "reason": "grants a follow-up Build Fences action (with player-chosen fence edges) after a free renovation; no channel carries open-ended fence-layout parameters outside the normal placement flow.",
+  "prereq_text": "exactly 2 rooms",
   "text": "If your house has exactly 2 rooms, immediately renovate it without paying any building resources. If you do, you can immediately afterward take a \"Build Fences\" action.",
   "type": "occupation"
  },
@@ -1907,9 +1903,9 @@
  },
  "B093": {
   "deck": "B",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Little Stick Knitter",
-  "reason": "grants a full Sow or Build Fences action with player-chosen field/crop or fence-edge targets at scheduled future round starts; not expressible via the discrete choice prompt.",
   "text": "Place 1 food from your supply on each of the next 2, 3, or 4 round spaces. At the start of these rounds, you get the food back and your choice of a \"Sow\" or \"Build Fences\" action.",
   "type": "occupation"
  },
@@ -2648,16 +2644,16 @@
   "deck": "C",
   "implemented": false,
   "name": "Wood Slide Hammer",
-  "reason": "renovating directly from wood to stone, skipping the clay stage, requires overriding the fixed RENOVATION_TARGET sequence -- not exposed to cost_mod",
+  "reason": "renovating directly from wood to stone, skipping the clay stage: sub_actions.renovate hardcodes RENOVATION_TARGET = {wood: clay, clay: stone} internally with no override/ctx channel to redirect a wood house straight to stone, and sub_actions.py can't be edited -- still not expressible.",
   "text": "On your first renovation, if you have at least 5 wood rooms, you can renovate to stone directly and you get a discount of 2 stone on the renovation cost. (1VP. Req 3 grain fields.) You no longer need reed to renovate or build a room.",
   "type": "minor"
  },
  "C015": {
   "deck": "C",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Trellis",
-  "prereq_text": "2 occ",
-  "reason": "grants an extra 'Build Fences' action tied to using a specific action space -- only bake_on_spaces exists for that trigger shape, and fences need a whole layout choice besides",
+  "prereq_text": "2 occupations",
   "text": "Each time before you use the \"Take 1 Wild Boar\" accumulation space, you can take a \"Build Fences\" action. (You must pay wood for the fences as usual.) (Cost 2F.) You can immediately take a \"Build Fences\" action, during which you do not have to pay wood for fences that you build next to field tiles.",
   "type": "minor"
  },
@@ -2738,10 +2734,9 @@
    "wood": 1
   },
   "deck": "C",
-  "implemented": false,
+  "min_players": 1,
   "name": "Teacher's Desk",
-  "prereq_text": "1 occ",
-  "reason": "grants an extra 'play an occupation' action tied to using another action space -- playing occupations is engine-internal (_play_occupation), not exposed to hooks",
+  "prereq_text": "1 occupations",
   "text": "Each time you use the \"Major Improvement\" or \"Renovation and Improvement\" action space, you can also play 1 occupation at an occupation cost of 1 food.",
   "type": "minor"
  },
@@ -3900,7 +3895,7 @@
   "implemented": false,
   "name": "Carpenter's Yard",
   "points": 1,
-  "reason": "builds two majors in one action, or builds specific majors via the Minor-Improvement action slot -- _do_improvement only builds one major per major-improvement action",
+  "reason": "reassessed against sub_actions.build_improvement: still gated, on two separate gaps. Clause 1 ('build Joinery/Well even via a Minor Improvement action') needs the meeting_place/major_improvement/basic_wish/house_redevelopment spaces' own 'minor' param (engine.py's _resolve_space) to accept a MAJOR improvement id in place of a card id from hand_minors -- that substitution point is in engine.py's per-space dispatch, not reachable from a card hook. Clause 2 ('build both with a single Major Improvement action') would need a card_action gated on 'you just built Joinery/Well via the major_improvement space specifically', but build_improvement's own improvement_built broadcast ctx carries no space_id (unlike cost_mod's ctx) -- there's no way to distinguish that from any other improvement-building path (Scholar, House Redevelopment, ...), and approximating to 'whenever you build either' would silently broaden the trigger beyond the printed text.",
   "text": "You can build the \"Joinery\" and \"Well\" major improvement even when taking a \"Minor Improvement\" action, or you can build both with a single \"Major Improvement\" action.",
   "type": "minor"
  },
@@ -4513,9 +4508,8 @@
  },
  "D117": {
   "deck": "D",
-  "implemented": false,
+  "min_players": 1,
   "name": "Wood Expert",
-  "reason": "Wood Expert: 'each improvement costs up to 2 wood less, if you pay 1 food instead' is the same optional-substitution shape as D088 -- now expressible via ctx['payment'] (engine phase 7), so this is a plain implementation gap, not a plumbing one.",
   "text": "When you play this card, you immediately get 2 wood. Each improvement costs you up to 2 wood less, if you pay 1 food instead. (1-5 players) When you play this card, immediately place 6 wood on it. Immediately after each time you play a card from your hand, including this one, you get 1 wood from this card. (1-5 players) Each time before you use an action space with a \"Build Fences\" or \"Build Rooms\" action, you can choose to either get 2 wood or exchange up to 2 wood for 1 reed each. (1-5 players) Place 1 clay on each remaining space for rounds 6 to 14. At the start of these rounds, you get the clay. (1-5 players) Renovating to clay only costs you exactly 1 clay and 1 reed. Each clay room only costs you 3 clay and 2 reed to build.",
   "type": "occupation"
  },
@@ -4575,19 +4569,17 @@
  },
  "D129": {
   "deck": "D",
-  "implemented": false,
+  "has_card_action": true,
   "min_players": 3,
   "name": "Lumber Virtuoso",
-  "reason": "Lumber Virtuoso: grants an extra Build Stables/Wood Rooms action during harvest outside the normal action-space dispatch; faithfully replicating cell-adjacency/cost-by-house-type validation outside the engine's private build methods risks diverging from the real rules.",
   "text": "Each harvest in which you have at least 5 wood in your supply, you can discard down to 5 wood to take a \"Build Stables\" or \"Build Wood Rooms\" action by paying the usual costs.",
   "type": "occupation"
  },
  "D130": {
   "deck": "D",
-  "implemented": false,
+  "has_card_action": true,
   "min_players": 3,
   "name": "Recreational Carpenter",
-  "reason": "Recreational Carpenter: same as D129 -- a free Build Rooms action outside the action-space dispatch, replicating private room-building validation.",
   "text": "At the end of each work phase in which you did not use the \"Meeting Place\" action space, you can take a \"Build Rooms\" action without placing a person.",
   "type": "occupation"
  },
@@ -4998,10 +4990,8 @@
  },
  "E159": {
   "deck": "E",
-  "implemented": false,
   "min_players": 4,
   "name": "Head of the Family",
-  "reason": "Head of the Family: requires using a room-building/family-growth action space already occupied by another player; placing on occupied spaces is explicitly unsupported.",
   "text": "You can use any room building or family growth action space, even if another player has already placed a person on it.",
   "type": "occupation"
  },
@@ -6758,10 +6748,9 @@
    "stone": 4
   },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Encircling Wall",
   "points": 2,
-  "reason": "grants a free Build Fences sub-action with a player-chosen fence layout from a card's play effect; no channel carries open-ended fence-edge parameters outside the normal placement flow (same gap as B088/B093/B130)",
   "text": "When you play this card, you may immediately fence 1 space in your farmyard. (You do not need to pay Wood for the fences).",
   "type": "minor"
  },
@@ -9241,7 +9230,7 @@
   "deck": "I",
   "implemented": false,
   "name": "Fence Builder",
-  "reason": "grants a follow-up Build Fences action with a player-chosen action-space marker AND player-chosen fence edges; open-ended fence-edge parameters have no channel outside the normal placement flow (same gap as B088/B093/B130).",
+  "reason": "reassessed against sub_actions.build_fences: the follow-up fence build itself (with player-chosen edges) is expressible now (space_used hook on a marked space + card_action, params channel for the edges). Still gated on a different, unfixed piece: placing the marker spends one of the player's 15 physical fence pieces ('from now on, you have only 14 fences available for building') PERMANENTLY, including for their ordinary Fencing-space builds -- but MAX_FENCES is a hardcoded global constant state.py's can_build_fences/build_fences check directly, with no per-player cap-reduction hook (cost_mod only adjusts PRICE, never the 15-fence count). Registering the marker+bonus-build half while silently dropping the '-1 max fences' consequence would make the card strictly better than printed (a free extra fence-build ability with no offsetting cost), which is the wrong direction to approximate in --unlike e.g. Carpenter's Axe's omitted clause, which only ever makes a card weaker than printed -- so it stays fully unimplemented rather than half-registered.",
   "text": "When you play this card, place one of your fences on an action space of your choice. If you use an action on this action space, you can also build fences as an additional action.",
   "type": "occupation"
  },
@@ -9793,9 +9782,9 @@
    "wood": 1
   },
   "deck": "K",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Bread Paddle",
-  "reason": "requires triggering a full bake-bread sub-action outside the spaces/moments the engine currently allows one (bake_on_spaces only wires into the farmland/cultivation space handlers, and grain_utilization/bake_on_build cover the rest); 'whenever you play an occupation' has no such hook, and cards cannot invoke the engine's private _do_bake from a deck module.",
   "text": "Whenever you play an occupation, you may also bake bread.",
   "type": "minor"
  },

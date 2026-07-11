@@ -19,7 +19,7 @@ from server.agricola.cards import (
     needs_occupations, exact_occupations, combine, card_fields,
     modified_cost, fire, fire_player, bake_bonus,
 )
-from server.agricola import cards
+from server.agricola import cards, sub_actions
 from server.agricola.state import (
     ANIMAL_TYPES, TOTAL_ROUNDS, HARVEST_ROUNDS, MAJOR_IMPROVEMENTS,
     FIREPLACES, COOKING_HEARTHS, NUM_CELLS, compute_pastures, plowable_cells,
@@ -37,10 +37,6 @@ UNIMPLEMENTED = {
     "FR014": "requires a food stash usable only to pay Occupation costs; "
              "the occupation-cost payment path has no hook for an "
              "alternate resource source (same gap as B155)",
-    "FR018": "grants a free Build Fences sub-action with a player-chosen "
-             "fence layout from a card's play effect; no channel carries "
-             "open-ended fence-edge parameters outside the normal "
-             "placement flow (same gap as B088/B093/B130)",
     "FR025": "lets a played minor be discarded to fully pay for a major "
              "improvement, and treats Clay/Stone Ovens as minors for "
              "other cards' prerequisites; neither an alternate-payment-"
@@ -556,6 +552,27 @@ def _diary_occ(state, player, inst, ctx):
 
 compendium_card("FR017", prereq=needs_occupations(2),
                 hooks={"occupation_played": _diary_occ})
+
+
+# ── FR018 Encircling Wall ────────────────────────────────────────────
+# "When you play this card, you may immediately fence 1 space in your
+# farmyard. (You do not need to pay Wood for the fences.)" Fence-edge
+# layout is open-ended, so it rides the play action's own params (the
+# Shifting Cultivation shape); "1 space" is enforced by checking the
+# farmyard cell count newly enclosed after the build, not just trusting
+# the edge count (an enclosure can take 1-3 edges depending on
+# adjacency to existing pastures).
+def _encircling_wall_play(state, player, inst, ctx):
+    fences = (ctx.get("params") or {}).get("fences")
+    if not fences:
+        return
+    before = {i for pa in compute_pastures(player) for i in pa}
+    sub_actions.build_fences(state, player, fences, ctx["log"], cost_override="free")
+    after = {i for pa in compute_pastures(player) for i in pa}
+    if len(after - before) != 1:
+        raise ValueError("Encircling Wall: must enclose exactly 1 new farmyard space")
+
+compendium_card("FR018", hooks={"play": _encircling_wall_play})
 
 
 # ── FR019 Evening Prayer ──────────────────────────────────────────────

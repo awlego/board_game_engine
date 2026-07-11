@@ -927,3 +927,36 @@ def test_chiefs_daughter_score_bonus_by_house_type(engine):
     assert score_fn(s, p, inst) == 1
     p["house_type"] = "wood"
     assert score_fn(s, p, inst) == 0
+
+
+# ── E159 Head of the Family ─────────────────────────────────────────
+
+def test_head_of_family_uses_occupied_farm_expansion(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    put_in_play(s, first, "E159")
+    fe = next(sp for sp in s["action_spaces"] if sp["id"] == "farm_expansion")
+    fe["occupied_by"] = other
+    p = s["players"][first]
+    cell = sub_actions.buildable_room_cells(p)[0]
+    give(s, first, wood=5, reed=2)
+    pid = p["player_id"]
+    s = place(engine, s, {"kind": "place", "space": "farm_expansion",
+                          "rooms": [cell]})
+    p = s["players"][first]
+    assert p["cells"][cell]["type"] == "room"
+    fe = next(sp for sp in s["action_spaces"] if sp["id"] == "farm_expansion")
+    assert fe["occupied_by"] == other
+    assert first in fe["extra_occupants"]
+
+
+def test_no_bonus_on_unrelated_occupied_space(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    put_in_play(s, first, "E159")
+    forest = next(sp for sp in s["action_spaces"] if sp["id"] == "forest")
+    forest["occupied_by"] = other
+    with pytest.raises(ValueError):
+        place(engine, s, {"kind": "place", "space": "forest"})

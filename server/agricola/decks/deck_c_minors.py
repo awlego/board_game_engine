@@ -14,7 +14,7 @@ is noted per-card below where it applies.
 
 from server.agricola.cards import (
     compendium_card, prompt_choice, add_goods, animal_totals_of,
-    needs_occupations, needs_grain_field, card_fields,
+    needs_occupations, needs_grain_field, card_fields, CARDS,
 )
 from server.agricola import sub_actions
 from server.agricola.state import (
@@ -30,11 +30,10 @@ UNIMPLEMENTED = {
             "cattle) aren't expressible via the flat extra_rooms/"
             "house_capacity queries",
     "C013": "renovating directly from wood to stone, skipping the clay "
-            "stage, requires overriding the fixed RENOVATION_TARGET "
-            "sequence -- not exposed to cost_mod",
-    "C015": "grants an extra 'Build Fences' action tied to using a "
-            "specific action space -- only bake_on_spaces exists for that "
-            "trigger shape, and fences need a whole layout choice besides",
+            "stage: sub_actions.renovate hardcodes RENOVATION_TARGET = "
+            "{wood: clay, clay: stone} internally with no override/ctx "
+            "channel to redirect a wood house straight to stone, and "
+            "sub_actions.py can't be edited -- still not expressible.",
     "C021": "reacts to an action-space card being revealed -- no reveal "
             "hook exists (only round_start/space_used)",
     "C022": "moves the first-placed person to this card and grants an "
@@ -48,9 +47,6 @@ UNIMPLEMENTED = {
             "harvest', and replicating family-growth bookkeeping "
             "(people_total/newborns/family_growth event) from a deck "
             "module isn't supported",
-    "C028": "grants an extra 'play an occupation' action tied to using "
-            "another action space -- playing occupations is "
-            "engine-internal (_play_occupation), not exposed to hooks",
     "C031": "bonus equals the sum of the player's other negative score "
             "categories; computing that from within score_bonus risks "
             "recursing back into score_bonuses/score_player",
@@ -179,6 +175,77 @@ def _cattle_farm_holds(state, player, inst):
     return {"types": {"cattle": len(compute_pastures(player))}}
 
 compendium_card("C012", holds_animals=_cattle_farm_holds)
+
+
+# ── C015 Trellis ────────────────────────────────────────────────────
+# "Each time before you use the Take 1 Wild Boar accumulation space, you
+# can take a Build Fences action. (You must pay wood for the fences as
+# usual.)" (the embedded "(Cost 2F.)... next to field tiles" clause is
+# bleed from an unrelated card, per this module's docstring.) "Before"
+# vs "after" the Pig Market use makes no functional difference here --
+# the bonus fence build doesn't consume a placement or interact with
+# Pig Market's own resolution -- so this hooks the (always-fired)
+# space_used event; the fence layout is open-ended, so it's banked as a
+# credit and spent via card_action.
+def _trellis_space_used(state, player, inst, ctx):
+    if ctx["actor"] != player["index"] or ctx["space_id"] != "pig_market":
+        return
+    inst["data"]["credits"] = inst["data"].get("credits", 0) + 1
+    ctx["log"].append(f"{player['name']}'s Trellis grants a Build Fences action")
+
+
+def _trellis_available(state, player, inst):
+    return inst["data"].get("credits", 0) > 0 and sub_actions.can_build_fences(state, player)
+
+
+def _trellis_apply(state, player, inst, ctx):
+    if inst["data"].get("credits", 0) <= 0:
+        raise ValueError("Trellis: no Build Fences action available")
+    fences = (ctx.get("params") or {}).get("fences") or []
+    sub_actions.build_fences(state, player, fences, ctx["log"])
+    inst["data"]["credits"] -= 1
+
+compendium_card(
+    "C015", prereq=needs_occupations(2),
+    hooks={"space_used": _trellis_space_used},
+    card_action={"available": _trellis_available, "apply": _trellis_apply,
+                "description": "Build fences (Trellis, after using Pig Market)"})
+
+
+# ── C028 Teacher's Desk ─────────────────────────────────────────────
+# "Each time you use the Major Improvement or Renovation and Improvement
+# action space, you can also play 1 occupation at an occupation cost of
+# 1 food." Both trigger spaces and the target occupation are enumerable,
+# so this resolves immediately via prompt_choice/resolve_choice (the
+# Educator/D089 Stablehand shape) instead of a banked card_action.
+def _teachers_desk_space_used(state, player, inst, ctx):
+    if ctx["actor"] != player["index"] \
+            or ctx["space_id"] not in ("major_improvement", "house_redevelopment"):
+        return
+    playable = [cid for cid in player["hand_occupations"]
+               if sub_actions.can_play_occupation(state, player, cid,
+                                                  cost_override={"food": 1})]
+    if not playable:
+        return
+    options = ["Decline"] + [CARDS[cid]["name"] for cid in playable]
+    prompt_choice(state, player, inst["id"],
+                 "Teacher's Desk: play an occupation for 1 food?", options,
+                 data={"hand": playable})
+
+
+def _teachers_desk_choice(state, player, inst, ctx):
+    if ctx["index"] == 0:
+        return
+    cid = ctx["data"]["hand"][ctx["index"] - 1]
+    if cid in player["hand_occupations"] and \
+            sub_actions.can_play_occupation(state, player, cid, cost_override={"food": 1}):
+        sub_actions.play_occupation(state, player, cid, ctx["log"],
+                                    cost_override={"food": 1})
+
+compendium_card(
+    "C028", prereq=needs_occupations(1),
+    hooks={"space_used": _teachers_desk_space_used},
+    resolve_choice=_teachers_desk_choice)
 
 
 def _c083_play(state, player, inst, ctx):

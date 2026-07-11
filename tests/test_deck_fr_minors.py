@@ -1013,3 +1013,33 @@ def test_abandoned_willow_cannot_remove_planted_or_non_field_cell(engine):
     with pytest.raises(ValueError):
         place(engine, s, {"kind": "place", "space": "meeting_place",
                           "minor": {"card": "FR001", "params": {"cell": 2}}})
+
+
+# ── FR018 Encircling Wall ────────────────────────────────────────────
+
+def test_encircling_wall_free_fence(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "FR018")
+    give(s, first, stone=4)  # the card's own printed cost
+    pid = s["players"][first]["player_id"]
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "FR018",
+                                   "params": {"fences": list(cell_edges(0))}}})
+    p = s["players"][first]
+    assert p["resources"]["wood"] == 0  # no wood spent on the fence
+    from server.agricola.state import compute_pastures
+    assert len(compute_pastures(p)) == 1
+
+
+def test_encircling_wall_rejects_more_than_one_space(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "FR018")
+    give(s, first, stone=4)
+    # Enclosing cells 0 and 2 as one pasture opens 2 new farmyard spaces,
+    # not the printed "1 space".
+    fences = sorted(set(cell_edges(0)) | set(cell_edges(1)) | set(cell_edges(2)))
+    with pytest.raises(ValueError):
+        place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "FR018", "params": {"fences": fences}}})

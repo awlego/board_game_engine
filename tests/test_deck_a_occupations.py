@@ -6,7 +6,7 @@ import os
 import pytest
 
 from server.agricola.engine import AgricolaEngine
-from server.agricola import cards
+from server.agricola import cards, sub_actions
 from server.agricola.decks import deck_a_occupations
 from server.agricola.state import (
     cell_edges, compute_pastures, create_player,
@@ -698,3 +698,99 @@ def test_woolgrower_capacity_tracks_completed_feeding_phases(engine):
     s["harvest_index"] = 2
     s["phase"] = "feeding"
     assert holds(s, p, inst) == {"types": {"sheep": 1}}
+
+
+# ── A095 Angler ──────────────────────────────────────────────────────
+
+def test_angler_fishing_bonus_builds_improvement(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "A095")
+    give(s, first, wood=2, stone=2)
+    p = s["players"][first]
+    log = []
+    engine._fire(s, "space_used", p,
+                {"space_id": "fishing", "goods": {"food": 2}, "occupants": [first]},
+                log)
+    assert s["prompts"] and s["prompts"][0]["type"] == "choice"
+    choices = s["prompts"][0]["data"]["choices"]
+    idx = next(i for i, c in enumerate(choices) if c == ("major", "joinery"))
+    pid = p["player_id"]
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": idx + 1}).new_state
+    assert "joinery" in s["players"][first]["improvements"]
+
+
+def test_angler_no_bonus_above_2_food(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "A095")
+    p = s["players"][first]
+    log = []
+    engine._fire(s, "space_used", p,
+                {"space_id": "fishing", "goods": {"food": 3}, "occupants": [first]},
+                log)
+    assert not s["prompts"]
+
+
+# ── A149 House Artist ────────────────────────────────────────────────
+
+def test_house_artist_discounted_room(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "A149")
+    p = s["players"][first]
+    log = []
+    engine._fire(s, "space_used", p,
+                {"space_id": "traveling_players", "goods": {}, "occupants": [first]},
+                log)
+    inst = next(i for i in p["occupations"] if i["id"] == "A149")
+    assert inst["data"]["credits"] == 1
+    cell = sub_actions.buildable_room_cells(p)[0]
+    give(s, first, wood=5, reed=1)  # normal cost 5 wood/2 reed, -1 reed discount
+    pid = p["player_id"]
+    s = engine.apply_action(s, pid, {
+        "kind": "card_action", "card": "A149",
+        "params": {"cells": [cell]}}).new_state
+    p = s["players"][first]
+    assert p["cells"][cell]["type"] == "room"
+    assert p["resources"]["wood"] == 0
+    assert p["resources"]["reed"] == 0
+
+
+# ── A150 Stagehand ───────────────────────────────────────────────────
+
+def test_stagehand_reacts_to_other_player(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    put_in_play(s, first, "A150")
+    p = s["players"][first]
+    opp = s["players"][other]
+    log = []
+    engine._fire(s, "space_used", opp,
+                {"space_id": "traveling_players", "goods": {}, "occupants": [other]},
+                log)
+    inst = next(i for i in p["occupations"] if i["id"] == "A150")
+    assert inst["data"]["credits"] == 1
+    give(s, first, wood=2)
+    empty_cell = next(i for i, c in enumerate(p["cells"])
+                      if c["type"] == "empty" and not c["stable"])
+    pid = p["player_id"]
+    s = engine.apply_action(s, pid, {
+        "kind": "card_action", "card": "A150",
+        "params": {"kind": "stables", "cells": [empty_cell]}}).new_state
+    p = s["players"][first]
+    assert p["cells"][empty_cell]["stable"] is True
+
+
+def test_stagehand_no_bonus_from_own_use(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "A150")
+    p = s["players"][first]
+    log = []
+    engine._fire(s, "space_used", p,
+                {"space_id": "traveling_players", "goods": {}, "occupants": [first]},
+                log)
+    inst = next(i for i in p["occupations"] if i["id"] == "A150")
+    assert inst["data"].get("credits", 0) == 0

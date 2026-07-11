@@ -28,9 +28,6 @@ from server.agricola.state import (
 )
 
 UNIMPLEMENTED = {
-    "B001": "requires bundling a free renovation with a follow-on free "
-            "fence build (player-chosen layout) as one atomic effect; no "
-            "hook combines renovation + fencing sub-actions",
     "B007": "requires major-improvement board-row ('bottom row') "
             "metadata, which the engine's MAJOR_IMPROVEMENTS table "
             "doesn't track",
@@ -44,8 +41,14 @@ UNIMPLEMENTED = {
             "and removing them later — the guest-token/extra-people "
             "mechanic the guide marks unsupported",
     "B026": "requires substituting Build Fences for one of Grain "
-            "Utilization's own sub-actions; there is no pre-action hook "
-            "to alter a space's legal sub-actions",
+            "Utilization's own sub-actions. sub_actions.build_fences can "
+            "perform the fence build itself now, but nothing exposes a "
+            "hook to inject an alternate action CHOICE into an existing "
+            "action space's own dispatch (_resolve_space's grain_"
+            "utilization branch is a fixed sow/bake pair in engine.py); "
+            "unlike bake_on_spaces (hard-wired specifically for adding "
+            "Bake Bread to OTHER spaces), there's no analogous mechanism "
+            "for adding Build Fences as a substitute action here.",
     "B029": "requires detecting 'use a Cooking improvement' as a "
             "discrete same-turn event; cook conversions are a static "
             "rate query (raw_values/cook), never a fired event",
@@ -124,6 +127,34 @@ def _play_occupation_for_free(state, player, cid, log):
                 "extra": extra}
     fire(state, "occupation_played", fire_ctx)
     return extra
+
+
+# ── B001 Upscale Lifestyle ───────────────────────────────────────────
+# "You immediately get 5 clay and a Renovation action. If you take the
+# action, you must pay the renovation cost." (the embedded "(Cost 2F.)"
+# is bleed from an unrelated card, per this module's docstring)
+# "Immediately fence a farmyard space, without paying wood for the
+# fences. (If you already have pastures, the new one must be adjacent to
+# an existing one.)" -- the adjacency clause is just the engine's normal
+# "all pastures form one connected group" rule (state.
+# validate_fence_layout), not a special restriction; "without paying
+# wood" makes the follow-on fence build free since wood is a fence's
+# only cost component. The 5 clay is credited directly (not via
+# ctx["extra"], which is only merged after this hook returns) so it's
+# actually available to help pay for the renovation in the same call.
+def _upscale_lifestyle_play(state, player, inst, ctx):
+    grant_goods(state, player, {"clay": 5}, ctx["log"])
+    ctx["log"].append(f"{player['name']}'s Upscale Lifestyle grants 5 clay")
+    params = ctx.get("params") or {}
+    if not params.get("renovate"):
+        return
+    sub_actions.renovate(state, player, ctx["log"])
+    fences = params.get("fences")
+    if fences:
+        sub_actions.build_fences(state, player, fences, ctx["log"],
+                                 cost_override="free")
+
+compendium_card("B001", cost={"wood": 3}, hooks={"play": _upscale_lifestyle_play})
 
 
 # ── B003 Moonshine ────────────────────────────────────────────────────

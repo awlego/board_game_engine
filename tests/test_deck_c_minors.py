@@ -43,7 +43,8 @@ def test_registration_completeness():
 
 # ── Smoke test: every implemented card gets played once ──────────────
 
-_NEEDS_OCC = {"C034": 2, "C036": 1, "C058": 1, "C076": 3, "C084": 2}
+_NEEDS_OCC = {"C034": 2, "C036": 1, "C058": 1, "C076": 3, "C084": 2,
+             "C015": 2, "C028": 1}
 _DUMMY_OCCS = ["occ_woodcutter", "occ_reed_collector", "occ_clay_digger"]
 
 
@@ -755,3 +756,52 @@ def test_cattle_farm_holds_1_cattle_per_pasture(engine):
     inst["held"] = {"sheep": 1}
     ok, err = cards.validate_held(s, p)
     assert not ok  # only cattle allowed
+
+
+# ── C015 Trellis ────────────────────────────────────────────────────
+
+def test_trellis_pig_market_bonus_fence(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "occ_woodcutter")
+    put_in_play(s, first, "occ_reed_collector")  # satisfy Req 2 occ.
+    put_in_play(s, first, "C015")
+    p = s["players"][first]
+    log = []
+    engine._fire(s, "space_used", p,
+                {"space_id": "pig_market", "goods": {"boar": 1}, "occupants": [first]},
+                log)
+    inst = next(i for i in p["minors"] if i["id"] == "C015")
+    assert inst["data"]["credits"] == 1
+    give(s, first, wood=4)
+    pid = p["player_id"]
+    s = engine.apply_action(s, pid, {
+        "kind": "card_action", "card": "C015",
+        "params": {"fences": list(cell_edges(0))}}).new_state
+    p = s["players"][first]
+    assert len(compute_pastures(p)) == 1
+    assert p["resources"]["wood"] == 0
+
+
+# ── C028 Teacher's Desk ──────────────────────────────────────────────
+
+def test_teachers_desk_occupation_after_major_improvement_space(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "occ_woodcutter")  # satisfy Req 1 occ.
+    put_in_play(s, first, "C028")
+    give_card(s, first, "occ_reed_collector")
+    give(s, first, food=1)
+    p = s["players"][first]
+    food_before = p["resources"]["food"]
+    log = []
+    engine._fire(s, "space_used", p,
+                {"space_id": "major_improvement", "goods": {}, "occupants": [first]},
+                log)
+    assert s["prompts"] and s["prompts"][0]["type"] == "choice"
+    idx = s["prompts"][0]["data"]["hand"].index("occ_reed_collector")
+    pid = p["player_id"]
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": idx + 1}).new_state
+    p = s["players"][first]
+    assert any(i["id"] == "occ_reed_collector" for i in p["occupations"])
+    assert p["resources"]["food"] == food_before - 1

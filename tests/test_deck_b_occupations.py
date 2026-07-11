@@ -14,7 +14,7 @@ import pytest
 from server.agricola.engine import AgricolaEngine
 from server.agricola import cards
 from server.agricola.decks import deck_b_occupations as deck_b
-from server.agricola.state import cell_edges, animal_counts
+from server.agricola.state import cell_edges, animal_counts, compute_pastures
 
 
 @pytest.fixture
@@ -126,7 +126,12 @@ def test_card_can_be_played(engine, code):
     give(s, first, food=20, wood=20, clay=20, reed=20, stone=20, grain=20,
         vegetable=20)
     pid = s["players"][first]["player_id"]
-    s = place(engine, s, {"kind": "place", "space": "lessons", "card": code})
+    action = {"kind": "place", "space": "lessons", "card": code}
+    if code == "B093":
+        # Needs an explicit params.rounds choice (2, 3, or 4) -- no
+        # default makes sense, so the smoke test picks one.
+        action["params"] = {"rounds": 2}
+    s = place(engine, s, action)
     s = resolve_all_prompts(engine, s, pid)
     p = s["players"][first]
     assert any(i["id"] == code for i in p["occupations"])
@@ -662,3 +667,92 @@ def test_sweep_no_bonus_off_target(engine):
     clay_before = s["players"][first]["resources"]["clay"]
     s = place(engine, s, {"kind": "place", "space": "grain_seeds"})
     assert s["players"][first]["resources"]["clay"] == clay_before
+
+
+# ── B088 Established Person ─────────────────────────────────────────
+
+def test_established_person_free_renovation(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "B088")
+    give(s, first, food=1)
+    pid = s["players"][first]["player_id"]
+    s = place(engine, s, {"kind": "place", "space": "lessons", "card": "B088"})
+    p = s["players"][first]
+    assert p["house_type"] == "clay"
+    assert p["resources"]["clay"] == 0  # renovation was free
+
+
+def test_established_person_renovation_then_fence(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "B088")
+    give(s, first, food=1, wood=4)  # fences cost the normal amount here
+    pid = s["players"][first]["player_id"]
+    s = place(engine, s, {"kind": "place", "space": "lessons", "card": "B088",
+                          "params": {"fences": list(cell_edges(0))}})
+    p = s["players"][first]
+    assert p["house_type"] == "clay"
+    assert p["resources"]["wood"] == 0
+    assert len(compute_pastures(p)) == 1
+
+
+def test_established_person_fence_unaffordable_rolls_back(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "B088")
+    give(s, first, food=1)  # no wood -- the follow-on fence build can't be paid
+    with pytest.raises(ValueError):
+        place(engine, s, {"kind": "place", "space": "lessons", "card": "B088",
+                          "params": {"fences": list(cell_edges(0))}})
+    # The whole action (including the free renovation) rolled back.
+    p = s["players"][first]
+    assert "B088" in p["hand_occupations"]
+    assert p["house_type"] == "wood"
+
+
+def test_established_person_requires_exactly_2_rooms(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    p["cells"][0]["type"] = "room"  # now 3 rooms
+    give_card(s, first, "B088")
+    give(s, first, food=1)
+    with pytest.raises(ValueError):
+        place(engine, s, {"kind": "place", "space": "lessons", "card": "B088"})
+
+
+# ── B093 Little Stick Knitter (Sow/Build Fences via scheduled food) ──
+
+def test_little_stick_knitter_b_schedule_and_sow(engine):
+    # Solo, so current_player never advances away from this player between
+    # the play and the later card_action -- sidesteps the (expected, see
+    # decks/GUIDE.md) rotation-timing gap for banked-credit card_actions.
+    s = make_state(engine, 1)
+    first = s["current_player"]
+    give_card(s, first, "B093")
+    give(s, first, food=3)  # 1 for the occupation, 2 to schedule
+    pid = s["players"][first]["player_id"]
+    s = place(engine, s, {"kind": "place", "space": "lessons", "card": "B093",
+                          "params": {"rounds": 2}})
+    p = s["players"][first]
+    inst = next(i for i in p["occupations"] if i["id"] == "B093")
+    start_round = s["round"]
+    assert inst["data"]["scheduled_rounds"] == [start_round + 1, start_round + 2]
+    target = inst["data"]["scheduled_rounds"][0]
+    assert s["round_goods"][str(target)][str(first)]["food"] == 1
+
+    s["round"] = target
+    log = []
+    engine._fire(s, "round_start", p, {"round": target}, log, to_all=False)
+    assert inst["data"]["active_round"] == target
+
+    p["cells"][3]["type"] = "field"
+    give(s, first, grain=1)
+    s = engine.apply_action(s, pid, {
+        "kind": "card_action", "card": "B093",
+        "params": {"kind": "sow", "sow": [{"cell": 3, "crop": "grain"}]}}).new_state
+    p = s["players"][first]
+    assert p["cells"][3]["crops"] == {"type": "grain", "count": 3}
+    inst = next(i for i in p["occupations"] if i["id"] == "B093")
+    assert inst["data"]["used_this_round"] is True
