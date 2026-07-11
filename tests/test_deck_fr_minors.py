@@ -6,7 +6,11 @@ import pytest
 from server.agricola.engine import AgricolaEngine
 from server.agricola import cards
 from server.agricola.decks import deck_fr_minors as m
-from server.agricola.state import cell_edges, MAJOR_IMPROVEMENTS
+from server.agricola.state import (
+    cell_edges, MAJOR_IMPROVEMENTS, plowable_cells, validate_fence_layout,
+    table_score,
+)
+from server.agricola.scoring import score_player
 
 from test_agricola import (
     make_state, give, give_card, put_in_play, add_space, place, current_pid,
@@ -39,6 +43,7 @@ _NEEDS_OCC = {"FR002": 3, "FR011": 2, "FR012": 2, "FR017": 2, "FR026": 2,
              "FR037": 1, "FR052": 3, "FR053": 2, "FR054": 4}
 
 _PLAY_PARAMS = {
+    "FR001": {"cell": 0},
     "FR006": {"space": "day_laborer"},
     "FR012": {"spaces": ["forest", "clay_pit", "reed_bank"]},
 }
@@ -50,6 +55,8 @@ def _prep_prereqs(state, pidx, cid):
     if n:
         for i in range(n):
             put_in_play(state, pidx, _DUMMY_OCCS[i])
+    if cid == "FR001":
+        p["cells"][0]["type"] = "field"
     if cid == "FR003":
         p["fences"] = sorted(cell_edges(4))
     if cid == "FR013":
@@ -949,3 +956,60 @@ def test_necklace_no_bonus_without_adjacent_pair(engine):
     s = place(engine, s, {"kind": "place", "space": "forest"})  # other
     assert s["round"] == 2
     assert s["players"][first]["resources"]["food"] == food_before
+
+
+# ── FR001 Abandoned Willow ─────────────────────────────────────────────
+
+def test_abandoned_willow_removes_empty_field_for_4_wood(engine):
+    """FR001: immediately remove 1 empty field, receive 4 wood. Mirrors
+    test_agricola.py's temp_card-only regression
+    (test_fr001_style_remove_empty_field_recipe) with the real card,
+    verifying no hidden invariant breaks on the reverted cell."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    p["cells"][0]["type"] = "field"
+    give_card(s, first, "FR001")
+    wood_before = p["resources"]["wood"]
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "FR001", "params": {"cell": 0}}})
+    p = s["players"][first]
+    assert p["cells"][0]["type"] == "empty"
+    assert p["resources"]["wood"] == wood_before + 4
+    assert any(i["id"] == "FR001" for i in p["minors"])
+
+    # Regression: plow targets, pasture validity, and scoring all still
+    # behave normally on the reverted (now-unused) cell.
+    assert 0 in plowable_cells(p)
+    ok, err, pastures = validate_fence_layout(p, cell_edges(0))
+    assert ok, err
+    assert pastures == [[0]]
+    sc = score_player(p, s)
+    assert sc["fields"] == table_score(
+        "fields", sum(1 for c in p["cells"] if c["type"] == "field"))
+    assert sc["unused_spaces"] <= 0
+
+
+def test_abandoned_willow_requires_an_empty_field(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "FR001")
+    with pytest.raises(ValueError):
+        place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "FR001"}})
+
+
+def test_abandoned_willow_cannot_remove_planted_or_non_field_cell(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    p["cells"][0]["type"] = "field"  # satisfies the prereq
+    p["cells"][1]["type"] = "field"
+    p["cells"][1]["crops"] = {"type": "grain", "count": 3}
+    give_card(s, first, "FR001")
+    with pytest.raises(ValueError):
+        place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "FR001", "params": {"cell": 1}}})
+    with pytest.raises(ValueError):
+        place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "FR001", "params": {"cell": 2}}})

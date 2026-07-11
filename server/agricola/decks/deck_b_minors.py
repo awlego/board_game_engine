@@ -49,21 +49,6 @@ UNIMPLEMENTED = {
     "B029": "requires detecting 'use a Cooking improvement' as a "
             "discrete same-turn event; cook conversions are a static "
             "rate query (raw_values/cook), never a fired event",
-    "B030": "requires an alternate fence-piece representation (wood "
-            "palisades) with its own per-piece scoring. Now supported "
-            "(engine phase 13): player['fence_tokens'] (edge -> granting "
-            "card id) marks a subset of player['fences'] as wood-token "
-            "edges -- fences stays the single geometric truth (no "
-            "changes to validate_fence_layout's/compute_pastures' "
-            "pasture logic), tokens are excluded from the 15-fence cap, "
-            "priced at the card's own fence_token['cost'] instead of "
-            "normal fence pricing, and restricted to border edges (state."
-            "is_border_edge) via sub_actions.build_fences's new `tokens=` "
-            "param; bonus points are a normal score_bonus counting the "
-            "card's own tokens. See decks/GUIDE.md's 'Fence tokens' "
-            "section. Not registered by this pass (temp_card-only tests "
-            "exercise the mechanism); registering it as a real minor is "
-            "a separate pass.",
     "B034": "requires detecting that animals taken from a space were "
             "fully accommodated (not discarded); no post-accommodation "
             "hook exists",
@@ -549,6 +534,29 @@ def _forestry_studies_resolve(state, player, inst, ctx):
 compendium_card("B028", cost={"food": 2},
                 hooks={"space_used": _forestry_studies_space_used},
                 resolve_choice=_forestry_studies_resolve)
+
+
+# ── B030 Wood Palisades ────────────────────────────────────────────────
+# "Instead of a fence piece, you can place 2 wood from your supply on
+# fence spaces at the edge of your farmyard. These fence spaces with 2
+# wood are worth 1 bonus point." Cost 1F. The fence_token mechanism
+# (engine phase 13, see decks/GUIDE.md's "Fence tokens" section) is the
+# whole implementation: fence_token={"cost": {"wood": 2}} lets
+# sub_actions.build_fences's tokens= param price/record/validate the
+# card's own wood-token edges (border-only, excluded from the 15-fence
+# cap); the bonus is a plain score_bonus counting player["fence_tokens"]
+# entries owned by this card. The "(FotM) Up to a maximum of 4 bonus
+# points" ruling is FotM-only and therefore ignored, per this module's
+# convention (deck M / Farmers of the Moor content is out of scope) --
+# in base play the bonus is uncapped, matching the printed text.
+def _wood_palisades_score(state, player, inst):
+    return sum(1 for owner in player.get("fence_tokens", {}).values()
+               if owner == inst["id"])
+
+compendium_card(
+    "B030", fence_token={"cost": {"wood": 2}},
+    score_bonus=_wood_palisades_score,
+)
 
 
 # ── B031 Pottery Yard ─────────────────────────────────────────────────

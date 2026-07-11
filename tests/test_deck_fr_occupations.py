@@ -885,3 +885,27 @@ def test_reformer_holds_1_any_animal_per_occupation(engine):
     inst["held"] = {"sheep": 2, "boar": 1}
     ok, err = cards.validate_held(s, p)
     assert not ok
+
+
+def test_landscape_gardener_is_a_two_stack_occupation_field(engine):
+    """FR089: an occupation that is a 2-stack card field -- visible to
+    cards.card_fields (which scans occupations too), sowable stack by
+    stack, and its on-play optional Sow rides params.sow_items."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    give_card(s, first, "FR089")
+    give(s, first, grain=1, vegetable=1)
+    log = []
+    sub_actions.play_occupation(
+        s, p, "FR089", log, cost_override="free",
+        params={"sow_items": [{"card": "FR089", "crop": "grain",
+                               "stack": 0}]})
+    inst = next(i for i in p["occupations"] if i["id"] == "FR089")
+    assert inst in cards.card_fields(p)
+    assert inst["stacks"][0] == {"type": "grain", "count": 3}
+    assert inst["stacks"][1] is None
+    # The second stack stays independently sowable afterward.
+    sub_actions.sow(s, p, [{"card": "FR089", "crop": "vegetable",
+                            "stack": 1}], [])
+    assert inst["stacks"][1] == {"type": "vegetable", "count": 2}

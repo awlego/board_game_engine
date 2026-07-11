@@ -4,9 +4,12 @@
 import pytest
 
 from server.agricola.engine import AgricolaEngine
-from server.agricola import cards
+from server.agricola import cards, sub_actions
 from server.agricola.decks import deck_b_minors
-from server.agricola.state import MAJOR_IMPROVEMENTS, cell_edges, compute_pastures
+from server.agricola.state import (
+    MAJOR_IMPROVEMENTS, NUM_CELLS, cell_edges, compute_pastures,
+    is_border_edge, all_edge_keys,
+)
 
 from test_agricola import (
     make_state, give, give_card, put_in_play, add_space, place, current_pid,
@@ -792,3 +795,50 @@ def test_final_scenario_cannot_be_played_after_round_13(engine):
     with pytest.raises(ValueError):
         place(engine, s, {"kind": "place", "space": "meeting_place",
                           "minor": {"card": "B023"}})
+
+
+def test_wood_palisades_border_token_priced_scored_and_bypasses_cap(engine):
+    """B030: a wood-token border edge is priced at the card's own 2
+    wood (independent of normal fence pricing), excluded from the
+    15-fence cap, restricted to border edges, and worth 1 bonus point
+    per token -- mirrors test_agricola.py's temp_card proof
+    (test_fence_tokens_mixed_layout_geometry_cost_and_max_fences_bypass)
+    with the real card."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    give_card(s, first, "B030")
+    give(s, first, food=1)
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "B030"}})
+    p = s["players"][first]
+    inst = next(i for i in p["minors"] if i["id"] == "B030")
+
+    for c in p["cells"]:
+        c["type"] = "empty"
+    border = [e for e in all_edge_keys() if is_border_edge(e)]
+    assert len(border) == 16
+    token_edge = border[0]
+    give(s, first, wood=17)  # 15 normal fences + 2 for the 1 token
+    sub_actions.build_fences(s, p, border, [], tokens=[token_edge])
+    assert p["fence_tokens"] == {token_edge: "B030"}
+    assert p["resources"]["wood"] == 0
+    assert compute_pastures(p) == [sorted(range(NUM_CELLS))]
+    assert len(p["fences"]) - len(p["fence_tokens"]) == 15  # cap bypassed
+
+    assert cards.CARDS["B030"]["score_bonus"](s, p, inst) == 1
+
+    # Border-only: an interior edge can't be a token.
+    interior_edge = next(e for e in cell_edges(6) if not is_border_edge(e))
+    with pytest.raises(ValueError):
+        sub_actions.build_fences(s, p, cell_edges(6), [],
+                                 tokens=[interior_edge])
+
+
+def test_wood_palisades_bonus_uncapped_in_base_play():
+    """The '(FotM) Up to a maximum of 4 bonus points' ruling is
+    FotM-only and ignored per the module convention -- base play scores
+    1 point per token with no ceiling."""
+    p = {"fence_tokens": {i: "B030" for i in range(5)}}
+    inst = {"id": "B030"}
+    assert cards.CARDS["B030"]["score_bonus"](None, p, inst) == 5

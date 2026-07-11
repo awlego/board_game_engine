@@ -4,7 +4,7 @@
 import pytest
 
 from server.agricola.engine import AgricolaEngine
-from server.agricola import cards
+from server.agricola import cards, sub_actions
 from server.agricola.decks import deck_k_minors
 
 from test_agricola import (
@@ -37,7 +37,7 @@ _DUMMY_OCCS = ["occ_woodcutter", "occ_reed_collector", "occ_clay_digger",
 
 def _prep_prereqs(state, pidx, cid):
     p = state["players"][pidx]
-    n_occ = {"K108": 3, "K113": 1, "K114": 2, "K115": 3, "K117": 1,
+    n_occ = {"K105": 1, "K108": 3, "K113": 1, "K114": 2, "K115": 3, "K117": 1,
             "K119": 1, "K131": 3, "K133": 2, "K136": 2, "K137": 3,
             "K140": 4, "K142": 2, "K145": 3, "K146": 2}.get(cid)
     if n_occ:
@@ -751,3 +751,27 @@ def test_broom_second_minor_must_be_affordable(engine):
         place(engine, s, {"kind": "place", "space": "meeting_place",
                           "minor": {"card": "K125",
                                    "params": {"card2": "not_a_real_card"}}})
+
+
+def test_acreage_two_independent_grain_stacks(engine):
+    """K105 Acreage: 2 independent grain stacks, sown and harvested
+    separately, req 1 occupation."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "occ_woodcutter")
+    give_card(s, first, "K105")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "K105"}})
+    p = s["players"][first]
+    inst = next(i for i in p["minors"] if i["id"] == "K105")
+    assert inst["stacks"] == [None, None]
+    give(s, first, grain=2)
+    sub_actions.sow(s, p, [{"card": "K105", "crop": "grain", "stack": 0},
+                          {"card": "K105", "crop": "grain", "stack": 1}], [])
+    assert inst["stacks"][0] == {"type": "grain", "count": 3}
+    assert inst["stacks"][1] == {"type": "grain", "count": 3}
+    grain_before = p["resources"]["grain"]
+    engine._start_harvest(s, [])
+    assert p["resources"]["grain"] == grain_before + 2
+    assert inst["stacks"][0]["count"] == 2
+    assert inst["stacks"][1]["count"] == 2

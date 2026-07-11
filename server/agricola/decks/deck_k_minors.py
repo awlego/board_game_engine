@@ -27,14 +27,6 @@ from server.agricola.state import (
 )
 
 UNIMPLEMENTED = {
-    "K105": "Acreage holds 2 independent sowable grain stacks, each "
-            "harvested separately. Now supported by cards.py's "
-            "field={'crops': ..., 'stacks': n} architecture (engine "
-            "phase 13) -- inst['stacks'] holds independent per-stack "
-            "crop slots, sown/harvested independently (see decks/"
-            "GUIDE.md's 'Field stacks' section). Not registered by this "
-            "pass (temp_card-only tests exercise the mechanism); "
-            "registering it as a real minor is a separate pass.",
     "K109": "requires detecting an animal->food conversion during the "
             "feeding phase specifically. Neither _apply_feed's "
             "conversion loop nor _apply_accommodate's cook loop fires "
@@ -116,6 +108,27 @@ def _room_eligible_cells(player):
 
 
 _OVENS = ("clay_oven", "stone_oven")
+
+
+# ── K105 Acreage ──────────────────────────────────────────────────────
+# "When you sow, you can plant grain on this card. There can be up to 2
+# stacks of grain on this card, as shown." Req 1 occ. No cost. The
+# field={"crops": ..., "stacks": 2} architecture (engine phase 13) is
+# the entire implementation -- 2 independent grain stacks, sown and
+# harvested separately (see decks/GUIDE.md's "Field stacks" section).
+# "(Does not count as a field when scoring)" is free, same as every
+# card field. Two rulings are NOT modeled: "the Acreage counts as 2
+# fields towards prerequisites of minor improvements" (this engine's
+# various local "n fields" prereq helpers across deck_*.py modules only
+# ever count farmyard cell tiles, not card fields at all -- a pre-
+# existing limitation, not something specific to this card, and fixing
+# it would mean touching every other deck's own prereq helper) and "the
+# Acreage is not considered adjacent to any farmyard space" (moot --
+# nothing about this card triggers an adjacency query).
+compendium_card(
+    "K105", prereq=needs_occupations(1),
+    field={"crops": ("grain",), "stacks": 2},
+)
 
 
 # ── K106 Bakehouse ────────────────────────────────────────────────────

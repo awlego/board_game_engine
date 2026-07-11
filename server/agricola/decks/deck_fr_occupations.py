@@ -20,6 +20,7 @@ from server.agricola.cards import (
     compendium_card, add_goods, goods_str, prompt_choice,
 )
 import server.agricola.cards as cards
+from server.agricola import sub_actions
 from server.agricola.state import (
     ANIMAL_TYPES, TOTAL_ROUNDS, BUILDING_RESOURCES, NUM_CELLS, MAX_STABLES,
     compute_pastures, plowable_cells, orthogonal_neighbors,
@@ -83,21 +84,6 @@ UNIMPLEMENTED = {
              "GUIDE.md and the deck_d D167 precedent) and there is no "
              "action-parameter channel to take the choice up front "
              "instead.",
-    "FR089": "Landscape Gardener: 'sow on this card as if it were 2 "
-             "fields' (plus, per its full compendium text, 'when you "
-             "play this card, you may take a Sow action'). Now supported "
-             "-- the multi-stack field={'crops': ..., 'stacks': 2} "
-             "architecture (engine phase 13, see decks/GUIDE.md's "
-             "'Field stacks' section) covers the first clause, and the "
-             "second is a plain play hook calling sub_actions.sow(...) "
-             "with an optional params channel (the same shape as "
-             "Shifting Cultivation's on-play plow) -- no new plumbing "
-             "needed for either. '(Does not count as a field when "
-             "scoring)' is true of every card field already (scoring.py "
-             "never counts card fields toward the 'fields' category), so "
-             "that clause is free. Not registered by this pass (temp_"
-             "card-only tests exercise the multi-stack mechanism); "
-             "registering it as a real occupation is a separate pass.",
     "FR091": "Manual Labourer: same generic-gain-tracking gap as FR068/"
              "FR081 -- 'received exactly 1 type of building resource in "
              "any way' can't be observed without a comprehensive per-"
@@ -681,6 +667,27 @@ def _immigrants_son_choice(state, player, inst, ctx):
 
 compendium_card("FR087", hooks={"occupation_played": _immigrants_son_occ},
                 resolve_choice=_immigrants_son_choice)
+
+
+# ── FR089 Landscape Gardener ──────────────────────────────────────────
+# "When you Sow, you may Sow on this card as if it were 2 fields. When
+# you play this card, you may take a 'Sow' action. (This card does not
+# count as a field when scoring.)" An occupation-that-is-a-field:
+# field={..., "stacks": 2} gives it two independently sown/harvested
+# slots (engine phase 13; cards.card_fields scans occupations too). The
+# non-scoring parenthetical is free -- score_player's "fields" tally
+# only ever counts farmyard cell tiles. The on-play Sow is optional and
+# open-ended, so it rides the params channel (Shifting Cultivation's
+# shape): params.sow_items in sub_actions.sow's own item format, which
+# may already include this card's own freshly-available stacks.
+def _landscape_gardener_play(state, player, inst, ctx):
+    items = (ctx.get("params") or {}).get("sow_items")
+    if items:
+        sub_actions.sow(state, player, items, ctx["log"])
+
+compendium_card("FR089",
+                field={"crops": ("grain", "vegetable"), "stacks": 2},
+                hooks={"play": _landscape_gardener_play})
 
 
 # ── FR090 Lemon Trader ────────────────────────────────────────────────

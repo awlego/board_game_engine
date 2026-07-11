@@ -1474,9 +1474,8 @@
    "food": 1
   },
   "deck": "B",
-  "implemented": false,
+  "min_players": 1,
   "name": "Wood Palisades",
-  "reason": "requires an alternate fence-piece representation (wood palisades) with its own per-piece scoring. Now supported (engine phase 13): player['fence_tokens'] (edge -> granting card id) marks a subset of player['fences'] as wood-token edges -- fences stays the single geometric truth (no changes to validate_fence_layout's/compute_pastures' pasture logic), tokens are excluded from the 15-fence cap, priced at the card's own fence_token['cost'] instead of normal fence pricing, and restricted to border edges (state.is_border_edge) via sub_actions.build_fences's new `tokens=` param; bonus points are a normal score_bonus counting the card's own tokens. See decks/GUIDE.md's 'Fence tokens' section. Not registered by this pass (temp_card-only tests exercise the mechanism); registering it as a real minor is a separate pass.",
   "text": "Instead of a fence piece, you can place 2 wood from your supply on fence spaces at the edge of your farmyard. These fence spaces with 2 wood are worth 1 bonus point.",
   "type": "minor"
  },
@@ -6598,10 +6597,9 @@
  },
  "FR001": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Abandoned Willow",
   "prereq_text": "1 empty field",
-  "reason": "removes an empty field from the farmyard, receiving 4 wood. Reassessed for engine phase 13: no new plumbing needed -- a play hook can just flip cell['type'] back to 'empty' (the same primitive Shifting Cultivation already uses to plow a field, run in reverse); plow targets, pasture validity, and scoring all behave correctly on the reverted cell with no further changes (see decks/GUIDE.md's 'FR001 recipe' section and its regression test in tests/test_agricola.py). Not registered by this pass (a temp_card-only test exercises the recipe); registering it as a real minor is a separate pass.",
   "text": "Immediately remove 1 empty field from your farmyard and receive 4 Wood. (That space now counts as unused).",
   "type": "minor"
  },
@@ -7417,9 +7415,15 @@
  },
  "FR089": {
   "deck": "FR",
-  "implemented": false,
+  "field": {
+   "crops": [
+    "grain",
+    "vegetable"
+   ],
+   "stacks": 2
+  },
+  "min_players": 1,
   "name": "Landscape Gardener",
-  "reason": "Landscape Gardener: 'sow on this card as if it were 2 fields' (plus, per its full compendium text, 'when you play this card, you may take a Sow action'). Now supported -- the multi-stack field={'crops': ..., 'stacks': 2} architecture (engine phase 13, see decks/GUIDE.md's 'Field stacks' section) covers the first clause, and the second is a plain play hook calling sub_actions.sow(...) with an optional params channel (the same shape as Shifting Cultivation's on-play plow) -- no new plumbing needed for either. '(Does not count as a field when scoring)' is true of every card field already (scoring.py never counts card fields toward the 'fields' category), so that clause is free. Not registered by this pass (temp_card-only tests exercise the multi-stack mechanism); registering it as a real occupation is a separate pass.",
   "text": "When you Sow, you may Sow on this card as if it were 2 fields. When you play this card, you may take a \"Sow\" action. (This card does not count as a field when scoring.)",
   "type": "occupation"
  },
@@ -9702,10 +9706,15 @@
  },
  "K105": {
   "deck": "K",
-  "implemented": false,
+  "field": {
+   "crops": [
+    "grain"
+   ],
+   "stacks": 2
+  },
+  "min_players": 1,
   "name": "Acreage",
-  "prereq_text": "1 occ",
-  "reason": "Acreage holds 2 independent sowable grain stacks, each harvested separately. Now supported by cards.py's field={'crops': ..., 'stacks': n} architecture (engine phase 13) -- inst['stacks'] holds independent per-stack crop slots, sown/harvested independently (see decks/GUIDE.md's 'Field stacks' section). Not registered by this pass (temp_card-only tests exercise the mechanism); registering it as a real minor is a separate pass.",
+  "prereq_text": "1 occupations",
   "text": "When you sow, you can plant grain on this card. There can be up to 2 stacks of grain on this card, as shown.",
   "type": "minor"
  },

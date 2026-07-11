@@ -570,8 +570,12 @@ def left_neighbor(state, space_id):
 
 
 def card_fields(player):
-    """In-play minor-improvement instances that are fields."""
-    return [i for i in player["minors"] if spec(i).get("field")]
+    """In-play card instances that are fields. Minors and occupations
+    alike (FR089 Landscape Gardener is an occupation-that-is-a-field);
+    every consumer -- sow, empty_fields, the harvest field phase,
+    scoring, needs_grain_field -- goes through this query."""
+    return [i for i in player["minors"] + player["occupations"]
+            if spec(i).get("field")]
 
 
 # ── Field stacks (engine phase 13: multi-stack card fields) ──────────

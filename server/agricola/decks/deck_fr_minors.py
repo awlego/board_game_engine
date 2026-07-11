@@ -22,22 +22,11 @@ from server.agricola.cards import (
 from server.agricola import cards
 from server.agricola.state import (
     ANIMAL_TYPES, TOTAL_ROUNDS, HARVEST_ROUNDS, MAJOR_IMPROVEMENTS,
-    FIREPLACES, COOKING_HEARTHS, compute_pastures, plowable_cells,
+    FIREPLACES, COOKING_HEARTHS, NUM_CELLS, compute_pastures, plowable_cells,
     orthogonal_neighbors, SPACE_POSITIONS, ROUND_SLOTS,
 )
 
 UNIMPLEMENTED = {
-    "FR001": "removes an empty field from the farmyard, receiving 4 "
-             "wood. Reassessed for engine phase 13: no new plumbing "
-             "needed -- a play hook can just flip cell['type'] back to "
-             "'empty' (the same primitive Shifting Cultivation already "
-             "uses to plow a field, run in reverse); plow targets, "
-             "pasture validity, and scoring all behave correctly on the "
-             "reverted cell with no further changes (see decks/GUIDE.md's "
-             "'FR001 recipe' section and its regression test in "
-             "tests/test_agricola.py). Not registered by this pass "
-             "(a temp_card-only test exercises the recipe); registering "
-             "it as a real minor is a separate pass.",
     "FR005": "requires a per-round 'returning home phase' harvest hook; "
              "harvest_field only fires during the 6 official harvests, "
              "not every round",
@@ -212,6 +201,45 @@ def _play_occupation_bypassing_cost(state, player, cid, log):
     fire(state, "occupation_played",
         {"card_id": cid, "log": log, "actor": player["index"], "extra": extra})
     return extra
+
+
+# ── FR001 Abandoned Willow ─────────────────────────────────────────────
+# "Immediately remove 1 empty field from your farmyard and receive 4
+# Wood. (That space now counts as unused)." Req 1 empty field. No new
+# engine plumbing needed -- a play hook flips cell['type'] back to
+# 'empty' via the params channel (Shifting Cultivation's on-play plow,
+# run in reverse); see decks/GUIDE.md's "FR001 recipe" section and
+# test_fr001_style_remove_empty_field_recipe in tests/test_agricola.py
+# for the full regression (plow target, pasture validity, and scoring
+# all verified to behave normally on the reverted cell).
+#
+# Ruling "You may not remove a field which causes other fields to be
+# isolated" is NOT modeled: this engine has no adjacency/connectivity
+# requirement for fields anywhere -- a field cell works identically
+# whether or not it touches another field cell (no scoring category,
+# card effect, or validation anywhere keys off field-to-field
+# adjacency), so there is no "isolated" state to detect or forbid. The
+# GUIDE.md recipe this card follows was explicitly verified to introduce
+# no such hidden invariant.
+def _abandoned_willow_play(state, player, inst, ctx):
+    cell = (ctx.get("params") or {}).get("cell")
+    c = player["cells"][cell] if isinstance(cell, int) \
+        and 0 <= cell < NUM_CELLS else None
+    if c is None or c["type"] != "field" or c["crops"]:
+        raise ValueError("Abandoned Willow: choose an empty field to "
+                         "remove (params.cell)")
+    c["type"] = "empty"
+    player["resources"]["wood"] += 4
+    ctx["log"].append(f"{player['name']} removes an empty field "
+                      "(Abandoned Willow), gets 4 wood")
+
+def _has_empty_field(s, p):
+    return any(c["type"] == "field" and not c["crops"] for c in p["cells"])
+
+compendium_card(
+    "FR001", prereq=(_has_empty_field, "1 empty field"),
+    hooks={"play": _abandoned_willow_play},
+)
 
 
 # ── FR002 Absinthe ────────────────────────────────────────────────────
