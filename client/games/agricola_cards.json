@@ -290,7 +290,7 @@
   "name": "Chapel",
   "points": 3,
   "prereq_text": "2 occ",
-  "reason": "Chapel is itself a usable action space open to all players \u2014 the engine has no mechanism for a card to add a new action space to the board at runtime",
+  "reason": "Chapel: card_space (engine phase 9) now lets a card become an action space open to all players, and the 'another player must first pay you 1 grain' toll is squarely the I337 toll-to-owner pattern. But 'a player who uses it gets 3 bonus points' must credit points to WHICHEVER PLAYER PLACES there, not just Chapel's owner -- and the engine's only bonus-points channel is score_bonus(state, player, inst), which cards.score_bonuses only ever evaluates over a player's OWN in-play cards (in_play(player)). A card living in the owner's minors has no way to credit points to a different (non-owner) placer's score, and cards.grant_goods -- the channel a card_space resolve fn uses to pay a toll to someone who isn't the acting player -- only carries physical resources/animals, never abstract bonus points. Registering only the owner's-own-placement half and silently dropping the cross-player bonus would violate fidelity, so this stays UNIMPLEMENTED until a per-player bonus-points channel independent of card ownership exists.",
   "text": "This is an action space for all. A player who uses it gets 3 bonus points. If another player uses it, they must first pay you 1 grain.",
   "type": "minor"
  },
@@ -1563,11 +1563,10 @@
    "reed": 1
   },
   "deck": "B",
-  "implemented": false,
+  "min_players": 1,
   "name": "Forest Inn",
   "points": 1,
-  "prereq_text": "play in round 6 or before",
-  "reason": "requires creating a new action space usable by every player; card-created shared action spaces aren't supported",
+  "prereq_text": "played in round 6 or before",
   "text": "This is an action space for all. A player who uses it can exchange 5/7/9 wood for 8 wood and 2/4/7 food. When another player uses it, they must first pay you 1 food.",
   "type": "minor"
  },
@@ -3868,9 +3867,8 @@
  },
  "D023": {
   "deck": "D",
-  "implemented": false,
+  "min_players": 1,
   "name": "Pioneering Spirit",
-  "reason": "is its own private action space with round-dependent effects -- engine.py dispatches action spaces by a fixed id set (_resolve_space); a new space type needs an engine change",
   "text": "This card is an action space for you only. In rounds 3-5, it provides a \"Renovation\" action. In rounds 6-8, it provides your choice of 1 vegetable, wild boar or cattle.",
   "type": "minor"
  },
@@ -4062,7 +4060,7 @@
   "name": "Archway",
   "points": 4,
   "prereq_text": "No occ",
-  "reason": "a shared action space with its own effect (bonus food, then use another unoccupied space with that person) -- requires a new action-space type engine.py doesn't dispatch",
+  "reason": "Archway: card_space (engine phase 9) makes the 'bonus food' half trivial (an open-to-all space whose resolve fn returns {food: 1}). But 'immediately before the returning home phase, they can use an UNOCCUPIED action space with the person from this card' needs the PLACER's free choice of ANY currently-unoccupied space on the board (accumulation, animal market, build space, round card, even another card_space) and then that space's own resolution -- a card_space's resolve fn can't re-dispatch another space's resolution (that dispatch lives in engine.py's _resolve_space, which cards.py/decks/*.py can't import -- see CARDS.md's architecture note). The GUIDE.md returning_home recipe used for K269 Acrobat/K289 Countryman only works because their target space is a SINGLE, FIXED, engine-known space reproducible via an existing sub_actions transaction; Archway needs an open-ended choice among whichever spaces happen to be unoccupied that round, which would mean reimplementing engine.py's entire per-space dispatch table outside engine.py. Registering only the bonus-food half and silently dropping the second-action clause (which a ruling notes actually ENDS the work phase -- not a minor effect) would misrepresent the card, so it stays UNIMPLEMENTED.",
   "text": "This card is an action space for all. A player who uses it immediately gets 1 food. Immediately before the returning home phase, they can use an unoccupied action space with the person from this card.",
   "type": "minor"
  },
@@ -5055,10 +5053,8 @@
  },
  "E164": {
   "deck": "E",
-  "implemented": false,
   "min_players": 4,
   "name": "Master Forester",
-  "reason": "Master Forester: adds a brand-new action space to the board and forces any player who uses it to pay the owner food first (a legality-gating replacement effect on other players' actions); neither dynamically adding action spaces nor gating other players' placements is supported.",
   "text": "Include the \"2 Wood\" action card from the 3-player game as an additional forest. At the start of each round, place 2 wood on the card. Any player who uses this action space must pay you 2 food.",
   "type": "occupation"
  },
@@ -8813,10 +8809,9 @@
    "wood": 2
   },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Tavern",
   "points": 2,
-  "reason": "creates a new action space usable by every player (shared action-space creation), matching the B042 precedent -- unsupported.",
   "text": "The Tavern is an additional action space. Whenever another player uses it, they receive 3 food. Whenever you use it, you can choose either to take 3 food or to score 2 bonus points.",
   "type": "minor"
  },
@@ -9273,10 +9268,9 @@
  },
  "I337": {
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Clay Deposit",
-  "prereq_text": "3 occ",
-  "reason": "creates a new action space usable by every player (shared action-space creation), matching the B042 precedent -- unsupported.",
+  "prereq_text": "3 occupations",
   "text": "This card is an additional action space. A player who uses this action space must pay you 1 food and receives 5 clay. If you use the Clay Deposit yourself, you may choose to take 2 bonus points instead of the clay.",
   "type": "minor"
  },

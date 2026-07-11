@@ -694,3 +694,56 @@ def test_hayloft_barn_food_pile_and_family_growth_bypass(engine):
     p = s["players"][first]
     assert p["people_total"] == people_before + 1
     assert not cards.CARDS["B021"]["card_action"]["available"](s, p, inst)
+
+
+def test_forest_inn_toll_and_wood_exchange(engine):
+    """B042 card_space: a non-owner placer pays the owner 1 food first
+    (I337-style toll), then may exchange wood at one of the affordable
+    tiers (5/7/9 wood for a flat 8 wood plus 2/4/7 food)."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    give_card(s, first, "B042")
+    give(s, first, clay=1, reed=1)
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "B042"}})
+    give(s, other, food=3, wood=5)
+    other_food = s["players"][other]["resources"]["food"]
+    owner_food = s["players"][first]["resources"]["food"]
+    other_pid = s["players"][other]["player_id"]
+
+    s = engine.apply_action(
+        s, other_pid, {"kind": "place", "space": "card:B042"}).new_state
+    assert s["players"][other]["resources"]["food"] == other_food - 1
+    assert s["players"][first]["resources"]["food"] == owner_food + 1
+    assert s["prompts"][0]["type"] == "choice"
+    # Only the 5-wood tier is affordable (other has exactly 5 wood).
+    assert s["prompts"][0]["options"] == [
+        "Pay 5 wood for 8 wood and 2 food", "Skip"]
+
+    s = engine.apply_action(s, other_pid, {"kind": "choice", "index": 0}).new_state
+    assert s["players"][other]["resources"]["wood"] == 5 - 5 + 8
+    assert s["players"][other]["resources"]["food"] == other_food - 1 + 2
+
+
+def test_forest_inn_owner_use_has_no_toll(engine):
+    """The card's own owner pays no toll for their own placement."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "B042")
+    give(s, first, clay=1, reed=1)
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "B042"}})
+    other = (first + 1) % 2
+    s["current_player"] = first
+    give(s, first, wood=0)
+    owner_food = s["players"][first]["resources"]["food"]
+    first_pid = s["players"][first]["player_id"]
+
+    s = engine.apply_action(
+        s, first_pid, {"kind": "place", "space": "card:B042"}).new_state
+    assert s["players"][first]["resources"]["food"] == owner_food
+    # No wood to exchange -- only Skip offered.
+    assert s["prompts"][0]["options"] == ["Skip"]
+    s = engine.apply_action(s, first_pid, {"kind": "choice", "index": 0}).new_state
+    assert s["players"][first]["resources"]["wood"] == 0

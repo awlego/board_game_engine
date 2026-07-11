@@ -11,6 +11,7 @@ from server.agricola.cards import (
     compendium_card, add_goods, goods_str, prompt_choice,
     take_bonus, space_bonus, schedule_on_play, harvest_food, on_play_gain,
     animal_totals_of, needs_occupations, needs_grain_field, card_fields,
+    card_space_owner, grant_goods,
 )
 from server.agricola.state import (
     ANIMAL_TYPES, TOTAL_ROUNDS, HARVEST_ROUNDS, MAJOR_IMPROVEMENTS,
@@ -53,18 +54,12 @@ UNIMPLEMENTED = {
            "feeding turn order; _apply_feed applies conversions "
            "directly with no fired event for any card to observe, and "
            "there is no mechanism to reorder the feeding sequence.",
-    "I100": "creates a new action space usable by every player (shared "
-            "action-space creation), matching the B042 precedent -- "
-            "unsupported.",
     "I103": "offers every player (not just the owner) an optional "
             "feeding-phase conversion, taxed to the owner; "
             "card_action/conversions are only ever queried against the "
             "acting player's own in_play cards, and harvest_field only "
             "fires to the acting player's own cards (fire_player), so "
             "this card can't even react to other players' harvests.",
-    "I337": "creates a new action space usable by every player (shared "
-            "action-space creation), matching the B042 precedent -- "
-            "unsupported.",
 }
 
 _OVEN_IDS = ("clay_oven", "stone_oven")
@@ -575,6 +570,42 @@ def _straw_roof_mod(state, player, kind, cost, ctx):
 compendium_card("I99", prereq=needs_grain_field(3), cost_mod=_straw_roof_mod)
 
 
+# ── I100 Tavern ──────────────────────────────────────────────────────
+# An action space for all (card_space), no toll: "If another player uses
+# the Tavern, you yourself do not receive anything from it." A non-owner
+# placer simply gets 3 food. The owner's own placement is a choice
+# between 3 food or 2 bonus points (scored normally, since it's the
+# owner's own card and own scoring pass -- unlike A039 Chapel, this
+# choice is never offered to a non-owner placer, so there's no
+# cross-player-scoring gap to worry about).
+def _tavern_resolve(state, player, inst, action, log):
+    owner = card_space_owner(state, inst)
+    if player is not owner:
+        log.append(f"{player['name']} takes 3 food from the Tavern")
+        return {"food": 3}
+    prompt_choice(state, player, inst["id"],
+                 "Take 3 food or 2 bonus points? (Tavern)",
+                 ["3 food", "2 bonus points"])
+    return {}
+
+
+def _tavern_choice(state, player, inst, ctx):
+    if ctx["index"] == 0:
+        add_goods(ctx["extra"], {"food": 3})
+        ctx["log"].append(f"{player['name']} takes 3 food (Tavern)")
+    else:
+        inst["data"]["bonus"] = inst["data"].get("bonus", 0) + 2
+        ctx["log"].append(f"{player['name']} takes 2 bonus points (Tavern)")
+
+
+compendium_card(
+    "I100",
+    card_space={"resolve": _tavern_resolve},
+    resolve_choice=_tavern_choice,
+    score_bonus=lambda s, p, i: i["data"].get("bonus", 0),
+)
+
+
 # ── I101 Animal Feed ──────────────────────────────────────────────────
 def _animal_feed_score(state, player, inst):
     mine = animal_totals_of(player)
@@ -605,3 +636,42 @@ compendium_card("I102", cost={"wood": 2}, points=1, prereq=needs_occupations(2),
 # ── I104 Weekly Market ────────────────────────────────────────────────
 compendium_card("I104", cost={"grain": 3},
                 hooks={"play": on_play_gain({"vegetable": 2})})
+
+
+# ── I337 Clay Deposit ───────────────────────────────────────────────────
+# An action space for all (card_space). A non-owner placer must pay the
+# owner 1 food and receives 5 clay ("you do not need to have or to pay
+# any food" for the owner's own use). The owner's own placement is
+# instead a choice between the 5 clay or 2 bonus points, no toll.
+def _clay_deposit_resolve(state, player, inst, action, log):
+    owner = card_space_owner(state, inst)
+    if player is not owner:
+        if player["resources"]["food"] < 1:
+            raise ValueError("You must pay 1 food to use the Clay Deposit")
+        player["resources"]["food"] -= 1
+        grant_goods(state, owner, {"food": 1}, log)
+        log.append(f"{player['name']} pays {owner['name']} 1 food")
+        log.append(f"{player['name']} takes 5 clay")
+        return {"clay": 5}
+    prompt_choice(state, player, inst["id"],
+                 "Take 5 clay or 2 bonus points? (Clay Deposit)",
+                 ["5 clay", "2 bonus points"])
+    return {}
+
+
+def _clay_deposit_choice(state, player, inst, ctx):
+    if ctx["index"] == 0:
+        add_goods(ctx["extra"], {"clay": 5})
+        ctx["log"].append(f"{player['name']} takes 5 clay (Clay Deposit)")
+    else:
+        inst["data"]["bonus"] = inst["data"].get("bonus", 0) + 2
+        ctx["log"].append(f"{player['name']} takes 2 bonus points (Clay Deposit)")
+
+
+compendium_card(
+    "I337",
+    prereq=needs_occupations(3),
+    card_space={"resolve": _clay_deposit_resolve},
+    resolve_choice=_clay_deposit_choice,
+    score_bonus=lambda s, p, i: i["data"].get("bonus", 0),
+)

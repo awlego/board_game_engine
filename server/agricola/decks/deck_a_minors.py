@@ -648,9 +648,23 @@ compendium_card(
 
 
 UNIMPLEMENTED["A039"] = (
-    "Chapel is itself a usable action space open to all players — the "
-    "engine has no mechanism for a card to add a new action space to the "
-    "board at runtime")
+    "Chapel: card_space (engine phase 9) now lets a card become an "
+    "action space open to all players, and the 'another player must "
+    "first pay you 1 grain' toll is squarely the I337 toll-to-owner "
+    "pattern. But 'a player who uses it gets 3 bonus points' must "
+    "credit points to WHICHEVER PLAYER PLACES there, not just Chapel's "
+    "owner -- and the engine's only bonus-points channel is "
+    "score_bonus(state, player, inst), which cards.score_bonuses only "
+    "ever evaluates over a player's OWN in-play cards (in_play(player)). "
+    "A card living in the owner's minors has no way to credit points to "
+    "a different (non-owner) placer's score, and cards.grant_goods -- "
+    "the channel a card_space resolve fn uses to pay a toll to someone "
+    "who isn't the acting player -- only carries physical resources/"
+    "animals, never abstract bonus points. Registering only the "
+    "owner's-own-placement half and silently dropping the cross-player "
+    "bonus would violate fidelity, so this stays UNIMPLEMENTED until a "
+    "per-player bonus-points channel independent of card ownership "
+    "exists.")
 
 
 # ── A040 Potter's Yard ────────────────────────────────────────────────

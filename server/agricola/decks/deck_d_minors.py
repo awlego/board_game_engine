@@ -32,9 +32,6 @@ UNIMPLEMENTED = {
     "D022": "places a person on a future round space ahead of normal turn "
             "order -- an out-of-turn/extra placement, the same class as "
             "guest tokens (not supported)",
-    "D023": "is its own private action space with round-dependent effects "
-            "-- engine.py dispatches action spaces by a fixed id set "
-            "(_resolve_space); a new space type needs an engine change",
     "D024": "double placement without the Lasso's animal-market "
             "restriction -- the lasso flag is hardcoded in _apply_place "
             "to require a sheep/pig/cattle market; lifting that needs an "
@@ -46,9 +43,29 @@ UNIMPLEMENTED = {
     "D026": "builds two majors in one action, or builds specific majors "
             "via the Minor-Improvement action slot -- _do_improvement "
             "only builds one major per major-improvement action",
-    "D051": "a shared action space with its own effect (bonus food, then "
-            "use another unoccupied space with that person) -- requires a "
-            "new action-space type engine.py doesn't dispatch",
+    "D051": "Archway: card_space (engine phase 9) makes the 'bonus food' "
+            "half trivial (an open-to-all space whose resolve fn returns "
+            "{food: 1}). But 'immediately before the returning home "
+            "phase, they can use an UNOCCUPIED action space with the "
+            "person from this card' needs the PLACER's free choice of "
+            "ANY currently-unoccupied space on the board (accumulation, "
+            "animal market, build space, round card, even another "
+            "card_space) and then that space's own resolution -- a "
+            "card_space's resolve fn can't re-dispatch another space's "
+            "resolution (that dispatch lives in engine.py's "
+            "_resolve_space, which cards.py/decks/*.py can't import -- "
+            "see CARDS.md's architecture note). The GUIDE.md returning_"
+            "home recipe used for K269 Acrobat/K289 Countryman only "
+            "works because their target space is a SINGLE, FIXED, "
+            "engine-known space reproducible via an existing "
+            "sub_actions transaction; Archway needs an open-ended choice "
+            "among whichever spaces happen to be unoccupied that round, "
+            "which would mean reimplementing engine.py's entire per-"
+            "space dispatch table outside engine.py. Registering only "
+            "the bonus-food half and silently dropping the second-"
+            "action clause (which a ruling notes actually ENDS the work "
+            "phase -- not a minor effect) would misrepresent the card, "
+            "so it stays UNIMPLEMENTED.",
     "D053": "skip your 2nd placement now and use it later in the same "
             "round -- a turn-order deferral the placement flow "
             "(_advance_work/_apply_place) doesn't support",
@@ -500,7 +517,47 @@ compendium_card("D019", prereq=needs_occupations(1),
 
 # D021 Recruitment -- see UNIMPLEMENTED
 # D022 Work Permit -- see UNIMPLEMENTED
-# D023 Pioneering Spirit -- see UNIMPLEMENTED
+
+# ── D023 Pioneering Spirit ───────────────────────────────────────────
+# This card is an action space for you only (card_space, owner_only). In
+# rounds 3-5 it provides a Renovation action (sub_actions.renovate, at
+# normal cost -- still routed through modified_cost, so a Stonecutter-
+# style discount folds in); in rounds 6-8 it's a choice of 1 vegetable,
+# wild boar, or cattle. Outside rounds 3-8 the space simply isn't usable
+# (mirrors the D023-style usable-gate test in test_agricola.py).
+
+
+def _pioneering_spirit_usable(state, player, inst):
+    return 3 <= state["round"] <= 8
+
+
+_PIONEERING_SPIRIT_GOODS = ("vegetable", "boar", "cattle")
+
+
+def _pioneering_spirit_resolve(state, player, inst, action, log):
+    rnd = state["round"]
+    if 3 <= rnd <= 5:
+        sub_actions.renovate(state, player, log)
+        return {}
+    prompt_choice(state, player, inst["id"],
+                 "Choose a good (Pioneering Spirit)",
+                 ["1 vegetable", "1 wild boar", "1 cattle"])
+    return {}
+
+
+def _pioneering_spirit_choice(state, player, inst, ctx):
+    good = _PIONEERING_SPIRIT_GOODS[ctx["index"]]
+    add_goods(ctx["extra"], {good: 1})
+    ctx["log"].append(f"{player['name']} takes 1 {good} (Pioneering Spirit)")
+
+
+compendium_card(
+    "D023",
+    card_space={"owner_only": True, "usable": _pioneering_spirit_usable,
+               "resolve": _pioneering_spirit_resolve},
+    resolve_choice=_pioneering_spirit_choice,
+)
+
 # D024 Brotherly Love -- see UNIMPLEMENTED
 # D025 Witches Dance Floor -- see UNIMPLEMENTED
 # D026 Carpenter's Yard -- see UNIMPLEMENTED

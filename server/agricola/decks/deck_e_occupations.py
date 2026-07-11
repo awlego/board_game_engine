@@ -67,11 +67,6 @@ UNIMPLEMENTED = {
             "Field/Plough-Field-and-Sow action spaces already occupied "
             "by another player; placing on occupied spaces is explicitly "
             "unsupported.",
-    "E164": "Master Forester: adds a brand-new action space to the board "
-            "and forces any player who uses it to pay the owner food "
-            "first (a legality-gating replacement effect on other "
-            "players' actions); neither dynamically adding action spaces "
-            "nor gating other players' placements is supported.",
     "E173": "Chief's Daughter: must react to another player playing the "
             "Chief (E172) WHILE STILL IN HAND (unplayed), but the hook "
             "system only fires events to already-in-play cards "
@@ -377,6 +372,43 @@ def _meat_seller_apply(state, player, inst, ctx):
 compendium_card("E162", card_action={
     "available": _meat_seller_available, "apply": _meat_seller_apply,
     "description": "Convert animals to food (requires a clay/stone oven)"})
+
+
+# ── E164 Master Forester ────────────────────────────────────────────────
+# Adds an extra forest-style action space that gives 2 wood per round
+# (card_space "acc"), open to all -- but unlike a plain accumulation
+# space, a non-owner placer must pay the owner 2 food first ("The food
+# must be paid before the wood is collected"; the owner pays nothing for
+# their own use). "acc" still drives replenishment/the usable-gate's
+# supply check; "resolve" is required on top of it to implement the toll
+# and to read/clear the supply itself (a resolve fn skips the generic
+# accumulation-consuming branch entirely, see GUIDE.md's card_space
+# section), which also naturally satisfies the ruling that a same-use
+# bonus (e.g. Berry Picker) can't retroactively cover the toll -- the
+# toll is deducted before this fn returns, and any other card's
+# space_used-triggered bonus only fires after the engine credits the
+# return value.
+def _master_forester_resolve(state, player, inst, action, log):
+    owner = cards.card_space_owner(state, inst)
+    space = next(s for s in state["action_spaces"]
+                if s["id"] == f"card:{inst['id']}")
+    goods = {k: v for k, v in space["supply"].items() if v}
+    if player is not owner:
+        if player["resources"]["food"] < 2:
+            raise ValueError("You must pay 2 food to use the Master Forester")
+        player["resources"]["food"] -= 2
+        cards.grant_goods(state, owner, {"food": 2}, log)
+        log.append(f"{player['name']} pays {owner['name']} 2 food")
+    space["supply"] = {}
+    if goods:
+        log.append(f"{player['name']} takes " + cards.goods_str(goods))
+    return goods
+
+
+compendium_card(
+    "E164",
+    card_space={"acc": {"wood": 2}, "resolve": _master_forester_resolve},
+)
 
 
 # ── E165 Yeoman Farmer ────────────────────────────────────────────────

@@ -900,3 +900,59 @@ def test_lawn_fertilizer_size1_capacity_and_house_lockout(engine):
     hook(s, p, {"id": "D011", "data": {}},
         {"harvest_index": 1, "log": [], "actor": first, "extra": {}})
     assert p["resources"]["food"] == food + 1
+
+
+def test_pioneering_spirit_owner_only_and_round_windows(engine):
+    """D023 card_space: owner_only, unusable outside rounds 3-8, a
+    Renovation action in rounds 3-5, a choice of 1 vegetable/wild boar/
+    cattle in rounds 6-8."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    give_card(s, first, "D023")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "D023"}})
+    first_pid = s["players"][first]["player_id"]
+    other_pid = s["players"][other]["player_id"]
+
+    # Round 1: outside the window -- unusable even by the owner.
+    s["current_player"] = first
+    valid = engine.get_valid_actions(s, first_pid)
+    assert not any(a["kind"] == "place" and a["space"] == "card:D023"
+                  for a in valid)
+
+    # Round 3: in the window, but owner_only -- not offered to `other`.
+    s["round"] = 3
+    s["current_player"] = other
+    valid = engine.get_valid_actions(s, other_pid)
+    assert not any(a["kind"] == "place" and a["space"] == "card:D023"
+                  for a in valid)
+
+    s["current_player"] = first
+    p = s["players"][first]
+    p["house_type"] = "wood"
+    p["resources"]["clay"] = 10
+    p["resources"]["reed"] = 5
+    rooms_before = sum(1 for c in p["cells"] if c["type"] == "room")
+    s = engine.apply_action(
+        s, first_pid, {"kind": "place", "space": "card:D023"}).new_state
+    p = s["players"][first]
+    assert p["house_type"] == "clay"
+    assert p["resources"]["clay"] == 10 - rooms_before  # room count x 1 clay
+    assert p["resources"]["reed"] == 5 - 1
+
+    # Round 6: the choice-of-goods window.
+    s["round"] = 6
+    s["current_player"] = first
+    s["players"][first]["people_placed"] = 0
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == "card:D023")
+    space["occupied_by"] = None
+    space["extra_occupants"] = []
+    s = engine.apply_action(
+        s, first_pid, {"kind": "place", "space": "card:D023"}).new_state
+    assert s["prompts"][0]["type"] == "choice"
+    assert s["prompts"][0]["options"] == \
+        ["1 vegetable", "1 wild boar", "1 cattle"]
+    veg_before = s["players"][first]["resources"]["vegetable"]
+    s = engine.apply_action(s, first_pid, {"kind": "choice", "index": 0}).new_state
+    assert s["players"][first]["resources"]["vegetable"] == veg_before + 1

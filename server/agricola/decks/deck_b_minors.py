@@ -18,6 +18,7 @@ from server.agricola.cards import (
     round_income, schedule_on_play, harvest_food, on_play_gain,
     animal_totals_of, needs_occupations, exact_occupations,
     needs_grain_field, combine, card_fields, modified_cost, fire,
+    card_space_owner, grant_goods,
 )
 from server.agricola import sub_actions
 from server.agricola.state import (
@@ -76,8 +77,6 @@ UNIMPLEMENTED = {
     "B038": "requires restricting which of the player's own farmyard "
             "cells are legal build/plow targets; no such legality hook "
             "exists (and this isn't a cost_mod)",
-    "B042": "requires creating a new action space usable by every "
-            "player; card-created shared action spaces aren't supported",
     "B059": "requires knowing which action space a minor improvement "
             "was played from; the play hook's ctx carries no space_id "
             "and engine.py can't be edited to add it",
@@ -585,6 +584,54 @@ def _hauberg_play(state, player, inst, ctx):
 
 compendium_card("B041", cost={"food": 3}, prereq=needs_occupations(3),
                 hooks={"play": _hauberg_play})
+
+
+# ── B042 Forest Inn ────────────────────────────────────────────────────
+# An action space for all (card_space). A non-owner placer must first pay
+# the owner 1 food (I337 toll precedent); any placer (owner included) may
+# then choose to exchange 5/7/9 wood for 8 wood and 2/4/7 food -- only
+# tiers the player can currently afford are offered, plus a Skip.
+_FOREST_INN_TIERS = ((5, 2), (7, 4), (9, 7))  # (wood spent, food gained)
+
+
+def _forest_inn_resolve(state, player, inst, action, log):
+    owner = card_space_owner(state, inst)
+    if player is not owner:
+        if player["resources"]["food"] < 1:
+            raise ValueError("You must pay 1 food to use the Forest Inn")
+        player["resources"]["food"] -= 1
+        grant_goods(state, owner, {"food": 1}, log)
+        log.append(f"{player['name']} pays {owner['name']} 1 food")
+
+    options, tiers = [], []
+    for wood, food in _FOREST_INN_TIERS:
+        if player["resources"]["wood"] >= wood:
+            options.append(f"Pay {wood} wood for 8 wood and {food} food")
+            tiers.append((wood, food))
+    options.append("Skip")
+    prompt_choice(state, player, inst["id"],
+                 "Exchange wood at the Forest Inn?", options,
+                 data={"tiers": tiers})
+    return {}
+
+
+def _forest_inn_choice(state, player, inst, ctx):
+    tiers = ctx["data"]["tiers"]
+    if ctx["index"] >= len(tiers):
+        return  # Skip
+    wood, food = tiers[ctx["index"]]
+    player["resources"]["wood"] -= wood
+    add_goods(ctx["extra"], {"wood": 8, "food": food})
+    ctx["log"].append(f"{player['name']} exchanges {wood} wood for 8 wood "
+                      f"and {food} food (Forest Inn)")
+
+
+compendium_card(
+    "B042",
+    prereq=(lambda s, p: s["round"] <= 6, "played in round 6 or before"),
+    card_space={"resolve": _forest_inn_resolve},
+    resolve_choice=_forest_inn_choice,
+)
 
 
 # ── B043 Chophouse ────────────────────────────────────────────────────

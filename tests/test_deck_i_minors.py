@@ -33,7 +33,7 @@ def test_registration_completeness():
 # ── Smoke test: every implemented card gets played once ──────────────
 
 _NEEDS_OCC = {"I63": 1, "I67": 2, "I72": 3, "I74": 2, "I79": 3, "I80": 3,
-             "I90": 2, "I102": 2}
+             "I90": 2, "I102": 2, "I337": 3}
 _DUMMY_OCCS = ["occ_woodcutter", "occ_reed_collector", "occ_clay_digger"]
 
 
@@ -532,3 +532,80 @@ def test_wildlife_reserve_holds_1_sheep_1_boar_1_cattle(engine):
     inst["held"] = {"boar": 2}
     ok, err = cards.validate_held(s, p)
     assert not ok
+
+
+def test_tavern_no_toll_for_non_owner_and_owner_choice(engine):
+    """I100 card_space: no toll ("you yourself do not receive anything
+    from it" when another player uses it) -- a non-owner placer just
+    gets 3 food. The owner's own placement is instead a choice between
+    3 food or 2 bonus points."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    give(s, first, wood=2, stone=2)
+    give_card(s, first, "I100")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "I100"}})
+    owner_food = s["players"][first]["resources"]["food"]
+    other_food = s["players"][other]["resources"]["food"]
+    other_pid = s["players"][other]["player_id"]
+
+    s = engine.apply_action(
+        s, other_pid, {"kind": "place", "space": "card:I100"}).new_state
+    assert s["players"][other]["resources"]["food"] == other_food + 3
+    assert s["players"][first]["resources"]["food"] == owner_food  # untouched
+
+    # The owner's own use is a choice, not an automatic 3 food.
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == "card:I100")
+    space["occupied_by"] = None
+    space["extra_occupants"] = []
+    s["current_player"] = first
+    first_pid = s["players"][first]["player_id"]
+    s = engine.apply_action(
+        s, first_pid, {"kind": "place", "space": "card:I100"}).new_state
+    assert s["prompts"][0]["type"] == "choice"
+    assert s["prompts"][0]["options"] == ["3 food", "2 bonus points"]
+    s = engine.apply_action(s, first_pid, {"kind": "choice", "index": 1}).new_state
+    inst = next(i for i in s["players"][first]["minors"] if i["id"] == "I100")
+    assert inst["data"]["bonus"] == 2
+    assert cards.CARDS["I100"]["score_bonus"](s, s["players"][first], inst) == 2
+
+
+def test_clay_deposit_toll_and_owner_choice(engine):
+    """I337 card_space: a non-owner placer pays the owner 1 food and
+    receives 5 clay; the owner's own placement is a no-toll choice
+    between the 5 clay or 2 bonus points instead."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    for i in range(3):
+        put_in_play(s, first, ["occ_woodcutter", "occ_reed_collector",
+                              "occ_clay_digger"][i])
+    give_card(s, first, "I337")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "I337"}})
+    give(s, other, food=1)
+    other_food = s["players"][other]["resources"]["food"]
+    owner_food = s["players"][first]["resources"]["food"]
+    other_pid = s["players"][other]["player_id"]
+
+    s = engine.apply_action(
+        s, other_pid, {"kind": "place", "space": "card:I337"}).new_state
+    assert s["players"][other]["resources"]["clay"] == 5
+    assert s["players"][other]["resources"]["food"] == other_food - 1
+    assert s["players"][first]["resources"]["food"] == owner_food + 1
+
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == "card:I337")
+    space["occupied_by"] = None
+    space["extra_occupants"] = []
+    s["current_player"] = first
+    first_pid = s["players"][first]["player_id"]
+    owner_food = s["players"][first]["resources"]["food"]
+    s = engine.apply_action(
+        s, first_pid, {"kind": "place", "space": "card:I337"}).new_state
+    assert s["prompts"][0]["type"] == "choice"
+    assert s["prompts"][0]["options"] == ["5 clay", "2 bonus points"]
+    s = engine.apply_action(s, first_pid, {"kind": "choice", "index": 1}).new_state
+    assert s["players"][first]["resources"]["food"] == owner_food  # no toll
+    inst = next(i for i in s["players"][first]["minors"] if i["id"] == "I337")
+    assert inst["data"]["bonus"] == 2

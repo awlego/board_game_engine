@@ -745,3 +745,84 @@ def test_baker_card_action_once_per_harvest(engine):
     cards.CARDS["E150"]["card_action"]["apply"](s, p, inst, ctx)
     assert p["resources"]["grain"] == 1
     assert not cards.CARDS["E150"]["card_action"]["available"](s, p, inst)
+
+
+_SAFE_SPACES = ("day_laborer", "fishing", "grain_seeds", "meeting_place",
+               "forest", "clay_pit", "reed_bank", "traveling_players",
+               "western_quarry", "eastern_quarry", "vegetable_seeds",
+               "copse", "grove", "hollow_3p", "hollow_4p")
+
+
+def test_master_forester_toll_to_owner(engine):
+    """E164 card_space: "acc" replenishes 2 wood every round_start; a
+    non-owner placer must pay the owner 2 food before collecting it (the
+    space isn't usable until the round after it's played, same as any
+    card_space accumulation space)."""
+    s = make_state(engine, 2, seed=7)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    give_card(s, first, "E164")
+    s = place(engine, s, {"kind": "place", "space": "lessons", "card": "E164"})
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == "card:E164")
+    assert space["accumulates"]
+    assert space["supply"] == {}
+
+    while s["round"] == 1:
+        pid = current_pid(engine, s)
+        act = next(a for a in engine.get_valid_actions(s, pid)
+                  if a["kind"] == "place" and a["space"] in _SAFE_SPACES)
+        s = place(engine, s, {"kind": "place", "space": act["space"]})
+
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == "card:E164")
+    assert space["supply"] == {"wood": 2}
+
+    s["current_player"] = other
+    give(s, other, food=2)
+    other_food = s["players"][other]["resources"]["food"]
+    owner_food = s["players"][first]["resources"]["food"]
+    other_pid = s["players"][other]["player_id"]
+    wood_before = s["players"][other]["resources"]["wood"]
+
+    s = engine.apply_action(
+        s, other_pid, {"kind": "place", "space": "card:E164"}).new_state
+    assert s["players"][other]["resources"]["wood"] == wood_before + 2
+    assert s["players"][other]["resources"]["food"] == other_food - 2
+    assert s["players"][first]["resources"]["food"] == owner_food + 2
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == "card:E164")
+    assert space["supply"] == {}
+
+
+def test_master_forester_owner_no_toll_and_insufficient_food_raises(engine):
+    """"If you use the Master Forester yourself, you do not need to have
+    or to pay any food" -- and a non-owner without 2 food is rejected,
+    rolling back cleanly (apply_action's deep copy discards the failed
+    mutation, so the supply is untouched)."""
+    s = make_state(engine, 2, seed=7)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    give_card(s, first, "E164")
+    s = place(engine, s, {"kind": "place", "space": "lessons", "card": "E164"})
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == "card:E164")
+    space["supply"] = {"wood": 2}  # simulate a round_start replenish
+
+    first_pid = s["players"][first]["player_id"]
+    s["current_player"] = first
+    wood_before = s["players"][first]["resources"]["wood"]
+    food_before = s["players"][first]["resources"]["food"]
+    s = engine.apply_action(
+        s, first_pid, {"kind": "place", "space": "card:E164"}).new_state
+    assert s["players"][first]["resources"]["wood"] == wood_before + 2
+    assert s["players"][first]["resources"]["food"] == food_before
+
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == "card:E164")
+    space["occupied_by"] = None
+    space["extra_occupants"] = []
+    space["supply"] = {"wood": 2}
+    s["players"][other]["resources"]["food"] = 0
+    other_pid = s["players"][other]["player_id"]
+    s["current_player"] = other
+    with pytest.raises(ValueError):
+        engine.apply_action(
+            s, other_pid, {"kind": "place", "space": "card:E164"})
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == "card:E164")
+    assert space["supply"] == {"wood": 2}  # unchanged -- rolled back
