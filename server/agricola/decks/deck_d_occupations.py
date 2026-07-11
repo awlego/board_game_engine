@@ -60,9 +60,6 @@ UNIMPLEMENTED = {
             "action spaces are a single shared/global list.",
     "D127": "Hardworking Man: 'this card is an action space for you only' "
             "-- same private-action-space gap as D116.",
-    "D128": "Building Tycoon: reacts to *another* player building rooms, "
-            "but rooms_built fires via fire_player (owner-only) -- other "
-            "players' cards never see it.",
     "D131": "Craftsmanship Promoter: 'build majors from the bottom row "
             "even via a Minor Improvement action' assumes an original-"
             "edition major-improvement-row / minor-vs-major action "
@@ -93,14 +90,22 @@ UNIMPLEMENTED = {
     "D159": "Reed Seller: lets *other* players counter-offer to buy the "
             "reed before the conversion happens -- no engine mechanism "
             "for cross-player intervention on a card ability.",
-    "D161": "Cabbage Buyer: reacts to *any* player's renovation, but "
-            "renovate fires via fire_player (owner-only, not visible to "
-            "other players' cards); it also needs to know what's built "
-            "*after* renovate resolves, which isn't known at hook time.",
-    "D163": "Journeyman Bricklayer: reacts to *another* player's "
-            "renovate-to-stone/stone-room build, but renovate and "
-            "rooms_built both fire owner-only (fire_player) -- not "
-            "visible to other players' cards.",
+    "D161": "Cabbage Buyer: reassessed now that renovate_any (broadcast "
+            "twin) exists -- it fixes the *visibility* half of the "
+            "original gap (any player's renovation is now observable), "
+            "but the SECOND half stands: pricing depends on whether the "
+            "SAME action also built 0/1 minor/1 major improvement "
+            "immediately after, and renovate's ctx carries no space_id "
+            "or other action-boundary marker to correlate with a later "
+            "minor_played/improvement_built broadcast. space_used fires "
+            "once per placement action and could serve as that boundary "
+            "for the house_redevelopment-space case, but not every "
+            "sub_actions.renovate call site is followed by one at all -- "
+            "card_action- and resolve_choice-driven renovates (Builder's "
+            "Trowel E50, Renovation Company A013, B023 Final Scenario) "
+            "happen entirely outside _resolve_space, so a "
+            "'no build followed' pending flag could dangle indefinitely "
+            "or misattribute a later, unrelated build. Still gated.",
     "D164": "Pet Grower: 'if afterward you have no animal in your house' "
             "depends on state *after* accommodation resolves, but "
             "space_used fires before the just-gained animal is "
@@ -686,6 +691,58 @@ compendium_card("D126", hooks={"harvest_field": _field_cultivator_harvest_field}
                 resolve_choice=_field_cultivator_resolve)
 
 
+# ── D128 Building Tycoon ─────────────────────────────────────────────
+# "Each time after another player builds 1 or more rooms, you can give
+# them 1 food to build exactly 1 room yourself. (You must pay the
+# building cost of the room.)" rooms_built_any (broadcast twin) makes
+# the trigger observable; the room's cell is an open-ended target, so
+# this banks a credit -- one per triggering player, since the 1 food is
+# owed to THAT specific player -- spent via card_action (House Artist's
+# shape). "You must pay the building cost" means no discount
+# (cost_override=None still runs the normal build through modified_cost).
+def _building_tycoon_rooms_built(state, player, inst, ctx):
+    if ctx["actor"] == player["index"]:
+        return
+    inst["data"].setdefault("credits", []).append(ctx["actor"])
+    other = state["players"][ctx["actor"]]
+    ctx["log"].append(f"{player['name']}'s Building Tycoon may build a "
+                      f"room (after {other['name']}'s room(s))")
+
+
+def _building_tycoon_available(state, player, inst):
+    if not inst["data"].get("credits") or player["resources"]["food"] < 1:
+        return False
+    return sub_actions.can_build_rooms(state, player)
+
+
+def _building_tycoon_apply(state, player, inst, ctx):
+    credits = inst["data"].get("credits") or []
+    if not credits:
+        raise ValueError("Building Tycoon: no reactive build available")
+    if player["resources"]["food"] < 1:
+        raise ValueError("Building Tycoon: requires 1 food to give away")
+    cells = (ctx.get("params") or {}).get("cells") or []
+    if len(cells) != 1:
+        raise ValueError(
+            "Building Tycoon: choose exactly 1 room (params.cells)")
+    sub_actions.build_rooms(state, player, cells, ctx["log"])
+    player["resources"]["food"] -= 1
+    other = state["players"][credits.pop(0)]
+    cards.grant_goods(state, other, {"food": 1}, ctx["log"])
+    ctx["log"].append(f"{player['name']} gives {other['name']} 1 food "
+                      "(Building Tycoon)")
+
+
+compendium_card(
+    "D128",
+    hooks={"rooms_built_any": _building_tycoon_rooms_built},
+    card_action={"available": _building_tycoon_available,
+                "apply": _building_tycoon_apply,
+                "description": "Give 1 food to build exactly 1 room "
+                               "(Building Tycoon, after another player "
+                               "builds rooms)"})
+
+
 # ── D129 Lumber Virtuoso ─────────────────────────────────────────────
 # "Each harvest in which you have at least 5 wood in your supply, you
 # can discard down to 5 wood to take a Build Stables or Build Wood Rooms
@@ -1207,6 +1264,42 @@ def _midwife_hook(state, player, inst, ctx):
 
 
 compendium_card("D160", hooks={"family_growth": _midwife_hook})
+
+
+# ── D163 Journeyman Bricklayer ──────────────────────────────────────
+# "When you play this card, you immediately get 2 stone. Each time
+# another player renovates to stone or build a stone room, you get 1
+# stone." Both reactive clauses are now observable via the broadcast
+# twins: renovate_any and rooms_built_any. "A stone room" is read as "a
+# room built while the builder currently lives in a stone house" (room
+# cells carry no material of their own -- it always follows the
+# builder's house_type). One flat stone per triggering event (the text
+# doesn't say "per room"), matching D077's precedent of reading the
+# actor's post-event house_type off state["players"].
+
+def _bricklayer_renovate(state, player, inst, ctx):
+    if ctx["actor"] == player["index"]:
+        return
+    if state["players"][ctx["actor"]]["house_type"] != "stone":
+        return
+    cards.grant_goods(state, player, {"stone": 1}, ctx["log"])
+    ctx["log"].append(f"{player['name']}'s Journeyman Bricklayer grants "
+                      "1 stone")
+
+
+def _bricklayer_rooms_built(state, player, inst, ctx):
+    if ctx["actor"] == player["index"]:
+        return
+    if state["players"][ctx["actor"]]["house_type"] != "stone":
+        return
+    cards.grant_goods(state, player, {"stone": 1}, ctx["log"])
+    ctx["log"].append(f"{player['name']}'s Journeyman Bricklayer grants "
+                      "1 stone")
+
+
+compendium_card("D163", hooks={"play": on_play_gain({"stone": 2}),
+                               "renovate_any": _bricklayer_renovate,
+                               "rooms_built_any": _bricklayer_rooms_built})
 
 
 # ── D165 Pig Stalker ──────────────────────────────────────────────────

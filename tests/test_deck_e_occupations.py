@@ -960,3 +960,56 @@ def test_no_bonus_on_unrelated_occupied_space(engine):
     forest["occupied_by"] = other
     with pytest.raises(ValueError):
         place(engine, s, {"kind": "place", "space": "forest"})
+
+
+def test_pastor_claims_reward_when_last_at_two_rooms(engine):
+    s = make_state(engine, 4)
+    owner = 0
+    put_in_play(s, owner, "E193")
+    for other in (1, 2, 3):
+        op = s["players"][other]
+        op["cells"][0]["type"] = "room"
+        op["cells"][1]["type"] = "room"
+        op["cells"][2]["type"] = "room"  # 5 rooms total, well past 3
+    p = s["players"][owner]
+    pid = p["player_id"]
+    wood_before = p["resources"]["wood"]
+    s = engine.apply_action(s, pid, {
+        "kind": "card_action", "card": "E193"}).new_state
+    p = s["players"][owner]
+    assert p["resources"]["wood"] == wood_before + 3
+    assert p["resources"]["clay"] == 2
+    assert p["resources"]["reed"] == 1
+    assert p["resources"]["stone"] == 1
+    # Can't claim a second time.
+    inst = next(i for i in p["occupations"] if i["id"] == "E193")
+    assert cards.CARDS["E193"]["card_action"]["available"](s, p, inst) is False
+
+
+def test_pastor_unavailable_until_every_other_player_has_three_rooms(engine):
+    s = make_state(engine, 4)
+    owner = 0
+    put_in_play(s, owner, "E193")
+    op = s["players"][1]
+    op["cells"][0]["type"] = "room"
+    op["cells"][1]["type"] = "room"
+    op["cells"][2]["type"] = "room"
+    # Players 2 and 3 are still at the default 2 rooms.
+    p = s["players"][owner]
+    inst = next(i for i in p["occupations"] if i["id"] == "E193")
+    assert cards.CARDS["E193"]["card_action"]["available"](s, p, inst) is False
+
+
+def test_pastor_unavailable_once_owner_has_three_rooms(engine):
+    s = make_state(engine, 4)
+    owner = 0
+    put_in_play(s, owner, "E193")
+    for other in (1, 2, 3):
+        op = s["players"][other]
+        op["cells"][0]["type"] = "room"
+        op["cells"][1]["type"] = "room"
+        op["cells"][2]["type"] = "room"
+    p = s["players"][owner]
+    p["cells"][0]["type"] = "room"  # owner's own 3rd room
+    inst = next(i for i in p["occupations"] if i["id"] == "E193")
+    assert cards.CARDS["E193"]["card_action"]["available"](s, p, inst) is False

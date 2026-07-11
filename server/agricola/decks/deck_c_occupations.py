@@ -15,9 +15,10 @@ final report / UNIMPLEMENTED reasons for detail; stables now route
 through `modified_cost` via `kind="stable"`, added in engine phase 7 --
 see C088's UNIMPLEMENTED note, which predates that fix): `extra_rooms` is a
 static per-spec constant (can't be gated on a runtime purchase);
-`renovate` and `harvest_field` fire only to the acting/own player's cards
-(`fire_player`), not broadcast, so "each time *another player*
-renovates/harvests" cannot be observed; `bake_on_spaces` is only wired to
+`renovate` still fires only to the acting/own player's cards
+(`fire_player`), but now has a broadcast twin, `renovate_any` (see C149
+below); `harvest_field` has no such twin, so "each time *another player*
+harvests" still cannot be observed; `bake_on_spaces` is only wired to
 the `farmland`/`cultivation` space handlers, not `major_improvement`;
 `occupation_played` ctx carries only `card_id`, not the space used or
 food paid. (Action-space adjacency/position data is now supported --
@@ -28,7 +29,9 @@ from server.agricola.cards import (
     compendium_card, CARDS, prompt_choice,
     add_goods, space_bonus, round_income, on_play_gain,
     animal_totals_of, card_fields, fire_player, adjacent_spaces,
+    grant_goods,
 )
+from server.agricola import sub_actions
 from server.agricola.state import (
     ANIMAL_TYPES, HARVEST_ROUNDS, TOTAL_ROUNDS, BUILDING_RESOURCES,
     compute_pastures, plowable_cells,
@@ -1130,12 +1133,59 @@ compendium_card("C148", holds_animals=_mud_wallower_holds,
                 hooks={"space_used": _mud_wallower_space_used})
 
 # ═════════════════════════════════════════════════════════════════════
-# C149 Resource Recycler — UNIMPLEMENTED
+# C149 Resource Recycler
+# "Each time another player renovates to stone, if you live in a clay
+# house, you can pay 2 food to build a clay room at no additional cost."
+# renovate_any (broadcast twin) makes the trigger observable; the
+# renovating player's post-renovation house_type is read directly off
+# state["players"]. The room cell is an open-ended target, so this
+# banks a credit (only while "you live in a clay house" holds AT
+# TRIGGER TIME, matching the card's own conditional) spent via
+# card_action, House Artist's shape -- "at no additional cost" means
+# the room's normal build cost is waived and replaced by the flat 2
+# food (cost_override, not a discount on top of the normal cost).
 # ═════════════════════════════════════════════════════════════════════
-UNIMPLEMENTED["C149"] = (
-    "'each time another player renovates to stone...' can't be observed: "
-    "the renovate event only fires to the renovating player's own cards "
-    "(fire_player), it is never broadcast to other players")
+def _resource_recycler_renovate(state, player, inst, ctx):
+    if ctx["actor"] == player["index"]:
+        return
+    actor = state["players"][ctx["actor"]]
+    if actor["house_type"] != "stone" or player["house_type"] != "clay":
+        return
+    inst["data"]["credits"] = inst["data"].get("credits", 0) + 1
+    ctx["log"].append(f"{player['name']}'s Resource Recycler may build a "
+                      "clay room for 2 food")
+
+
+def _resource_recycler_available(state, player, inst):
+    if inst["data"].get("credits", 0) <= 0 or player["house_type"] != "clay":
+        return False
+    if player["resources"]["food"] < 2:
+        return False
+    return bool(sub_actions.buildable_room_cells(player))
+
+
+def _resource_recycler_apply(state, player, inst, ctx):
+    if inst["data"].get("credits", 0) <= 0:
+        raise ValueError("Resource Recycler: no reactive build available")
+    if player["house_type"] != "clay":
+        raise ValueError("Resource Recycler: you must live in a clay house")
+    cells = (ctx.get("params") or {}).get("cells") or []
+    if len(cells) != 1:
+        raise ValueError(
+            "Resource Recycler: choose exactly 1 room (params.cells)")
+    sub_actions.build_rooms(state, player, cells, ctx["log"],
+                            cost_override={"food": 2})
+    inst["data"]["credits"] -= 1
+
+
+compendium_card(
+    "C149",
+    hooks={"renovate_any": _resource_recycler_renovate},
+    card_action={"available": _resource_recycler_available,
+                "apply": _resource_recycler_apply,
+                "description": "Pay 2 food to build a clay room (Resource "
+                               "Recycler, after another player renovates "
+                               "to stone)"})
 
 # ═════════════════════════════════════════════════════════════════════
 # C150 Parrot Breeder — UNIMPLEMENTED

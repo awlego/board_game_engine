@@ -57,9 +57,6 @@ UNIMPLEMENTED = {
             "(1 grain or 1 reed) with different resulting gains -- the "
             "engine's cost model is one fixed dict, no alternative-"
             "payment mechanism",
-    "C043": "no hook fires when a major improvement is built (only "
-            "rooms_built/stable_built/fences_built/renovate exist for "
-            "structures)",
     "C048": "detecting 'the first unused farmyard space used this turn' "
             "needs a turn-boundary hook; the existing per-structure "
             "hooks can co-occur within one turn (e.g. Farm Expansion), "
@@ -953,6 +950,27 @@ compendium_card("C078", hooks={"play": _c078_play})
 # reed on each corresponding round space. At the start of these rounds,
 # you receive the reed." (DB text continues with an unrelated
 # "(Cost 2W. Req 2 occ.) ... stone" clause -- bleed, not implemented.)
+
+
+# "Each time you build a major improvement, place 1 food on each of the
+# next 3 round spaces. At the start of these rounds, you get the food."
+# (DB text continues with a mismatched "(1VP. Cost 2W/2C 1R.)" clause and
+# a second, differently-sized scheduling clause -- bleed from another
+# card per this module's docstring; the top-level cost (1C 1R) and vp
+# (None) match only the leading clause implemented here.) Now
+# expressible: improvement_built already broadcasts to every player's
+# cards (it always has -- see A041/C137), so this only needed an
+# actor==owner filter, not a new hook.
+def _c043_improvement_built(state, player, inst, ctx):
+    if ctx["actor"] != player["index"]:
+        return
+    rnd = state["round"]
+    targets = _schedule_goods(state, player, "food", range(rnd + 1, rnd + 4))
+    if targets:
+        ctx["log"].append(f"{player['name']}'s Farm Building places food on "
+                          f"round(s) {', '.join(map(str, targets))}")
+
+compendium_card("C043", hooks={"improvement_built": _c043_improvement_built})
 
 
 def _c045_hook(state, player, inst, ctx):

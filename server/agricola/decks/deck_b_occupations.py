@@ -19,6 +19,7 @@ from server.agricola import sub_actions
 from server.agricola.state import (
     ANIMAL_TYPES, TOTAL_ROUNDS, MAX_PEOPLE,
     compute_pastures, plowable_cells, table_score, MAJOR_IMPROVEMENTS,
+    orthogonal_neighbors,
 )
 
 UNIMPLEMENTED = {
@@ -73,10 +74,6 @@ UNIMPLEMENTED = {
             "accumulation space as payment for occupation costs; the "
             "engine's occupation-cost payment has no hook allowing an "
             "alternate resource source.",
-    "B159": "requires reacting to another player's plow action, but the "
-            "'plow' event only fires to the acting player's own cards "
-            "(to_all=False) -- no card can observe another player's "
-            "plow.",
 }
 
 # ── DB text-corruption fixes (see module docstring) ──────────────────
@@ -1180,6 +1177,31 @@ def _district_manager_check(state, player, inst, ctx):
                               f"grants {amount} food")
 
 compendium_card("B158", hooks={"space_used": _district_manager_check})
+
+
+# ── B159 Lieutenant General ────────────────────────────────────────────
+# "For each field tile that another player places next to an existing
+# field tile, you get 1 food from the general supply. In round 14, you
+# get 1 grain instead." plow_any (broadcast twin) makes another
+# player's plow observable; "next to an existing field tile" is read
+# off the plowed cell's orthogonal neighbors on the PLOWING player's own
+# farmyard. The cell has already become a field by the time plow_any
+# fires, so a second field plowed later in the same multi-field batch
+# correctly sees the first one as "existing" too.
+def _lieutenant_general_plow(state, player, inst, ctx):
+    if ctx["actor"] == player["index"]:
+        return
+    actor = state["players"][ctx["actor"]]
+    if not any(actor["cells"][n]["type"] == "field"
+              for n in orthogonal_neighbors(ctx["cell"])):
+        return
+    good = "grain" if state["round"] == 14 else "food"
+    cards.grant_goods(state, player, {good: 1}, ctx["log"])
+    ctx["log"].append(f"{player['name']}'s Lieutenant General grants "
+                      f"1 {good}")
+
+
+compendium_card("B159", hooks={"plow_any": _lieutenant_general_plow})
 
 
 # ── B160 Pub Owner ────────────────────────────────────────────────────

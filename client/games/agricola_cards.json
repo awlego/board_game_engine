@@ -886,7 +886,7 @@
   "implemented": false,
   "min_players": 3,
   "name": "Publican",
-  "reason": "'each time another player sows' can't be observed: the sow hook fires only for the sower's own cards (fire_player), not broadcast.",
+  "reason": "Publican: 'EACH TIME BEFORE another player sows...you may give that player 1 grain' -- reassessed now that sow_any (broadcast twin) exists, but it fires AFTER sub_actions.sow has already deducted the sower's own grain and planted the crop, not before. If the gifted grain is meant to help fund the very sow it precedes (a player short 1 grain could still sow with Publican's gift), implementing this on the post-sow broadcast would silently turn an enabling gift into an unrelated windfall that arrives too late to have mattered -- a real behavior change, not just a timing cosmetic. No 'before an action resolves' hook exists for sow (or anything else), so this stays gated.",
   "text": "Each time before another player sows, if you have at least 1 grain in your supply, you may give that player 1 grain, receiving 1 bonus point for that.",
   "type": "occupation"
  },
@@ -2276,10 +2276,8 @@
  },
  "B159": {
   "deck": "B",
-  "implemented": false,
   "min_players": 4,
   "name": "Lieutenant General",
-  "reason": "requires reacting to another player's plow action, but the 'plow' event only fires to the acting player's own cards (to_all=False) -- no card can observe another player's plow.",
   "text": "For each field tile that another player places next to an exisiting field tile, you get 1 food from the general supply. In round 14, you get 1 grain instead.",
   "type": "occupation"
  },
@@ -2845,10 +2843,9 @@
    "reed": 1
   },
   "deck": "C",
-  "implemented": false,
+  "min_players": 1,
   "name": "Farm Building",
   "points": 1,
-  "reason": "no hook fires when a major improvement is built (only rooms_built/stable_built/fences_built/renovate exist for structures)",
   "text": "Each time you build a major improvement, place 1 food on each of the next 3 round spaces. At the start of these rounds, you get the food. (1VP. Cost 2W/2C 1R.) Place 1 food on each of the next 8 round spaces. At the start of these rounds, you get the food.",
   "type": "minor"
  },
@@ -3553,10 +3550,9 @@
  },
  "C149": {
   "deck": "C",
-  "implemented": false,
+  "has_card_action": true,
   "min_players": 4,
   "name": "Resource Recycler",
-  "reason": "'each time another player renovates to stone...' can't be observed: the renovate event only fires to the renovating player's own cards (fire_player), it is never broadcast to other players",
   "text": "Each time another player renovates to stone, if you live in a clay house, you can pay 2 food to build a clay room at no additional cost.",
   "type": "occupation"
  },
@@ -4318,10 +4314,9 @@
    "food": 1
   },
   "deck": "D",
-  "implemented": false,
+  "min_players": 1,
   "name": "Recycled Brick",
-  "prereq_text": "3 occ",
-  "reason": "reacts to ANY player's renovation, but the renovate event only fires for the acting player's own cards (_do_renovate calls cards.fire_player, not cards.fire) -- widening that means editing engine.py",
+  "prereq_text": "3 occupations",
   "text": "Each time any player (including you) renovate to stone, you get 1 clay for each newly renovated room. (Req 3 occ.) Place 1 reed on each of the next 3 round spaces. At the start of these rounds, you get the reed. (2VP. Cost 1W 2C. Play in round 8 or before.) At the end of rounds 8, 10, and 12, you get 1 stone for each vegetable field you have and a number of wood equal to the number of vegetables in your supply.",
   "type": "minor"
  },
@@ -4561,9 +4556,9 @@
  },
  "D128": {
   "deck": "D",
-  "implemented": false,
+  "has_card_action": true,
+  "min_players": 1,
   "name": "Building Tycoon",
-  "reason": "Building Tycoon: reacts to *another* player building rooms, but rooms_built fires via fire_player (owner-only) -- other players' cards never see it.",
   "text": "Each time after another player builds 1 or more rooms, you can give them 1 food to build exactly 1 room yourself. (You must pay the building cost of the room.) \u00a8 \u21d2 Same additional rules as Building Tycoon O07 .",
   "type": "occupation"
  },
@@ -4781,16 +4776,14 @@
   "implemented": false,
   "min_players": 4,
   "name": "Cabbage Buyer",
-  "reason": "Cabbage Buyer: reacts to *any* player's renovation, but renovate fires via fire_player (owner-only, not visible to other players' cards); it also needs to know what's built *after* renovate resolves, which isn't known at hook time.",
+  "reason": "Cabbage Buyer: reassessed now that renovate_any (broadcast twin) exists -- it fixes the *visibility* half of the original gap (any player's renovation is now observable), but the SECOND half stands: pricing depends on whether the SAME action also built 0/1 minor/1 major improvement immediately after, and renovate's ctx carries no space_id or other action-boundary marker to correlate with a later minor_played/improvement_built broadcast. space_used fires once per placement action and could serve as that boundary for the house_redevelopment-space case, but not every sub_actions.renovate call site is followed by one at all -- card_action- and resolve_choice-driven renovates (Builder's Trowel E50, Renovation Company A013, B023 Final Scenario) happen entirely outside _resolve_space, so a 'no build followed' pending flag could dangle indefinitely or misattribute a later, unrelated build. Still gated.",
   "text": "Each time any player (including you) renovates and then builds no / 1 minor / 1 major improvement, you can buy 1 vegetable for 3/2/1 food. (4-5 players) When you play this card, you immediately get 2 clay. At any time, you can turn clay into stone: you get 1 stone for 2 clay, and 2 stone for 3 clay.",
   "type": "occupation"
  },
  "D163": {
   "deck": "D",
-  "implemented": false,
   "min_players": 4,
   "name": "Journeyman Bricklayer",
-  "reason": "Journeyman Bricklayer: reacts to *another* player's renovate-to-stone/stone-room build, but renovate and rooms_built both fire owner-only (fire_player) -- not visible to other players' cards.",
   "text": "When you play this card, you immediately get 2 stone. Each time another player renovates to stone or build a stone room, you get 1 stone.",
   "type": "occupation"
  },
@@ -5304,10 +5297,9 @@
  },
  "E193": {
   "deck": "E",
-  "implemented": false,
+  "has_card_action": true,
   "min_players": 4,
   "name": "Pastor",
-  "reason": "Pastor: must detect when another player builds their third room (to know who is 'last' at 2 rooms), but rooms_built fires with to_all=False -- only to the building player's own cards, never observable by other players.",
   "text": "If, when you play this card or later in the game, you are the last player to have only 2 rooms in your home, you receive 3 wood, 2 clay, 1 reed and 1 stone.",
   "type": "occupation"
  },
@@ -8870,10 +8862,8 @@
  },
  "I222": {
   "deck": "I",
-  "implemented": false,
   "min_players": 4,
   "name": "Social Climber",
-  "reason": "requires tracking the game-wide order in which players first renovate to clay/stone; the 'renovate' event only fires to the acting player's own cards (fire_player, not a broadcast), so no card can observe another player's renovation.",
   "text": "Whenever you are the first player to renovate to a clay hut or a stone house, you receive 3 stone. If you are the second, you receive 2 stone; the third, you receive 1 stone.",
   "type": "occupation"
  },
@@ -8888,10 +8878,8 @@
  },
  "I224": {
   "deck": "I",
-  "implemented": false,
   "min_players": 3,
   "name": "Field Worker",
-  "reason": "reacts to another player's sow action, but 'sow' only fires to the acting player's own cards (fire_player, not a broadcast) -- no card can observe another player's sow.",
   "text": "Whenever another player sows one or more fields, you receive 1 grain in a 3-player game or 1 food in a 4/5 player game.",
   "type": "occupation"
  },
@@ -9350,9 +9338,8 @@
    "wood": 1
   },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Punner",
-  "reason": "requires reacting to another player's plough action (via the Harrow or a plough card), but the 'plow' event only fires to the acting player's own cards (fire_player, to_all=False) -- no card can observe another player's plow (same gap as the B159 precedent).",
   "text": "Whenever another player uses the Harrow I68 or a plough, you can immediately plough 1 field as well.",
   "type": "minor"
  },

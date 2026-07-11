@@ -75,10 +75,6 @@ UNIMPLEMENTED = {
             "food cost before any hook fires -- the same gap flagged for "
             "B155 (no alternate-resource-source channel for occupation "
             "costs).",
-    "E193": "Pastor: must detect when another player builds their third "
-            "room (to know who is 'last' at 2 rooms), but rooms_built "
-            "fires with to_all=False -- only to the building player's "
-            "own cards, never observable by other players.",
     "E198": "Ratcatcher: forces OTHER players to leave 1 family member "
             "unplaced in specific rounds; directly constraining other "
             "players' people/placements is explicitly unsupported.",
@@ -836,6 +832,43 @@ compendium_card("E191", card_action={
     "available": _free_room_available(4, "stone"), "apply": _free_room_apply,
     "description": "Extend your stone house by 1 free room (once per "
                    "game, needs 4+ rooms)"})
+
+
+# ── E193 Pastor ──────────────────────────────────────────────────────
+# "If, when you play this card or later in the game, you are the last
+# player to have only 2 rooms in your home, you receive 3 wood, 2 clay,
+# 1 reed and 1 stone." Ruling: paid any time after the last OTHER player
+# builds their third room and before you build your third room yourself.
+# Reassessed: this never needed a broadcast event at all -- room counts
+# for every player are always readable directly off state["players"],
+# so the whole condition is a plain query, offered as a card_action
+# ("you choose the moment"). Gating on "still exactly 2 rooms" in
+# `available` naturally enforces "before you build your third room" too:
+# once the owner's own room count passes 2, `available` goes false on
+# its own, no extra tracking needed.
+def _pastor_available(state, player, inst):
+    if inst["data"].get("claimed") or sub_actions.rooms(player) != 2:
+        return False
+    return all(sub_actions.rooms(other) >= 3 for other in state["players"]
+              if other["index"] != player["index"])
+
+
+def _pastor_apply(state, player, inst, ctx):
+    if not _pastor_available(state, player, inst):
+        raise ValueError("Pastor: the reward isn't available right now")
+    inst["data"]["claimed"] = True
+    cards.grant_goods(state, player,
+                      {"wood": 3, "clay": 2, "reed": 1, "stone": 1}, ctx["log"])
+    ctx["log"].append(f"{player['name']}'s Pastor grants 3 wood, 2 clay, "
+                      "1 reed, and 1 stone")
+
+
+compendium_card(
+    "E193",
+    card_action={"available": _pastor_available, "apply": _pastor_apply,
+                "description": "Claim the Pastor's reward for still "
+                               "having only 2 rooms while everyone else "
+                               "has 3+"})
 
 
 # ── E194 Plough Driver ────────────────────────────────────────────────

@@ -868,3 +868,67 @@ def test_recreational_carpenter_no_bonus_after_meeting_place(engine):
                 {"spaces": ["forest", "meeting_place"]}, log, to_all=False)
     inst = next(i for i in p["occupations"] if i["id"] == "D130")
     assert inst["data"].get("credits", 0) == 0
+
+
+def test_building_tycoon_reactive_room_after_another_players_rooms(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    put_in_play(s, first, "D128")
+    give(s, other, wood=5, reed=2)
+    s = place(engine, s, {"kind": "place", "space": "meeting_place"})  # first
+    s = place(engine, s, {"kind": "place", "space": "farm_expansion",
+                          "rooms": [0]})  # other builds 1 room
+    p = s["players"][first]
+    inst = next(i for i in p["occupations"] if i["id"] == "D128")
+    assert inst["data"]["credits"] == [other]
+
+    give(s, first, wood=5, reed=2, food=1)
+    food_before = p["resources"]["food"]
+    other_food_before = s["players"][other]["resources"]["food"]
+    pid = p["player_id"]
+    s = engine.apply_action(s, pid, {
+        "kind": "card_action", "card": "D128",
+        "params": {"cells": [0]}}).new_state
+    p = s["players"][first]
+    assert p["cells"][0]["type"] == "room"
+    assert p["resources"]["food"] == food_before - 1
+    assert s["players"][other]["resources"]["food"] == other_food_before + 1
+
+
+def test_building_tycoon_ignores_own_rooms(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "D128")
+    give(s, first, wood=5, reed=2)
+    s = place(engine, s, {"kind": "place", "space": "farm_expansion",
+                          "rooms": [0]})
+    p = s["players"][first]
+    inst = next(i for i in p["occupations"] if i["id"] == "D128")
+    assert inst["data"].get("credits") in (None, [])
+
+
+def test_journeyman_bricklayer_on_play_and_both_reactive_clauses(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    give_card(s, first, "D163")
+    add_space(s, "lessons", "Lessons")
+    s = place(engine, s, {"kind": "place", "space": "lessons", "card": "D163"})
+    p = s["players"][first]
+    assert p["resources"]["stone"] == 2  # on-play gain
+
+    s["players"][other]["house_type"] = "clay"
+    give(s, other, stone=6, reed=1)
+    add_space(s, "house_redevelopment", "House Redevelopment")
+    s = place(engine, s, {"kind": "place", "space": "house_redevelopment"})  # other
+    p = s["players"][first]
+    assert s["players"][other]["house_type"] == "stone"
+    assert p["resources"]["stone"] == 3  # renovate-to-stone clause
+
+    s = place(engine, s, {"kind": "place", "space": "grain_seeds"})  # first
+    give(s, other, stone=5, reed=2)
+    s = place(engine, s, {"kind": "place", "space": "farm_expansion",
+                          "rooms": [0]})  # other builds a stone room
+    p = s["players"][first]
+    assert p["resources"]["stone"] == 4  # stone-room clause

@@ -756,3 +756,48 @@ def test_little_stick_knitter_b_schedule_and_sow(engine):
     assert p["cells"][3]["crops"] == {"type": "grain", "count": 3}
     inst = next(i for i in p["occupations"] if i["id"] == "B093")
     assert inst["data"]["used_this_round"] is True
+
+
+def test_lieutenant_general_food_next_to_existing_field(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    put_in_play(s, first, "B159")
+    s["players"][other]["cells"][0]["type"] = "field"
+    s = place(engine, s, {"kind": "place", "space": "meeting_place"})  # first
+    food_before = s["players"][first]["resources"]["food"]
+    s = place(engine, s, {"kind": "place", "space": "farmland", "cell": 1})  # other
+    assert s["players"][first]["resources"]["food"] == food_before + 1
+
+
+def test_lieutenant_general_no_reward_without_adjacent_field(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "B159")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place"})  # first
+    food_before = s["players"][first]["resources"]["food"]
+    s = place(engine, s, {"kind": "place", "space": "farmland", "cell": 1})  # other
+    assert s["players"][first]["resources"]["food"] == food_before
+
+
+def test_lieutenant_general_grants_grain_in_round_14(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    put_in_play(s, first, "B159")
+    s["players"][other]["cells"][0]["type"] = "field"
+    s["round"] = 14
+    s = place(engine, s, {"kind": "place", "space": "meeting_place"})  # first
+    grain_before = s["players"][first]["resources"]["grain"]
+    s = place(engine, s, {"kind": "place", "space": "farmland", "cell": 1})  # other
+    assert s["players"][first]["resources"]["grain"] == grain_before + 1
+
+
+def test_lieutenant_general_ignores_own_plow(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "B159")
+    s["players"][first]["cells"][0]["type"] = "field"
+    food_before = s["players"][first]["resources"]["food"]
+    s = place(engine, s, {"kind": "place", "space": "farmland", "cell": 1})  # first's own plow
+    assert s["players"][first]["resources"]["food"] == food_before

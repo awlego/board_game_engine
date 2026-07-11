@@ -89,10 +89,6 @@ UNIMPLEMENTED = {
     "D074": "needs to know how much wood was spent building rooms/"
             "stables/improvements this turn; space_used's ctx reports "
             "goods the space granted, not resources the player paid",
-    "D077": "reacts to ANY player's renovation, but the renovate event "
-            "only fires for the acting player's own cards (_do_renovate "
-            "calls cards.fire_player, not cards.fire) -- widening that "
-            "means editing engine.py",
     "D083": "would need to grant an animal through a feeding-phase "
             "conversion, but the engine's conversion 'get' path only "
             "credits player resources with no accommodation route for "
@@ -1313,7 +1309,33 @@ def _social_benefits_round_start(state, player, inst, ctx):
 compendium_card("D076", prereq=_at_most_occupations(1),
                 hooks={"round_start": _social_benefits_round_start})
 
-# D077 Recycled Brick -- see UNIMPLEMENTED
+# ── D077 Recycled Brick ──────────────────────────────────────────────
+# "Each time any player (including you) renovate to stone, you get 1
+# clay for each newly renovated room. (Req 3 occ.)" The trailing DB text
+# ("Place 1 reed on each of the next 3 round spaces...", "(2VP. Cost 1W
+# 2C. Play in round 8 or before.)", "At the end of rounds 8, 10, and 12
+# ...") is bleed from another card -- it matches neither this entry's
+# top-level cost (1F) nor vp (0), per this module's docstring; "(Req 3
+# occ.)" does match the top-level prereq field and marks the real
+# clause's end. renovate_any (broadcast twin, fires to every player's
+# cards including the renovator's own) makes any player's renovation
+# observable; the resulting house_type is read directly off the
+# renovating player, post-renovation, to detect "to stone" -- and since
+# a renovation always upgrades the WHOLE house at once, every room the
+# renovating player owns counts as "newly renovated".
+def _recycled_brick_renovate(state, player, inst, ctx):
+    actor = state["players"][ctx["actor"]]
+    if actor["house_type"] != "stone":
+        return
+    n = sub_actions.rooms(actor)
+    if n <= 0:
+        return
+    cards.grant_goods(state, player, {"clay": n}, ctx["log"])
+    ctx["log"].append(f"{player['name']}'s Recycled Brick grants {n} clay")
+
+
+compendium_card("D077", prereq=needs_occupations(3),
+                hooks={"renovate_any": _recycled_brick_renovate})
 
 # ── D080 Brick Hammer ──────────────────────────────────────────────────
 # Cost "1W or 1F" (hand-parsed to 1W; the OR-alternative payment isn't

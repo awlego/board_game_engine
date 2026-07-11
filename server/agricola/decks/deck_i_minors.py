@@ -26,11 +26,6 @@ UNIMPLEMENTED = {
            "non-owner can never be prompted to invoke someone else's "
            "card -- there is no channel for 'another player may "
            "optionally activate your card for a fee'.",
-    "I70": "requires reacting to another player's plough action (via "
-           "the Harrow or a plough card), but the 'plow' event only "
-           "fires to the acting player's own cards (fire_player, "
-           "to_all=False) -- no card can observe another player's plow "
-           "(same gap as the B159 precedent).",
     "I73": "guest tokens / extra people placements are explicitly "
            "unsupported.",
     "I78": "requires sowing wood (not grain/vegetable) onto a "
@@ -216,6 +211,42 @@ compendium_card("I69", prereq=_needs_veg_field(2),
                 hooks=schedule_on_play("food", rounds_ahead=3))
 
 
+# ── I70 Punner ────────────────────────────────────────────────────────
+# "Whenever another player uses the Harrow I68 or a plough, you can
+# immediately plough 1 field as well." I68 (Harrow) stays UNIMPLEMENTED
+# (see above), so only the "or a plough" half is observable here:
+# plow_any (broadcast twin) fires for any plow taken through a real Plow
+# action space, offering an immediate optional plow via a prompt (Ground
+# Pickaxe Plow/Field Watchman's established shape). A card-granted bonus
+# plow that mutates player["cells"] directly (Shifting Cultivation's
+# shape) doesn't itself re-fire plow_any, so this only reacts to genuine
+# action-space plows -- which is exactly the "a plough" half of the text.
+def _punner_plow(state, player, inst, ctx):
+    if ctx["actor"] == player["index"]:
+        return
+    cells = plowable_cells(player)
+    if not cells:
+        return
+    prompt_choice(state, player, inst["id"],
+                 "Punner: plough 1 field as well?",
+                 ["Decline"] + [f"Plow cell {c}" for c in cells],
+                 data={"cells": cells})
+
+
+def _punner_choice(state, player, inst, ctx):
+    if ctx["index"] == 0:
+        return
+    cell = ctx["data"]["cells"][ctx["index"] - 1]
+    if cell not in plowable_cells(player):
+        return
+    player["cells"][cell]["type"] = "field"
+    ctx["log"].append(f"{player['name']} ploughs a field (Punner)")
+
+
+compendium_card("I70", hooks={"plow_any": _punner_plow},
+                resolve_choice=_punner_choice)
+
+
 # ── I71 Holiday House ─────────────────────────────────────────────────
 # Cost "3W or 3C, 2R" (ruling: "either 3 wood & 2 reeds or 3 clay & 2
 # reeds"); per this file's/deck_fr_minors.py's established convention
@@ -261,8 +292,9 @@ compendium_card("I75", raw_values={"grain": 2})
 
 # ── I76 Rake ──────────────────────────────────────────────────────────
 # "a plough" is interpreted as any minor granting extra-field ploughs;
-# I68 (Harrow) and I70 (Punner) are UNIMPLEMENTED so they never appear
-# in play, but the id set is kept generic (future decks may add Yoke).
+# I68 (Harrow) is UNIMPLEMENTED so it never appears in play, but the id
+# set is kept generic (future decks may add Yoke; I70 Punner is now
+# implemented above, so it can already trigger the higher threshold).
 _PLOW_CARD_IDS = ("I63", "I68", "I70", "K124")
 
 

@@ -36,7 +36,7 @@ _DUMMY_OCCS = ["occ_woodcutter", "occ_reed_collector", "occ_clay_digger"]
 
 _NEEDS_OCC = {"D004": 3, "D006": 2, "D019": 1, "D027": 1, "D030": 3,
              "D040": 1, "D044": 2, "D046": 2, "D052": 1, "D064": 1,
-             "D068": 2}
+             "D068": 2, "D077": 3}
 
 
 def _prep_prereqs(state, pidx, cid):
@@ -958,3 +958,34 @@ def test_pioneering_spirit_owner_only_and_round_windows(engine):
     veg_before = s["players"][first]["resources"]["vegetable"]
     s = engine.apply_action(s, first_pid, {"kind": "choice", "index": 0}).new_state
     assert s["players"][first]["resources"]["vegetable"] == veg_before + 1
+
+
+def test_recycled_brick_grants_clay_per_room_on_stone_renovation(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    put_in_play(s, first, "D077")
+    s["players"][other]["house_type"] = "clay"
+    give(s, other, stone=6, reed=1)
+    add_space(s, "house_redevelopment", "House Redevelopment")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place"})  # first
+    clay_before = s["players"][first]["resources"]["clay"]
+    s = place(engine, s, {"kind": "place", "space": "house_redevelopment"})  # other
+    assert s["players"][other]["house_type"] == "stone"
+    rooms = sum(1 for c in s["players"][other]["cells"] if c["type"] == "room")
+    assert rooms == 2
+    assert s["players"][first]["resources"]["clay"] == clay_before + rooms
+
+
+def test_recycled_brick_ignores_renovation_to_clay(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    put_in_play(s, first, "D077")
+    give(s, other, clay=10, reed=1)
+    add_space(s, "house_redevelopment", "House Redevelopment")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place"})
+    clay_before = s["players"][first]["resources"]["clay"]
+    s = place(engine, s, {"kind": "place", "space": "house_redevelopment"})
+    assert s["players"][other]["house_type"] == "clay"
+    assert s["players"][first]["resources"]["clay"] == clay_before

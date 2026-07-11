@@ -39,16 +39,8 @@ UNIMPLEMENTED = {
             "not just a missing scoring tweak. Registering only the "
             "discount would misrepresent the card, so it stays fully "
             "unimplemented rather than half-registered.",
-    "I222": "requires tracking the game-wide order in which players "
-            "first renovate to clay/stone; the 'renovate' event only "
-            "fires to the acting player's own cards (fire_player, not a "
-            "broadcast), so no card can observe another player's "
-            "renovation.",
     "I223": "takes a grain directly from another player's field; "
             "affecting other players' farms directly is unsupported.",
-    "I224": "reacts to another player's sow action, but 'sow' only fires "
-            "to the acting player's own cards (fire_player, not a "
-            "broadcast) -- no card can observe another player's sow.",
     "I228": "grants a bonus Major OR Minor Improvement action; the minor "
             "half has a precedent (_offer_free_minor-style), but the "
             "major-improvement half needs cell/cost/available-"
@@ -272,6 +264,58 @@ def _most_improvements_score(state, player, inst):
 
 compendium_card("I221", hooks={"play": _village_elder_play},
                 score_bonus=_most_improvements_score)
+
+
+# ── I222 Social Climber ──────────────────────────────────────────────
+# "Whenever you are the first player to renovate to a clay hut or a
+# stone house, you receive 3 stone. If you are the second, you receive
+# 2 stone; the third, you receive 1 stone." renovate_any (the broadcast
+# twin, which fires to every player's cards including the renovating
+# player's own) lets this track the GAME-WIDE order of players' first
+# qualifying renovation entirely within its own instance data -- only
+# one copy of this card exists per game, so inst["data"] IS the shared
+# ledger, no new top-level state needed. Rulings: no credit for
+# renovations performed before this card was played (automatic -- hooks
+# only fire for cards already in play) and nothing past 3rd place.
+def _social_climber_renovate(state, player, inst, ctx):
+    actor_idx = ctx["actor"]
+    actor = state["players"][actor_idx]
+    if actor["house_type"] not in ("clay", "stone"):
+        return
+    order = inst["data"].setdefault("order", [])
+    if actor_idx in order:
+        return
+    order.append(actor_idx)
+    if actor_idx != player["index"]:
+        return
+    reward = {1: 3, 2: 2, 3: 1}.get(len(order), 0)
+    if reward:
+        cards.grant_goods(state, player, {"stone": reward}, ctx["log"])
+        ctx["log"].append(f"{player['name']}'s Social Climber grants "
+                          f"{reward} stone (rank {len(order)} to renovate "
+                          "to clay/stone)")
+
+
+compendium_card("I222", hooks={"renovate_any": _social_climber_renovate})
+
+
+# ── I224 Field Worker ─────────────────────────────────────────────────
+# "Whenever another player sows one or more fields, you receive 1 grain
+# in a 3-player game or 1 food in a 4/5 player game." sow_any (broadcast
+# twin) makes this observable; the ruling that your OWN sow doesn't
+# trigger it is the actor==owner check, and the ruling that it's
+# triggered by a Hobby Farmer/Corn Storehouse-driven sow needs no
+# special-casing -- sow_any fires for any sub_actions.sow call
+# regardless of what triggered it.
+def _field_worker_sow(state, player, inst, ctx):
+    if ctx["actor"] == player["index"]:
+        return
+    good = "grain" if state["player_count"] == 3 else "food"
+    cards.grant_goods(state, player, {good: 1}, ctx["log"])
+    ctx["log"].append(f"{player['name']}'s Field Worker grants 1 {good}")
+
+
+compendium_card("I224", hooks={"sow_any": _field_worker_sow})
 
 
 # ── I225 Field Watchman ───────────────────────────────────────────────

@@ -12,7 +12,7 @@ import random
 import pytest
 
 from server.agricola.engine import AgricolaEngine
-from server.agricola import cards
+from server.agricola import cards, sub_actions
 from server.agricola.decks import deck_i_occupations as deck_i
 from server.agricola.state import cell_edges, compute_pastures
 
@@ -638,3 +638,87 @@ def test_taster_no_advantage_when_already_starting_player(engine):
     log = []
     engine._start_round(s, log)
     assert not s["prompts"]
+
+
+# ── I222 Social Climber ────────────────────────────────────────────────
+
+def test_social_climber_first_to_renovate_gets_three_stone(engine):
+    s = make_state(engine, 3)
+    owner = 0
+    put_in_play(s, owner, "I222")
+    p = s["players"][owner]
+    give(s, owner, clay=2, reed=1)
+    sub_actions.renovate(s, p, [])
+    assert p["house_type"] == "clay"
+    assert p["resources"]["stone"] == 3
+
+
+def test_social_climber_third_to_renovate_gets_one_stone(engine):
+    s = make_state(engine, 3)
+    owner = 0
+    put_in_play(s, owner, "I222")
+    for other in (1, 2):
+        give(s, other, clay=2, reed=1)
+        sub_actions.renovate(s, s["players"][other], [])
+    p = s["players"][owner]
+    give(s, owner, clay=2, reed=1)
+    stone_before = p["resources"]["stone"]
+    sub_actions.renovate(s, p, [])
+    assert p["resources"]["stone"] == stone_before + 1
+
+
+def test_social_climber_no_double_reward_on_second_renovation(engine):
+    """Only the player's FIRST qualifying renovation ranks them -- a
+    later clay -> stone renovation by the same player must not re-rank
+    them (and must not re-grant a reward)."""
+    s = make_state(engine, 3)
+    owner = 0
+    put_in_play(s, owner, "I222")
+    p = s["players"][owner]
+    inst = next(i for i in p["occupations"] if i["id"] == "I222")
+    give(s, owner, clay=4, reed=2)
+    sub_actions.renovate(s, p, [])  # wood -> clay: rank 1, +3 stone
+    assert p["resources"]["stone"] == 3
+    assert inst["data"]["order"] == [owner]
+    give(s, owner, stone=10, reed=2)  # cover the clay -> stone build cost
+    stone_before = p["resources"]["stone"]
+    sub_actions.renovate(s, p, [])  # clay -> stone: already ranked, no bonus
+    assert inst["data"]["order"] == [owner]
+    rooms = sum(1 for c in p["cells"] if c["type"] == "room")
+    assert p["resources"]["stone"] == stone_before - rooms  # cost only, no bonus
+
+
+# ── I224 Field Worker ────────────────────────────────────────────────
+
+def test_field_worker_grain_in_three_player_game(engine):
+    s = make_state(engine, 3)
+    owner, other = 0, 1
+    put_in_play(s, owner, "I224")
+    s["players"][other]["cells"][0]["type"] = "field"
+    give(s, other, grain=1)
+    grain_before = s["players"][owner]["resources"]["grain"]
+    sub_actions.sow(s, s["players"][other], [{"cell": 0, "crop": "grain"}], [])
+    assert s["players"][owner]["resources"]["grain"] == grain_before + 1
+
+
+def test_field_worker_food_in_four_player_game(engine):
+    s = make_state(engine, 4)
+    owner, other = 0, 1
+    put_in_play(s, owner, "I224")
+    s["players"][other]["cells"][0]["type"] = "field"
+    give(s, other, grain=1)
+    food_before = s["players"][owner]["resources"]["food"]
+    sub_actions.sow(s, s["players"][other], [{"cell": 0, "crop": "grain"}], [])
+    assert s["players"][owner]["resources"]["food"] == food_before + 1
+
+
+def test_field_worker_ignores_own_sow(engine):
+    s = make_state(engine, 3)
+    owner = 0
+    put_in_play(s, owner, "I224")
+    p = s["players"][owner]
+    p["cells"][0]["type"] = "field"
+    give(s, owner, grain=1)
+    grain_before = p["resources"]["grain"]
+    sub_actions.sow(s, p, [{"cell": 0, "crop": "grain"}], [])
+    assert p["resources"]["grain"] == grain_before - 1  # spent sowing, no bonus

@@ -652,3 +652,36 @@ def test_holiday_house_cannot_be_played_after_round_13(engine):
     with pytest.raises(ValueError):
         place(engine, s, {"kind": "place", "space": "meeting_place",
                           "minor": {"card": "I71"}})
+
+
+def test_punner_plows_a_field_after_another_players_plow(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "I70")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place"})  # first
+    s = place(engine, s, {"kind": "place", "space": "farmland", "cell": 0})  # other
+    prompt = s["prompts"][0]
+    assert prompt["card"] == "I70" and prompt["player"] == first
+    pid = s["players"][first]["player_id"]
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": 1}).new_state
+    cell = prompt["data"]["cells"][0]
+    assert s["players"][first]["cells"][cell]["type"] == "field"
+
+
+def test_punner_can_decline(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "I70")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place"})  # first
+    s = place(engine, s, {"kind": "place", "space": "farmland", "cell": 0})  # other
+    pid = s["players"][first]["player_id"]
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": 0}).new_state
+    assert all(c["type"] != "field" for c in s["players"][first]["cells"])
+
+
+def test_punner_ignores_own_plow(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "I70")
+    s = place(engine, s, {"kind": "place", "space": "farmland", "cell": 0})  # first's own plow
+    assert not s["prompts"]

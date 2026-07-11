@@ -650,6 +650,31 @@ def test_toad_schedules_reed_relative_rounds(engine):
         assert s["round_goods"][str(r)][str(first)]["reed"] == 1
 
 
+def test_farm_building_schedules_food_on_major_improvement(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "C043")
+    give(s, first, clay=2)
+    add_space(s, "major_improvement", "Major Improvement")
+    s = place(engine, s, {"kind": "place", "space": "major_improvement",
+                          "improvement": "fireplace_2"})
+    for r in (2, 3, 4):
+        assert s["round_goods"][str(r)][str(first)]["food"] == 1
+
+
+def test_farm_building_ignores_another_players_improvement(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    put_in_play(s, first, "C043")
+    give(s, other, clay=2)
+    add_space(s, "major_improvement", "Major Improvement")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place"})
+    s = place(engine, s, {"kind": "place", "space": "major_improvement",
+                          "improvement": "fireplace_2"})
+    assert "2" not in s["round_goods"] or str(first) not in s["round_goods"]["2"]
+
+
 def test_stew_schedules_food_on_day_laborer(engine):
     s = make_state(engine, 2)
     first = s["current_player"]

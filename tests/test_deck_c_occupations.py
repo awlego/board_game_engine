@@ -759,3 +759,46 @@ def test_legworker_no_bonus_without_adjacent_occupancy(engine):
     wood_before = s["players"][first]["resources"]["wood"]
     s = place(engine, s, {"kind": "place", "space": "day_laborer"})
     assert s["players"][first]["resources"]["wood"] == wood_before
+
+
+def test_resource_recycler_reactive_clay_room(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    put_in_play(s, first, "C149")
+    p = s["players"][first]
+    p["house_type"] = "clay"
+    s["players"][other]["house_type"] = "clay"
+    give(s, other, stone=3, reed=1)
+    add_space(s, "house_redevelopment", "House Redevelopment")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place"})  # first
+    s = place(engine, s, {"kind": "place", "space": "house_redevelopment"})  # other
+    assert s["players"][other]["house_type"] == "stone"
+    p = s["players"][first]
+    inst = next(i for i in p["occupations"] if i["id"] == "C149")
+    assert inst["data"]["credits"] == 1
+
+    give(s, first, food=2)
+    food_before = p["resources"]["food"]
+    pid = p["player_id"]
+    s = engine.apply_action(s, pid, {
+        "kind": "card_action", "card": "C149",
+        "params": {"cells": [0]}}).new_state
+    p = s["players"][first]
+    assert p["cells"][0]["type"] == "room"
+    assert p["resources"]["food"] == food_before - 2
+
+
+def test_resource_recycler_ignores_own_renovation(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "C149")
+    p = s["players"][first]
+    p["house_type"] = "clay"
+    give(s, first, stone=3, reed=1)
+    add_space(s, "house_redevelopment", "House Redevelopment")
+    s = place(engine, s, {"kind": "place", "space": "house_redevelopment"})
+    p = s["players"][first]
+    assert p["house_type"] == "stone"
+    inst = next(i for i in p["occupations"] if i["id"] == "C149")
+    assert inst["data"].get("credits", 0) == 0

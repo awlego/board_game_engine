@@ -51,9 +51,18 @@ UNIMPLEMENTED = {
     "A130": "requires placing a later person on an action space your own "
             "earlier person already occupies; guest-token/occupied-space "
             "placement is not supported.",
-    "A132": "'each time another player sows' can't be observed: the sow "
-            "hook fires only for the sower's own cards (fire_player), not "
-            "broadcast.",
+    "A132": "Publican: 'EACH TIME BEFORE another player sows...you may "
+            "give that player 1 grain' -- reassessed now that sow_any "
+            "(broadcast twin) exists, but it fires AFTER sub_actions.sow "
+            "has already deducted the sower's own grain and planted the "
+            "crop, not before. If the gifted grain is meant to help fund "
+            "the very sow it precedes (a player short 1 grain could "
+            "still sow with Publican's gift), implementing this on the "
+            "post-sow broadcast would silently turn an enabling gift "
+            "into an unrelated windfall that arrives too late to have "
+            "mattered -- a real behavior change, not just a timing "
+            "cosmetic. No 'before an action resolves' hook exists for "
+            "sow (or anything else), so this stays gated.",
     "A141": "checks whether two spaces are occupied 'immediately before "
             "the returning home phase'; occupied_by is reset to None "
             "before any round-boundary hook fires, so that state can't be "
