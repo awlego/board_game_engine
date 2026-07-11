@@ -2029,9 +2029,8 @@
  },
  "B120": {
   "deck": "B",
-  "implemented": false,
+  "min_players": 1,
   "name": "Sweep",
-  "reason": "requires the physical 2D layout of round-space cards ('the card left of...'); this engine stores revealed cards as an ordered list with no positional/adjacency layout.",
   "text": "Each time before you use the action space card left of the card that has been most recently placed on a round space, you get 2 clay.",
   "type": "occupation"
  },
@@ -3381,9 +3380,8 @@
  },
  "C117": {
   "deck": "C",
-  "implemented": false,
+  "min_players": 1,
   "name": "Legworker",
-  "reason": "'action space orthogonally adjacent to another occupied space' requires a board layout for action spaces; unlike farmyard cells (orthogonal_neighbors), action spaces carry no position/adjacency data in this engine",
   "text": "Each time you use an action space that is orthogonally adjacent to another action space occupied by one of your people, you get 1 wood.",
   "type": "occupation"
  },
@@ -4679,9 +4677,8 @@
  },
  "D144": {
   "deck": "D",
-  "implemented": false,
+  "min_players": 1,
   "name": "Water Worker",
-  "reason": "Water Worker: 'the three orthogonally adjacent action spaces' needs a 2-D board-adjacency model between action spaces that this engine doesn't have.",
   "text": "Each time after you use the \"Fishing\" accumulation space or one of the three orthogonally adjacent actions spaces, you get 1 additional reed.",
   "type": "occupation"
  },
@@ -4816,10 +4813,8 @@
  },
  "D165": {
   "deck": "D",
-  "implemented": false,
   "min_players": 4,
   "name": "Pig Stalker",
-  "reason": "Pig Stalker: 'the action space immediately above or below' needs 2-D board adjacency between action spaces, not modeled by this engine.",
   "text": "Each time you use an animal accumulation space, if you occupy either the action space immediately above or below that accumulation space, you also get 1 wild boar.",
   "type": "occupation"
  },
@@ -6651,9 +6646,8 @@
    "clay": 1
   },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Badger",
-  "reason": "requires moving a marker between orthogonally adjacent action spaces; the engine stores revealed spaces as an unordered/unpositioned list with no adjacency layout (same gap as B120)",
   "text": "Immediately place a marker on an Action space of your choice. At the start of each round, you must move it to an orthogonally adjacent revealed Action space. Any player that uses that space also receives 1 Food.",
   "type": "minor"
  },
@@ -6853,9 +6847,8 @@
    "wood": 1
   },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Ground Pickaxe Plow",
-  "reason": "requires knowing which action spaces are orthogonally adjacent to the Plow space; no adjacency layout exists for action spaces (same gap as B120/FR006)",
   "text": "Once during the game, when you use either the \"Plow 1 field\" or the \"Plow 1 field and/or Sow\" Action space, you can place 1 Wood from your supply on 1/2 orthogonally adjacent (revealed or unrevealed) Action spaces (to the used plow space) to Plow 1/2 additional fields.",
   "type": "minor"
  },
@@ -6963,10 +6956,9 @@
    "stone": 1
   },
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Necklace",
-  "prereq_text": "1 occ",
-  "reason": "requires knowing whether two people occupy orthogonally adjacent action spaces; no adjacency layout exists for action spaces (same gap as B120/FR006)",
+  "prereq_text": "1 occupations",
   "text": "Whenever at the end of a Work phase, you have at least 2 Family members occupying 2 orthogonally adjacent Action spaces, you receive 1 Food.",
   "type": "minor"
  },

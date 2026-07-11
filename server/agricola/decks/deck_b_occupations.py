@@ -45,9 +45,6 @@ UNIMPLEMENTED = {
     "B116": "requires reacting to the preparation-phase accumulation-"
             "space replenishment (reed_bank going from empty to 1 reed); "
             "no hook fires at replenish time.",
-    "B120": "requires the physical 2D layout of round-space cards ('the "
-            "card left of...'); this engine stores revealed cards as an "
-            "ordered list with no positional/adjacency layout.",
     "B129": "requires using an action space already occupied by other "
             "players; placing on occupied spaces is explicitly "
             "unsupported.",
@@ -512,6 +509,27 @@ def _lumberjack_play(state, player, inst, ctx):
     ctx["log"].append(msg)
 
 compendium_card("B119", hooks={"play": _lumberjack_play})
+
+
+# ── B120 Sweep ────────────────────────────────────────────────────────
+# "Each time before you use the action space card left of the card
+# that has been most recently placed on a round space, you get 2
+# clay." The DB `rulings` entry tacks on a "(1-5 players) Each time you
+# use the 'Forest' or 'Reed Bank' accumulation space..." clause after a
+# repeated player-count marker -- bleed from an unrelated card (see the
+# module docstring's warning about this deck's corrupted rulings text),
+# not implemented. Only the card's own printed text is implemented,
+# via the `left_neighbor` recipe GUIDE.md documents for exactly this
+# card: `left_neighbor(state, state["revealed"][-1])`.
+def _sweep_hook(state, player, inst, ctx):
+    if ctx["actor"] != player["index"] or not state["revealed"]:
+        return
+    target = cards.left_neighbor(state, state["revealed"][-1])
+    if target is not None and ctx["space_id"] == target:
+        add_goods(ctx["extra"], {"clay": 2})
+        ctx["log"].append(f"{player['name']}'s Sweep adds 2 clay")
+
+compendium_card("B120", hooks={"space_used": _sweep_hook})
 
 
 # ── B122 Mineralogist ─────────────────────────────────────────────────

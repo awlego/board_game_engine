@@ -36,9 +36,10 @@ _DUMMY_OCCS = ["occ_woodcutter", "occ_reed_collector", "occ_clay_digger",
               "occ_shepherd"]
 
 _NEEDS_OCC = {"FR002": 3, "FR011": 2, "FR012": 2, "FR017": 2, "FR026": 2,
-             "FR052": 3, "FR053": 2, "FR054": 4}
+             "FR037": 1, "FR052": 3, "FR053": 2, "FR054": 4}
 
 _PLAY_PARAMS = {
+    "FR006": {"space": "day_laborer"},
     "FR012": {"spaces": ["forest", "clay_pit", "reed_bank"]},
 }
 
@@ -827,3 +828,124 @@ def test_chameleon_costs_sheep_grants_boar_and_shares_pasture(engine):
     secondary2 = cards.CARDS["FR013"]["pasture_secondary_types"](
         s, p, inst, {"cells": [4], "size": 1, "stables": 0, "animal_type": "cattle"})
     assert secondary2 == {}
+
+
+# ── FR006 Badger ──────────────────────────────────────────────────────
+
+def test_badger_grants_food_to_whoever_uses_marked_space(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = 1 - first
+    give_card(s, first, "FR006")
+    give(s, first, clay=1)
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "FR006",
+                                    "params": {"space": "forest"}}})
+    inst = next(i for i in s["players"][first]["minors"] if i["id"] == "FR006")
+    assert inst["data"]["marker"] == "forest"
+
+    food_before = s["players"][other]["resources"]["food"]
+    s = place(engine, s, {"kind": "place", "space": "forest"})  # other's turn
+    assert s["players"][other]["resources"]["food"] == food_before + 1
+
+
+def test_badger_moves_to_single_adjacent_space_at_round_start(engine):
+    """Farm Expansion has exactly one orthogonal neighbor (Meeting
+    Place) -- the move is automatic, no prompt needed."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "FR006")
+    inst = next(i for i in s["players"][first]["minors"] if i["id"] == "FR006")
+    inst["data"]["marker"] = "farm_expansion"
+    assert cards.adjacent_spaces(s, "farm_expansion") == ["meeting_place"]
+    engine._start_round(s, [])  # round 2
+    assert inst["data"]["marker"] == "meeting_place"
+
+
+def test_badger_prompts_when_multiple_adjacent_spaces(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "FR006")
+    inst = next(i for i in s["players"][first]["minors"] if i["id"] == "FR006")
+    inst["data"]["marker"] = "reed_bank"
+    options_expected = set(cards.adjacent_spaces(s, "reed_bank"))
+    assert len(options_expected) > 1
+    engine._start_round(s, [])  # round 2
+    prompt = s["prompts"][0]
+    assert prompt["type"] == "choice"
+    assert set(prompt["options"]) == options_expected
+
+    pid = s["players"][first]["player_id"]
+    idx = prompt["options"].index("fishing")
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": idx}).new_state
+    inst2 = next(i for i in s["players"][first]["minors"] if i["id"] == "FR006")
+    assert inst2["data"]["marker"] == "fishing"
+
+
+# ── FR027 Ground Pickaxe Plow ────────────────────────────────────────
+
+def test_ground_pickaxe_plow_bonus_and_once_per_game(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "FR027")
+    give(s, first, wood=2)
+    s = place(engine, s, {"kind": "place", "space": "farmland", "cell": 0})
+    p = s["players"][first]
+    assert p["cells"][0]["type"] == "field"  # farmland's own plow
+
+    prompt = s["prompts"][0]
+    assert prompt["type"] == "choice"
+    idx = next(i for i, o in enumerate(prompt["options"])
+              if o.startswith("Plow cell"))
+    plowed_cell = int(prompt["options"][idx].split()[2])
+    pid = p["player_id"]
+    wood_before = p["resources"]["wood"]
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": idx}).new_state
+    p = s["players"][first]
+    assert p["cells"][plowed_cell]["type"] == "field"
+    assert p["resources"]["wood"] == wood_before - 1
+
+    # Cap is 2 -- a second offer chains immediately; decline it.
+    prompt2 = s["prompts"][0]
+    decline_idx = prompt2["options"].index("Decline")
+    s = engine.apply_action(s, pid, {"kind": "choice",
+                                     "index": decline_idx}).new_state
+    assert not s["prompts"]
+
+    # "Once during the game" -- a later use of a qualifying space does
+    # not re-offer, even though it was only partially used above.
+    inst = next(i for i in s["players"][first]["minors"] if i["id"] == "FR027")
+    assert inst["data"]["used"] is True
+    ctx2 = {"space_id": "farmland", "goods": {}, "log": [], "extra": {},
+           "actor": first}
+    cards.CARDS["FR027"]["hooks"]["space_used"](s, s["players"][first], inst, ctx2)
+    assert not s["prompts"]
+
+
+# ── FR037 Necklace ────────────────────────────────────────────────────
+
+def test_necklace_bonus_when_two_adjacent_spaces_occupied(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "FR037")
+    food_before = s["players"][first]["resources"]["food"]
+    s = place(engine, s, {"kind": "place", "space": "grain_seeds"})  # first
+    s = place(engine, s, {"kind": "place", "space": "clay_pit"})  # other
+    s = place(engine, s, {"kind": "place", "space": "forest"})  # first, adjacent
+    s = place(engine, s, {"kind": "place", "space": "reed_bank"})  # other
+    assert s["round"] == 2  # work phase ended -> returning_home fired
+    assert s["players"][first]["resources"]["food"] == food_before + 1
+
+
+def test_necklace_no_bonus_without_adjacent_pair(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "FR037")
+    food_before = s["players"][first]["resources"]["food"]
+    s = place(engine, s, {"kind": "place", "space": "grain_seeds"})  # first
+    s = place(engine, s, {"kind": "place", "space": "clay_pit"})  # other
+    # Reed Bank (1, 4) is not orthogonally adjacent to Grain Seeds (0, 2).
+    s = place(engine, s, {"kind": "place", "space": "reed_bank"})  # first
+    s = place(engine, s, {"kind": "place", "space": "forest"})  # other
+    assert s["round"] == 2
+    assert s["players"][first]["resources"]["food"] == food_before

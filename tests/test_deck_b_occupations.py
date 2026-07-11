@@ -640,3 +640,25 @@ def test_pet_broker_gains_sheep_and_holds_by_occupation_count(engine):
     ctx = {"log": [], "actor": first, "extra": {}}
     play_hook(s, p, inst, ctx)
     assert ctx["extra"]["sheep"] == 1
+
+
+def test_sweep_bonus_on_left_neighbor_of_round_space(engine):
+    """Round 1: left_neighbor(revealed[-1]) is "forest" (per
+    test_agricola.py's own test_left_neighbor_of_round_spaces) -- using
+    Forest grants the Sweep's 2 clay on top of Forest's own payout."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "B120")
+    assert cards.left_neighbor(s, s["revealed"][-1]) == "forest"
+    clay_before = s["players"][first]["resources"]["clay"]
+    s = place(engine, s, {"kind": "place", "space": "forest"})
+    assert s["players"][first]["resources"]["clay"] == clay_before + 2
+
+
+def test_sweep_no_bonus_off_target(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "B120")
+    clay_before = s["players"][first]["resources"]["clay"]
+    s = place(engine, s, {"kind": "place", "space": "grain_seeds"})
+    assert s["players"][first]["resources"]["clay"] == clay_before

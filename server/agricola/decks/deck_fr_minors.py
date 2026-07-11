@@ -19,10 +19,11 @@ from server.agricola.cards import (
     needs_occupations, exact_occupations, combine, card_fields,
     modified_cost, fire, fire_player, bake_bonus,
 )
+from server.agricola import cards
 from server.agricola.state import (
     ANIMAL_TYPES, TOTAL_ROUNDS, HARVEST_ROUNDS, MAJOR_IMPROVEMENTS,
     FIREPLACES, COOKING_HEARTHS, compute_pastures, plowable_cells,
-    orthogonal_neighbors,
+    orthogonal_neighbors, SPACE_POSITIONS, ROUND_SLOTS,
 )
 
 UNIMPLEMENTED = {
@@ -40,10 +41,6 @@ UNIMPLEMENTED = {
     "FR005": "requires a per-round 'returning home phase' harvest hook; "
              "harvest_field only fires during the 6 official harvests, "
              "not every round",
-    "FR006": "requires moving a marker between orthogonally adjacent "
-             "action spaces; the engine stores revealed spaces as an "
-             "unordered/unpositioned list with no adjacency layout "
-             "(same gap as B120)",
     "FR009": "requires detecting 'converted a grain/vegetable into food' "
              "as a discrete event; raw crop-to-food conversion is a "
              "static rate query (raw_values), never a fired event (same "
@@ -60,9 +57,6 @@ UNIMPLEMENTED = {
              "other cards' prerequisites; neither an alternate-payment-"
              "via-discard channel nor a 'counts as' prerequisite override "
              "exists",
-    "FR027": "requires knowing which action spaces are orthogonally "
-             "adjacent to the Plow space; no adjacency layout exists for "
-             "action spaces (same gap as B120/FR006)",
     "FR029": "lets a placement ignore that an action space is already "
              "occupied; placing on occupied spaces is explicitly "
              "unsupported",
@@ -70,9 +64,6 @@ UNIMPLEMENTED = {
              "resolves to offer 'store food instead'; the only baking "
              "hook fires after a bake completes (with the grain count), "
              "not before/instead of one",
-    "FR037": "requires knowing whether two people occupy orthogonally "
-             "adjacent action spaces; no adjacency layout exists for "
-             "action spaces (same gap as B120/FR006)",
     "FR047": "requires reducing the number of people placed in a "
              "specific future round (no such placement-count modifier "
              "exists) and a round-end hook to grant free occupations "
@@ -286,6 +277,69 @@ def _apple_garden_score(state, player, inst):
     return 0
 
 compendium_card("FR004", score_bonus=_apple_garden_score)
+
+
+# ── FR006 Badger ──────────────────────────────────────────────────────
+# "Immediately place a marker on an Action space of your choice. At
+# the start of each round, you must move it to an orthogonally
+# adjacent revealed Action space. Any player that uses that space also
+# receives 1 Food." Rulings: it may not be moved onto an "additional"
+# (occupation/improvement) action space -- automatically true here,
+# since a card_space has no board position/adjacency at all; taking
+# the Badger's food doesn't require using the marked space first or
+# last, just at some point (the space_used hook below doesn't care
+# about order); and playing this card does not itself pay out, even if
+# played via the space the marker ends up on.
+
+def _badger_play(state, player, inst, ctx):
+    space_id = (ctx.get("params") or {}).get("space")
+    valid = isinstance(space_id, str) and not space_id.startswith("card:") \
+        and any(s["id"] == space_id for s in state["action_spaces"])
+    if not valid:
+        raise ValueError("Badger: choose an existing action space "
+                         "(params.space)")
+    inst["data"]["marker"] = space_id
+    ctx["log"].append(f"{player['name']} places the Badger marker on "
+                      f"{space_id}")
+
+
+def _badger_move(state, player, inst, marker, log):
+    options = cards.adjacent_spaces(state, marker)
+    if not options:
+        log.append(f"{player['name']}'s Badger has no adjacent revealed "
+                   "action space to move to and stays put")
+        return
+    if len(options) == 1:
+        inst["data"]["marker"] = options[0]
+        log.append(f"{player['name']} moves the Badger to {options[0]}")
+        return
+    prompt_choice(state, player, inst["id"],
+                  "Move the Badger to which adjacent action space?", options)
+
+
+def _badger_round_start(state, player, inst, ctx):
+    marker = inst["data"].get("marker")
+    if marker is not None:
+        _badger_move(state, player, inst, marker, ctx["log"])
+
+
+def _badger_choice(state, player, inst, ctx):
+    inst["data"]["marker"] = ctx["option"]
+    ctx["log"].append(f"{player['name']} moves the Badger to {ctx['option']}")
+
+
+def _badger_space_used(state, player, inst, ctx):
+    if ctx["space_id"] == inst["data"].get("marker"):
+        add_goods(ctx["extra"], {"food": 1})
+        actor_name = state["players"][ctx["actor"]]["name"]
+        ctx["log"].append(f"The Badger grants {actor_name} 1 food")
+
+
+compendium_card(
+    "FR006",
+    hooks={"play": _badger_play, "round_start": _badger_round_start,
+          "space_used": _badger_space_used},
+    resolve_choice=_badger_choice)
 
 
 # ── FR007 Baguette ────────────────────────────────────────────────────
@@ -610,6 +664,94 @@ compendium_card(
                                "(params.good)"})
 
 
+# ── FR027 Ground Pickaxe Plow ────────────────────────────────────────
+# "Once during the game, when you use either the 'Plow 1 field' or
+# 'Plow 1 field and/or Sow' Action space, you can place 1 Wood from
+# your supply on 1/2 orthogonally adjacent (revealed or unrevealed)
+# Action spaces (to the used plow space) to Plow 1/2 additional
+# fields." In this engine those two named spaces are "farmland" and
+# "cultivation" (state.PERMANENT_SPACES / STAGE_CARDS's "Farmland"/
+# "Cultivation"). Interpreted as: the FIRST time you use either space,
+# you may spend up to min(2, <adjacent action-space count>) wood, one
+# at a time, to plow that many additional fields, each field chosen
+# individually -- "Once during the game" gates the opportunity itself
+# (offered exactly once, whether or not any wood ends up spent), not
+# each individual field plowed (the ruling that this "can be combined
+# with other plows on the same action" only clarifies it stacks with
+# the space's own plow, not that the once-per-game trigger repeats).
+# Ruling combined with A091 Shifting Cultivator's precedent for a
+# pay-and-pick-a-cell prompt chain.
+#
+# Both farmland and cultivation always have at least 2 orthogonal
+# board neighbors in this engine's geometry (see decks/GUIDE.md's
+# board diagrams), so the adjacency count never actually reduces the
+# cap below 2 in practice -- it's still computed for fidelity to the
+# card's explicit "revealed or unrevealed" clause, which
+# cards.adjacent_spaces (existence-filtered, "revealed" only) can't
+# express: state.SPACE_POSITIONS/ROUND_SLOTS are read directly instead
+# (every round 1-14 has a fixed grid position whether or not it has
+# been revealed yet).
+
+_PLOW_SPACES = ("farmland", "cultivation")
+
+
+def _pickaxe_neighbor_cap(state, space_id):
+    pos = cards.space_position(state, space_id)
+    if pos is None:
+        return 0
+    col, row = pos
+    targets = {(col - 1, row), (col + 1, row), (col, row - 1), (col, row + 1)}
+    all_positions = set(SPACE_POSITIONS.get(state["player_count"], {}).values())
+    all_positions.update(ROUND_SLOTS.values())
+    return min(2, len(targets & all_positions))
+
+
+def _pickaxe_offer(state, player, inst):
+    remaining = inst["data"]["cap"] - inst["data"]["used_count"]
+    if remaining <= 0 or player["resources"]["wood"] < 1:
+        return
+    cells = plowable_cells(player)
+    if not cells:
+        return
+    options = ["Decline"] + [f"Plow cell {c} (1 wood)" for c in cells]
+    prompt_choice(state, player, inst["id"],
+                  "Ground Pickaxe Plow: pay 1 wood to plow an additional "
+                  "field?", options, data={"cells": cells})
+
+
+def _pickaxe_space_used(state, player, inst, ctx):
+    if ctx["actor"] != player["index"] or inst["data"].get("used"):
+        return
+    if ctx["space_id"] not in _PLOW_SPACES:
+        return
+    cap = _pickaxe_neighbor_cap(state, ctx["space_id"])
+    inst["data"]["used"] = True
+    if cap <= 0:
+        return
+    inst["data"]["cap"] = cap
+    inst["data"]["used_count"] = 0
+    _pickaxe_offer(state, player, inst)
+
+
+def _pickaxe_choice(state, player, inst, ctx):
+    if ctx["index"] == 0:
+        return
+    cell = ctx["data"]["cells"][ctx["index"] - 1]
+    if player["resources"]["wood"] < 1 or cell not in plowable_cells(player):
+        return
+    player["resources"]["wood"] -= 1
+    player["cells"][cell]["type"] = "field"
+    inst["data"]["used_count"] += 1
+    ctx["log"].append(f"{player['name']}'s Ground Pickaxe Plow plows a field")
+    _pickaxe_offer(state, player, inst)
+
+
+compendium_card(
+    "FR027",
+    hooks={"space_used": _pickaxe_space_used},
+    resolve_choice=_pickaxe_choice)
+
+
 # ── FR028 Hammock ─────────────────────────────────────────────────────
 def _hammock_play(state, player, inst, ctx):
     if not _remove_animal(player, "sheep", 1):
@@ -751,6 +893,29 @@ def _march_play(state, player, inst, ctx):
                       "2 fields")
 
 compendium_card("FR036", hooks={"play": _march_play})
+
+
+# ── FR037 Necklace ────────────────────────────────────────────────────
+# "Whenever at the end of a Work phase, you have at least 2 Family
+# members occupying 2 orthogonally adjacent Action spaces, you receive
+# 1 Food." (Ruling: "Action spaces do not need to be the same
+# dimensions" -- no special handling needed, adjacency here is grid-
+# based regardless of a space's real printed size.) returning_home
+# fires once per player at the end of the work phase, before
+# occupied_by/extra_occupants resets, with ctx["spaces"] already the
+# exact list this card's text asks for.
+
+def _necklace_returning_home(state, player, inst, ctx):
+    spaces = ctx["spaces"]
+    for i in range(len(spaces)):
+        for j in range(i + 1, len(spaces)):
+            if cards.spaces_adjacent(state, spaces[i], spaces[j]):
+                add_goods(ctx["extra"], {"food": 1})
+                ctx["log"].append(f"{player['name']}'s Necklace adds 1 food")
+                return
+
+compendium_card("FR037", prereq=needs_occupations(1),
+                hooks={"returning_home": _necklace_returning_home})
 
 
 # ── FR038 Orchard ─────────────────────────────────────────────────────

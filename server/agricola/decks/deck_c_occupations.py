@@ -20,13 +20,14 @@ static per-spec constant (can't be gated on a runtime purchase);
 renovates/harvests" cannot be observed; `bake_on_spaces` is only wired to
 the `farmland`/`cultivation` space handlers, not `major_improvement`;
 `occupation_played` ctx carries only `card_id`, not the space used or
-food paid; action spaces carry no adjacency/position data.
+food paid. (Action-space adjacency/position data is now supported --
+engine phase 10, see C117 below.)
 """
 
 from server.agricola.cards import (
     compendium_card, CARDS, prompt_choice,
     add_goods, space_bonus, round_income, on_play_gain,
-    animal_totals_of, card_fields, fire_player,
+    animal_totals_of, card_fields, fire_player, adjacent_spaces,
 )
 from server.agricola.state import (
     ANIMAL_TYPES, HARVEST_ROUNDS, TOTAL_ROUNDS, BUILDING_RESOURCES,
@@ -685,13 +686,27 @@ UNIMPLEMENTED["C116"] = (
     "be recovered")
 
 # ═════════════════════════════════════════════════════════════════════
-# C117 Legworker — UNIMPLEMENTED
+# C117 Legworker
 # ═════════════════════════════════════════════════════════════════════
-UNIMPLEMENTED["C117"] = (
-    "'action space orthogonally adjacent to another occupied space' "
-    "requires a board layout for action spaces; unlike farmyard cells "
-    "(orthogonal_neighbors), action spaces carry no position/adjacency "
-    "data in this engine")
+# "Each time you use an action space that is orthogonally adjacent to
+# another action space occupied by one of your people, you get 1
+# wood." The DB `rulings` entry is a bleed of several unrelated FotM/
+# scheduling clauses (see the module docstring); only the card's own
+# text is implemented -- this is GUIDE.md's own worked example for the
+# board-geometry queries.
+def _legworker_hook(state, player, inst, ctx):
+    if ctx["actor"] != player["index"]:
+        return
+    for sid in adjacent_spaces(state, ctx["space_id"]):
+        space = next(s for s in state["action_spaces"] if s["id"] == sid)
+        occupants = ([space["occupied_by"]] if space["occupied_by"] is not None
+                     else []) + space.get("extra_occupants", [])
+        if player["index"] in occupants:
+            add_goods(ctx["extra"], {"wood": 1})
+            ctx["log"].append(f"{player['name']}'s Legworker adds 1 wood")
+            return
+
+compendium_card("C117", hooks={"space_used": _legworker_hook})
 
 # ═════════════════════════════════════════════════════════════════════
 # C120 Agricultural Labourer

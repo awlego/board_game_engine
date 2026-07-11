@@ -732,3 +732,30 @@ def test_mud_wallower_accumulates_clay_and_exchanges_for_boar(engine):
     inst["held"] = {"sheep": 1}
     ok, err = cards.validate_held(s, p)
     assert not ok  # only boar allowed
+
+
+def test_legworker_bonus_wood_on_adjacent_occupancy(engine):
+    """Grain Seeds (0, 2) and Forest (1, 2) are orthogonally adjacent --
+    using Forest after occupying Grain Seeds grants 1 wood on top of
+    Forest's own payout."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "C117")
+
+    s = place(engine, s, {"kind": "place", "space": "grain_seeds"})
+    s = place(engine, s, {"kind": "place", "space": "clay_pit"})  # other
+    wood_before = s["players"][first]["resources"]["wood"]
+    s = place(engine, s, {"kind": "place", "space": "forest"})
+    assert s["players"][first]["resources"]["wood"] == wood_before + 3 + 1
+
+
+def test_legworker_no_bonus_without_adjacent_occupancy(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "C117")
+
+    s = place(engine, s, {"kind": "place", "space": "grain_seeds"})
+    s = place(engine, s, {"kind": "place", "space": "reed_bank"})  # other
+    wood_before = s["players"][first]["resources"]["wood"]
+    s = place(engine, s, {"kind": "place", "space": "day_laborer"})
+    assert s["players"][first]["resources"]["wood"] == wood_before

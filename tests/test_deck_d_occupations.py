@@ -680,3 +680,82 @@ def test_reader_provides_room_once_6_occupations_are_in_play(engine):
     acts = engine.get_valid_actions(s, pid)
     assert any(a["kind"] == "place" and a["space"] == "basic_wish"
               for a in acts)
+
+
+# ── D144 Water Worker ───────────────────────────────────────────────
+
+def test_water_worker_bonus_on_fishing(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "D144")
+    reed_before = s["players"][first]["resources"]["reed"]
+    s = place(engine, s, {"kind": "place", "space": "fishing"})
+    assert s["players"][first]["resources"]["reed"] == reed_before + 1
+
+
+def test_water_worker_bonus_on_adjacent_space(engine):
+    """Reed Bank (1, 4) sits directly above Fishing (1, 5) -- one of
+    Fishing's own orthogonally adjacent spaces."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "D144")
+    assert "reed_bank" in cards.adjacent_spaces(s, "fishing")
+    reed_before = s["players"][first]["resources"]["reed"]
+    s = place(engine, s, {"kind": "place", "space": "reed_bank"})
+    # Reed Bank's own accumulation (1 reed) plus the hook's +1.
+    assert s["players"][first]["resources"]["reed"] == reed_before + 2
+
+
+def test_water_worker_no_bonus_off_target(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "D144")
+    reed_before = s["players"][first]["resources"]["reed"]
+    s = place(engine, s, {"kind": "place", "space": "grain_seeds"})
+    assert s["players"][first]["resources"]["reed"] == reed_before
+
+
+# ── D165 Pig Stalker ──────────────────────────────────────────────────
+
+def _setup_pig_stalker(engine, neighbor_owner_fn):
+    """Reveal all of stage 1 (rounds 1-4) so wherever the shuffle landed
+    Sheep Market, at least one real vertical neighbor (another stage-1
+    round in the same column) already exists too, and directly mark
+    that neighbor occupied by whatever `neighbor_owner_fn(first, other)`
+    returns (its own action -- fencing/major_improvement/
+    grain_utilization -- needs extra params this test isn't about;
+    only its occupied_by matters to the hook under test)."""
+    s = make_state(engine, 2)
+    while s["round"] < 4:
+        engine._start_round(s, [])
+    first = s["current_player"]
+    other = 1 - first
+    put_in_play(s, first, "D165")
+    col, row = cards.space_position(s, "sheep_market")
+    vert_id = next(sid for sid in s["revealed"]
+                  if cards.space_position(s, sid) in
+                  {(col, row - 1), (col, row + 1)})
+    neighbor = next(sp for sp in s["action_spaces"] if sp["id"] == vert_id)
+    neighbor["occupied_by"] = neighbor_owner_fn(first, other)
+    return s, first
+
+
+def test_pig_stalker_bonus_with_vertical_neighbor(engine):
+    s, first = _setup_pig_stalker(engine, lambda first, other: first)
+    s = place(engine, s, {"kind": "place", "space": "sheep_market"})
+    pid = s["players"][first]["player_id"]
+    acc = next(a for a in engine.get_valid_actions(s, pid)
+              if a["kind"] == "accommodate")
+    assert acc["gained"].get("boar") == 1
+
+
+def test_pig_stalker_no_bonus_without_vertical_neighbor(engine):
+    """The neighbor is occupied by the OTHER player, not the Pig Stalker
+    owner -- no bonus."""
+    s, first = _setup_pig_stalker(engine, lambda first, other: other)
+    s = place(engine, s, {"kind": "place", "space": "sheep_market"})
+    pid = s["players"][first]["player_id"]
+    acc = next((a for a in engine.get_valid_actions(s, pid)
+               if a["kind"] == "accommodate"), None)
+    if acc:
+        assert "boar" not in acc["gained"]

@@ -89,9 +89,6 @@ UNIMPLEMENTED = {
             "occupies Clay Pit vs Reed Bank, but action-space occupancy "
             "is reset before round_start fires, and there's no "
             "end-of-work-phase hook.",
-    "D144": "Water Worker: 'the three orthogonally adjacent action "
-            "spaces' needs a 2-D board-adjacency model between action "
-            "spaces that this engine doesn't have.",
     "D147": "Trap Builder: schedules a future round's wild boar via the "
             "round_goods mechanism, but round_goods delivers straight "
             "into player resources (bypassing accommodation) -- unsafe "
@@ -121,9 +118,6 @@ UNIMPLEMENTED = {
             "depends on state *after* accommodation resolves, but "
             "space_used fires before the just-gained animal is "
             "accommodated -- no hook exists post-accommodation.",
-    "D165": "Pig Stalker: 'the action space immediately above or below' "
-            "needs 2-D board adjacency between action spaces, not "
-            "modeled by this engine.",
     "D167": "Pure Breeder: 'breed exactly one type of animal' after each "
             "non-harvest round needs a player choice at round_start; "
             "queuing a prompt there (before _advance_work's placement "
@@ -883,6 +877,25 @@ def _tree_cutter_hook(state, player, inst, ctx):
 compendium_card("D143", hooks={"space_used": _tree_cutter_hook})
 
 
+# ── D144 Water Worker ───────────────────────────────────────────────
+# "Each time after you use the 'Fishing' accumulation space or one of
+# the three orthogonally adjacent action spaces, you get 1 additional
+# reed." (The "three" is a ground-truth check on state.py's board
+# geometry, not something this hook needs to hardcode -- see
+# decks/GUIDE.md's board-geometry section.)
+
+def _water_worker_hook(state, player, inst, ctx):
+    if ctx["actor"] != player["index"]:
+        return
+    if ctx["space_id"] == "fishing" or \
+            ctx["space_id"] in cards.adjacent_spaces(state, "fishing"):
+        add_goods(ctx["extra"], {"reed": 1})
+        ctx["log"].append(f"{player['name']}'s Water Worker adds 1 reed")
+
+
+compendium_card("D144", hooks={"space_used": _water_worker_hook})
+
+
 # ── D145 Roof Examiner ────────────────────────────────────────────────
 # "When you play this card, if you have 1/2/3/4 major improvements, you
 # immediately get 2/3/4/5 reed." (Trailing "(3-5 players) Each time you
@@ -1086,6 +1099,45 @@ def _midwife_hook(state, player, inst, ctx):
 
 
 compendium_card("D160", hooks={"family_growth": _midwife_hook})
+
+
+# ── D165 Pig Stalker ──────────────────────────────────────────────────
+# "Each time you use an animal accumulation space, if you occupy
+# either the action space immediately above or below that
+# accumulation space, you also get 1 wild boar." "Animal accumulation
+# space" is read off ctx["goods"] (whatever the space just paid out
+# includes an animal type) rather than a static space definition --
+# state["action_spaces"] entries don't retain the original PERMANENT_
+# SPACES/STAGE_CARDS "acc" recipe dict at runtime (only a bool
+# "accumulates" flag plus the live "supply"), and by the time
+# space_used fires that supply has already been zeroed out. Only
+# vertical neighbors count (unlike D144's all-4-directions check).
+
+def _pig_stalker_hook(state, player, inst, ctx):
+    if ctx["actor"] != player["index"]:
+        return
+    if not any(g in ANIMAL_TYPES for g in ctx["goods"]):
+        return
+    pos = cards.space_position(state, ctx["space_id"])
+    if pos is None:
+        return
+    col, row = pos
+    for target in ((col, row - 1), (col, row + 1)):
+        neighbor = next((s for s in state["action_spaces"]
+                         if cards.space_position(state, s["id"]) == target),
+                        None)
+        if neighbor is None:
+            continue
+        occupants = ([neighbor["occupied_by"]]
+                    if neighbor["occupied_by"] is not None else []) \
+            + neighbor.get("extra_occupants", [])
+        if player["index"] in occupants:
+            add_goods(ctx["extra"], {"boar": 1})
+            ctx["log"].append(f"{player['name']}'s Pig Stalker adds 1 wild boar")
+            return
+
+
+compendium_card("D165", hooks={"space_used": _pig_stalker_hook})
 
 
 # ── D166 Stable Milker ────────────────────────────────────────────────
