@@ -12,7 +12,16 @@ reference for deck modules under `server/agricola/decks/`.
    cost, points, min_players, and traveling from the DB. Pass overrides
    (e.g. `cost={"wood": 1}`) only when the parse is wrong or the cost
    is special. `parse_cost` raises on tokens it doesn't understand —
-   that's your cue to hand-write the cost dict.
+   that's your cue to hand-write the cost dict. A printed ALTERNATIVE
+   cost ("3 wood or 3 clay") is a LIST of dicts:
+   `cost=[{"wood": 3}, {"clay": 3}]` — the player picks one at play
+   time via the action's `cost_option` index (`minor.cost_option`, or
+   top-level `cost_option` for an occupation's surcharge), defaulting
+   to the first affordable alternative (`sub_actions.resolve_spec_cost`);
+   the affordability preview accepts any affordable alternative, and
+   the catalog exporter emits the first alternative as `cost` plus the
+   full `cost_alternatives` list. Never collapse an "or" cost to one
+   fixed option.
 2. **Fidelity over coverage.** Implement the card's rules text (use the
    DB `rulings` to resolve ambiguity). If the engine can't express the
    effect faithfully, DO NOT approximate silently — add it to the

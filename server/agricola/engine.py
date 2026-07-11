@@ -1173,7 +1173,8 @@ class AgricolaEngine(GameEngine):
         cost = self._occupation_cost(state, p, space_id)
         sub_actions.play_occupation(state, p, cid, log,
                                     params=action.get("params"),
-                                    cost_override={"food": cost})
+                                    cost_override={"food": cost},
+                                    cost_option=action.get("cost_option"))
 
     def _play_minor(self, state, p, minor, log, space_id=None):
         if not isinstance(minor, dict):
@@ -1182,7 +1183,8 @@ class AgricolaEngine(GameEngine):
         sub_actions.play_minor(state, p, cid, log,
                                params=minor.get("params"),
                                ctx={"space_id": space_id,
-                                    "payment": minor.get("payment")})
+                                    "payment": minor.get("payment")},
+                               cost_option=minor.get("cost_option"))
 
     # ── Farm development ─────────────────────────────────────────────
 

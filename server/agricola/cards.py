@@ -76,7 +76,11 @@ def parse_players(players_str):
 
 def card(cid, name, ctype, text, deck="base", min_players=1, cost=None,
          prereq=None, points=0, traveling=False, hooks=None, **abilities):
-    """Register a card spec. `prereq` is (predicate, text). Extra keyword
+    """Register a card spec. `prereq` is (predicate, text). `cost` is a
+    goods dict, or a LIST of goods dicts for a printed alternative cost
+    ("3 wood or 3 clay") -- the player picks one at play time via the
+    action's `cost_option` index, defaulting to the first affordable
+    alternative (see sub_actions.resolve_spec_cost). Extra keyword
     abilities are static keys read by the modifier queries below (cook,
     bake, raw_values, bake_bonus, cost_mod, occ_cost_delta,
     pasture_capacity_bonus, pasture_capacity_mod, unfenced_stable_capacity_mod,

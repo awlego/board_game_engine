@@ -5054,3 +5054,79 @@ def test_fence_tokens_missing_key_old_save_safe(engine):
     assert sub_actions.can_build_fences(s, p)
     sub_actions.build_fences(s, p, cell_edges(4), [])
     assert compute_pastures(p) == [[4]]
+
+
+# ── Alternative printed costs (cost=[{...}, {...}]) ───────────────────
+
+def test_alt_cost_default_picks_first_affordable(engine, temp_card):
+    """A list cost ("3 wood or 3 clay") with no cost_option pays the
+    first alternative the player can afford."""
+    cid = "test_alt_cost_minor"
+    temp_card(cid, "Alt Cost Minor", "minor", "test",
+              cost=[{"wood": 3}, {"clay": 3}])
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    give_card(s, first, cid)
+    give(s, first, clay=3)  # can afford only the clay alternative
+    add_space(s, "meeting_place", "Meeting Place")
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": cid}})
+    p = s["players"][first]
+    assert any(i["id"] == cid for i in p["minors"])
+    assert p["resources"]["clay"] == 0
+    assert p["resources"]["wood"] == 0
+
+
+def test_alt_cost_explicit_option_and_validation(engine, temp_card):
+    cid = "test_alt_cost_minor2"
+    temp_card(cid, "Alt Cost Minor 2", "minor", "test",
+              cost=[{"wood": 3}, {"clay": 3}])
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    give_card(s, first, cid)
+    give(s, first, wood=3, clay=3)
+    add_space(s, "meeting_place", "Meeting Place")
+    # Explicitly pick the clay alternative even though wood is first.
+    s2 = place(engine, s, {"kind": "place", "space": "meeting_place",
+                           "minor": {"card": cid, "cost_option": 1}})
+    p2 = s2["players"][first]
+    assert p2["resources"]["clay"] == 0 and p2["resources"]["wood"] == 3
+    # Out-of-range option raises; unaffordable chosen option raises.
+    with pytest.raises(ValueError):
+        place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": cid, "cost_option": 5}})
+    s["players"][first]["resources"]["clay"] = 0
+    with pytest.raises(ValueError):
+        place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": cid, "cost_option": 1}})
+
+
+def test_alt_cost_affordability_preview_accepts_any_alternative(engine, temp_card):
+    cid = "test_alt_cost_minor3"
+    temp_card(cid, "Alt Cost Minor 3", "minor", "test",
+              cost=[{"wood": 3}, {"clay": 3}])
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    give_card(s, first, cid)
+    assert not sub_actions.can_play_minor(s, p, cid)
+    give(s, first, clay=3)
+    assert sub_actions.can_play_minor(s, p, cid)
+
+
+def test_alt_cost_occupation_surcharge(engine, temp_card):
+    """An occupation's printed alternative cost surcharges every play
+    path, resolved the same way."""
+    cid = "test_alt_cost_occ"
+    temp_card(cid, "Alt Cost Occ", "occupation", "test",
+              cost=[{"wood": 1}, {"food": 1}])
+    s = make_state(engine, 2)
+    p = s["players"][0]
+    give_card(s, 0, cid)
+    p["resources"]["food"] = 1
+    p["resources"]["wood"] = 0
+    log = []
+    sub_actions.play_occupation(s, p, cid, log, cost_override="free")
+    assert p["resources"]["food"] == 0 and p["resources"]["wood"] == 0

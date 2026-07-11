@@ -106,6 +106,35 @@ def can_afford(player, cost):
     return all(player["resources"][r] >= a for r, a in cost.items())
 
 
+def cost_alternatives(spec_cost):
+    """A spec's printed cost as a list of alternatives: a plain dict is
+    one alternative; a list ("3 wood or 3 clay") is taken as-is."""
+    if isinstance(spec_cost, list):
+        return spec_cost
+    return [spec_cost or {}]
+
+
+def resolve_spec_cost(state, player, kind, spec_cost, cost_option, ctx):
+    """The modified cost the player actually pays for a spec's printed
+    cost. `cost_option` (the client action's own index into the printed
+    alternatives) picks explicitly; None defaults to the first
+    alternative the player can afford after cost_mods (so single-cost
+    cards and bots behave exactly as before). Always returns a cost --
+    when nothing is affordable, the first option, so pay() raises the
+    normal 'Not enough X' error."""
+    alts = cost_alternatives(spec_cost)
+    if cost_option is not None:
+        if not isinstance(cost_option, int) or not 0 <= cost_option < len(alts):
+            raise ValueError("Invalid cost option")
+        alts = [alts[cost_option]]
+    costs = [cards.modified_cost(state, player, kind, alt, ctx)
+             for alt in alts]
+    for c in costs:
+        if can_afford(player, c):
+            return c
+    return costs[0]
+
+
 def _effective_cost(cost_override, normal_cost_fn):
     """cost_override is None|dict|"free". Only calls normal_cost_fn (a
     zero-arg thunk) when actually needed, since it may itself run
@@ -628,7 +657,8 @@ def can_play_occupation(state, player, cid, cost_override=None, ctx=None):
     return can_afford(player, cost)
 
 
-def play_occupation(state, player, cid, log, params=None, cost_override=None, ctx=None):
+def play_occupation(state, player, cid, log, params=None, cost_override=None,
+                    ctx=None, cost_option=None):
     """Play an occupation from hand outside the normal Lessons dispatch
     (an out-of-turn/free/discounted play granted by another card, e.g.
     Educator/Scholar/Craft Teacher). `cost_override=None` charges the
@@ -663,7 +693,13 @@ def play_occupation(state, player, cid, log, params=None, cost_override=None, ct
         full_ctx["card"] = cid
         cost = dict(cards.modified_cost(state, player, "occupation",
                                         {"food": n}, full_ctx))
-    surcharge = spec.get("cost") or {}
+    alts = cost_alternatives(spec.get("cost"))
+    if cost_option is not None:
+        if not isinstance(cost_option, int) or not 0 <= cost_option < len(alts):
+            raise ValueError("Invalid cost option")
+        surcharge = alts[cost_option]
+    else:
+        surcharge = next((a for a in alts if can_afford(player, a)), alts[0])
     for res, amount in surcharge.items():
         cost[res] = cost.get(res, 0) + amount
     pay(player, cost)
@@ -706,15 +742,17 @@ def can_play_minor(state, player, cid, cost_override=None, ctx=None):
     if cost_override == "free":
         return True
     if isinstance(cost_override, dict):
-        cost = cost_override
-    else:
-        full_ctx = dict(ctx or {})
-        full_ctx["card"] = cid
-        cost = cards.modified_cost(state, player, "minor", spec["cost"], full_ctx)
-    return can_afford(player, cost)
+        return can_afford(player, cost_override)
+    full_ctx = dict(ctx or {})
+    full_ctx["card"] = cid
+    return any(
+        can_afford(player, cards.modified_cost(state, player, "minor",
+                                               alt, full_ctx))
+        for alt in cost_alternatives(spec["cost"]))
 
 
-def play_minor(state, player, cid, log, params=None, cost_override=None, ctx=None):
+def play_minor(state, player, cid, log, params=None, cost_override=None,
+               ctx=None, cost_option=None):
     if cid not in player["hand_minors"]:
         raise ValueError("That minor improvement is not in your hand")
     spec = cards.CARDS[cid]
@@ -729,7 +767,8 @@ def play_minor(state, player, cid, log, params=None, cost_override=None, ctx=Non
     else:
         full_ctx = dict(ctx or {})
         full_ctx["card"] = cid
-        cost = cards.modified_cost(state, player, "minor", spec["cost"], full_ctx)
+        cost = resolve_spec_cost(state, player, "minor", spec["cost"],
+                                 cost_option, full_ctx)
     if cost_override != "free":
         pay(player, cost)
     player["hand_minors"].remove(cid)

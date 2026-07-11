@@ -39,6 +39,16 @@ def build_catalog():
                     continue
                 if isinstance(value, tuple):
                     value = list(value)
+                if key == "cost" and isinstance(value, list):
+                    # Alternative printed cost ("3 wood or 3 clay"): the
+                    # client renders `cost` as one dict, so emit the
+                    # first alternative there plus the full list for a
+                    # future cost-picker UI.
+                    entry["cost_alternatives"] = value
+                    entry["cost_text"] = " or ".join(
+                        " + ".join(f"{n} {g}" for g, n in alt.items())
+                        for alt in value)
+                    value = value[0]
                 if key == "field":
                     field_value = {"crops": list(value["crops"])}
                     if value.get("stacks", 1) != 1:
