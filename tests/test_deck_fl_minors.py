@@ -125,7 +125,9 @@ def test_belgian_shepherd_holds_two_sheep_and_blocks_house_pets(engine):
     assert not ok
 
 
-def test_educational_building_usable_at_3rd_and_4th_placement(engine):
+def test_educational_building_usable_once_per_game(engine):
+    """Alex's ruling read (2026-07-11): a single opportunity per game,
+    offered at a 3rd or 4th placement, gone once used."""
     s = make_state(engine, 2)
     first = s["current_player"]
     p = s["players"][first]
@@ -138,8 +140,8 @@ def test_educational_building_usable_at_3rd_and_4th_placement(engine):
 
     log = []
     card_space["resolve"](s, p, inst, {}, log)
-    assert inst["data"]["used_3rd"] is True
-    assert card_space["usable"](s, p, inst) is False  # 3rd already used
+    assert inst["data"]["used"] is True
+    assert card_space["usable"](s, p, inst) is False
 
     rnd = s["round"]
     good = "wood"
@@ -147,8 +149,9 @@ def test_educational_building_usable_at_3rd_and_4th_placement(engine):
         assert s["round_goods"][str(r)][str(first)][good] == 1
         good = "stone" if good == "wood" else "wood"
 
+    # Once per GAME: a later 4th placement does not re-offer it.
     p["people_placed"] = 3
-    assert card_space["usable"](s, p, inst) is True  # 4th still available
+    assert card_space["usable"](s, p, inst) is False
 
 
 def test_brabant_scores_for_two_or_three_zero_animal_categories(engine):

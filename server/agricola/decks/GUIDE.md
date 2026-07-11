@@ -28,6 +28,12 @@ reference for deck modules under `server/agricola/decks/`.
    majors (Fireplace A1/A2 etc.) → this engine's majors
    (`fireplace_2/3`, `cooking_hearth_4/5`, `clay_oven`, `stone_oven`,
    `joinery`, `pottery`, `basketmaker`, `well`).
+5. **Farmers of the Moor is not supported** (Alex's standing policy,
+   2026-07-11). All of deck M stays gated, and any DB ruling tagged
+   `(FotM)` is IGNORED — implement the base-game text/values and note
+   the ignored ruling in a comment (precedents: B030's FotM-only
+   4-point cap, FL024's FotM-only round restriction). Do not blend
+   FotM caps, costs, or timing into a base-game card.
 
 ## What the engine supports (spec keys and helpers)
 
@@ -268,17 +274,20 @@ mechanism.
     per rule 2's "don't approximate silently". A payment may address
     several cards at once (one key each).
 
-  **Worked payment-channel example** (E36 Clay Roof: "replace 1 or 2
-  reed with the same amount of clay whenever you extend or renovate"):
+  **Worked payment-channel example** (E36 Clay Roof: "when building a
+  room, you may use 1 reed and 1 clay instead of the 2 reed required" —
+  a per-room substitution, so the cap scales with the batch's
+  `ctx["count"]`):
   ```python
   def _clay_roof_mod(state, player, kind, cost, ctx):
-      if kind not in ("room", "renovation"):
+      if kind != "room":
           return cost
       payment = ctx.get("payment")
       if not isinstance(payment, dict) or "reed_to_clay" not in payment:
           return cost  # not addressed to this card
       n = payment["reed_to_clay"]
-      if not isinstance(n, int) or n <= 0 or n > 2 or n > cost.get("reed", 0):
+      if not isinstance(n, int) or n <= 0 or n > ctx.get("count", 1) \
+              or n > cost.get("reed", 0):
           raise ValueError("Clay Roof: invalid payment")
       cost = dict(cost)
       cost["reed"] -= n

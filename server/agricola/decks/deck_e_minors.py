@@ -407,22 +407,24 @@ compendium_card("E35", cost={"wood": 1},
 
 
 # ── E36 Clay Roof ───────────────────────────────────────────────────────
-# "You can replace 1 or 2 reed with the same amount of clay whenever you
-# extend or renovate your home." This is decks/GUIDE.md's own worked
-# ctx["payment"] example verbatim (the card that motivated the
-# payment-channel mechanism) -- a per-build-ACTION cap of 2, not scaled
-# by ctx["count"]: the printed text is "whenever you [do the action]",
-# and the DB ruling ("can be used for every room you build, if you build
-# more than 1 room") reads as clarifying reusability across separate
-# build actions, not a per-room-scaled cap within one batch.
+# "When building a room, you may choose to use 1 reed and 1 clay instead
+# of the 2 reed required" (Alex-confirmed ruling text, 2026-07-11):
+# a PER-ROOM substitution of exactly 1 reed -> 1 clay, so the payment
+# scales with the batch -- up to ctx["count"] substitutions in one build
+# action ("can be used for every room you build, if you build more than
+# 1 room"). Rooms only, NOT renovation. Other cost cards stack in the
+# same action and may even affect the clay this introduces (ruling C) --
+# that falls out of modified_cost folding every in-play card's mod over
+# the same evolving cost dict.
 def _clay_roof_mod(state, player, kind, cost, ctx):
-    if kind not in ("room", "renovation"):
+    if kind != "room":
         return cost
     payment = ctx.get("payment")
     if not isinstance(payment, dict) or "reed_to_clay" not in payment:
         return cost  # not addressed to this card (another card's payment)
     n = payment["reed_to_clay"]
-    if not isinstance(n, int) or n <= 0 or n > 2 or n > cost.get("reed", 0):
+    if not isinstance(n, int) or n <= 0 or n > ctx.get("count", 1) \
+            or n > cost.get("reed", 0):
         raise ValueError("Clay Roof: invalid payment")
     cost = dict(cost)
     cost["reed"] -= n

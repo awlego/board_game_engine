@@ -160,26 +160,19 @@ compendium_card(
 # ── FL004 Educational Building ──────────────────────────────────────────
 # See module docstring for the "3rd/4th family member" = "3rd/4th
 # placement of a round" interpretation. A card_space, owner only, usable
-# exactly twice ever (once at people_placed==2, once at people_placed==3,
-# independently -- "3rd and/or 4th"); using it schedules 1 wood, then 1
-# stone, alternating, on every remaining round (Well/K108-style
-# scheduling, but ALL remaining rounds rather than a fixed list).
+# ONCE per game total (Alex's ruling read, 2026-07-11: "the first time
+# you use your 3rd and/or 4th family member" is a single opportunity,
+# not one per person) -- offered at any round's 3rd or 4th placement
+# until used; using it schedules 1 wood, then 1 stone, alternating, on
+# every remaining round (Well/K108-style scheduling, but ALL remaining
+# rounds rather than a fixed list).
 def _edu_building_usable(state, player, inst):
-    pp = player["people_placed"]
-    if pp == 2 and not inst["data"].get("used_3rd"):
-        return True
-    if pp == 3 and not inst["data"].get("used_4th"):
-        return True
-    return False
+    return player["people_placed"] in (2, 3) and not inst["data"].get("used")
 
 def _edu_building_resolve(state, player, inst, action, log):
-    pp = player["people_placed"]
-    if pp == 2:
-        inst["data"]["used_3rd"] = True
-    elif pp == 3:
-        inst["data"]["used_4th"] = True
-    else:
+    if player["people_placed"] not in (2, 3) or inst["data"].get("used"):
         raise ValueError("Educational Building is not usable right now")
+    inst["data"]["used"] = True
     good = "wood"
     for r in range(state["round"] + 1, TOTAL_ROUNDS + 1):
         slot = state["round_goods"].setdefault(str(r), {}) \

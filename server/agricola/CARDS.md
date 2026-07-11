@@ -299,9 +299,12 @@ Known remaining gaps, and how they'd fit if a future card needs them:
   cards that need them (Guest I73, Telegram A022, Bassinet A025, Head
   of the Family E159, Field Warden E163, Hay Rake FR029, Second Spouse
   C129, Little Peasant B151, Seatmate B129, ...) is a separate pass.
-- **Farmers of the Moor** (deck M): fuel/heating, horses, forest/moor
-  tiles — a whole expansion's systems; M-deck cards stay unimplemented
-  until that lands.
+- **Farmers of the Moor is not supported** (Alex's standing policy,
+  2026-07-11): deck M (fuel/heating, horses, forest/moor tiles — a
+  whole expansion's systems) stays unimplemented, and `(FotM)`-tagged
+  DB rulings on base-deck cards are ignored — base-game text/values
+  are implemented, with the ignored ruling noted in a comment (see
+  decks/GUIDE.md ground rule 5).
 - **Bonus build/play sub-actions** (build a room/stable/fence, renovate,
   build a major improvement, play a minor improvement, sow, play an
   occupation, at full/discounted/free cost) are now supported — see

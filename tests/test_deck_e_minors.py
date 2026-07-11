@@ -724,33 +724,33 @@ def test_riding_plough_plows_up_to_three_fields_twice(engine):
     assert inst["data"]["uses_left"] == 1
 
 
-def test_clay_roof_reed_to_clay_payment(engine):
-    """E36: replace 1 or 2 reed with the same amount of clay, driven by
-    the client action's own "payment" field -- decks/GUIDE.md's worked
-    ctx["payment"] example, verbatim, for the real card."""
+def test_clay_roof_per_room_reed_to_clay_payment(engine):
+    """E36 (Alex-confirmed ruling, 2026-07-11): when building a room,
+    1 reed + 1 clay may replace the 2 reed required -- one substitution
+    PER ROOM (cap scales with ctx["count"]), rooms only."""
     s = make_state(engine, 2)
     first = s["current_player"]
     p = s["players"][first]
     put_in_play(s, first, "E36")
-    rooms_n = sum(1 for c in p["cells"] if c["type"] == "room")
-    # The unmodified-cost preview (_space_usable) needs the normal reed
-    # too, even though the real payment ends up not spending it.
-    give(s, first, clay=rooms_n + 1, reed=1)
-    add_space(s, "house_redevelopment", "House Redevelopment")
-    s = place(engine, s, {"kind": "place", "space": "house_redevelopment",
-                          "payment": {"reed_to_clay": 1}})
-    p = s["players"][first]
-    assert p["house_type"] == "clay"
-    assert p["resources"]["reed"] == 1 and p["resources"]["clay"] == 0
 
-    # Also applies to kind="room"; garbage payment raises rather than
-    # being silently ignored.
+    # One room: exactly 1 substitution allowed.
     cost = cards.modified_cost(s, p, "room", {"wood": 5, "reed": 2},
-                               {"count": 1, "payment": {"reed_to_clay": 2}})
-    assert cost == {"wood": 5, "clay": 2}
+                               {"count": 1, "payment": {"reed_to_clay": 1}})
+    assert cost == {"wood": 5, "reed": 1, "clay": 1}
     with pytest.raises(ValueError):
         cards.modified_cost(s, p, "room", {"wood": 5, "reed": 2},
-                            {"count": 1, "payment": {"reed_to_clay": 5}})
+                            {"count": 1, "payment": {"reed_to_clay": 2}})
+
+    # Two rooms in one batch: up to 2 substitutions.
+    cost = cards.modified_cost(s, p, "room", {"wood": 10, "reed": 4},
+                               {"count": 2, "payment": {"reed_to_clay": 2}})
+    assert cost == {"wood": 10, "reed": 2, "clay": 2}
+
+    # Renovation is NOT covered -- the payment goes unconsumed and the
+    # cost is unchanged (same as a payment for a card you don't own).
+    cost = cards.modified_cost(s, p, "renovation", {"clay": 3, "reed": 1},
+                               {"payment": {"reed_to_clay": 1}})
+    assert cost == {"clay": 3, "reed": 1}
 
 
 def test_shepherds_pipe_sheep_pasture_and_stable(engine):
