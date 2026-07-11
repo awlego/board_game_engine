@@ -1420,11 +1420,13 @@
   "type": "minor"
  },
  "B023": {
+  "cost": {
+   "reed": 1
+  },
   "deck": "B",
-  "implemented": false,
+  "min_players": 1,
   "name": "Final Scenario",
   "prereq_text": "round 13 or before",
-  "reason": "requires revealing next round's action-space card early as a private space only the owner may use; action-space deck/reveal manipulation is unsupported",
   "text": "Place the action space card for round 14 face up in front of you. Only you can use it until it is placed on the game board. (Cost 1R.) You can place exactly two people immediately after one another if at least one of them uses the \"Sheep Market\", \"Pig Market\", or \"Cattle Market\" accumulation space. (Cost 1W.) When you play this card, you immediately get 1 food. For each occupation you play, you get an additional \"Bake Bread\" action.",
   "type": "minor"
  },
@@ -4079,11 +4081,10 @@
    "wood": 1
   },
   "deck": "D",
-  "implemented": false,
+  "min_players": 1,
   "name": "Tea House",
   "points": 2,
-  "prereq_text": "Play in round 6 or later",
-  "reason": "skip your 2nd placement now and use it later in the same round -- a turn-order deferral the placement flow (_advance_work/_apply_place) doesn't support",
+  "prereq_text": "play in round 6 or later",
   "text": "Once per round, you can skip placing your second person and get 1 food instead. (You can place the person later that round.)",
   "type": "minor"
  },
@@ -5130,9 +5131,8 @@
  },
  "E173": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Chief's Daughter",
-  "reason": "Chief's Daughter: must react to another player playing the Chief (E172) WHILE STILL IN HAND (unplayed), but the hook system only fires events to already-in-play cards (cards.fire/fire_player iterate in_play(player)); a card sitting in hand can never observe or react to anything.",
   "text": "If another player plays the Chief E172 card, you can play this card immediately at no cost. At the end of the game, you receive 3 bonus points if you have a stone house, 1 if you have a clay hut.",
   "type": "occupation"
  },
@@ -9214,10 +9214,8 @@
  },
  "I260": {
   "deck": "I",
-  "implemented": false,
   "min_players": 4,
   "name": "Taster",
-  "reason": "lets a non-starting player act before the starting player for one round while turn order resumes normally after; placement order is a fixed round-robin from state['starting_player'] with no per-round override hook (turn-sequencing changes are the one class of thing the architecture reserves for engine-level features, e.g. the Lasso).",
   "text": "Whenever another player is the starting player, you can pay them 1 food at the start of the round and be the first to place a family member. After that, play starts with the starting player as usual.",
   "type": "occupation"
  },
@@ -9366,12 +9364,15 @@
   "type": "minor"
  },
  "I71": {
-  "cost_text": "3W or 3C, 2R",
+  "cost": {
+   "reed": 2,
+   "wood": 3
+  },
   "deck": "I",
-  "implemented": false,
+  "min_players": 1,
   "name": "Holiday House",
   "points": 8,
-  "reason": "forces the owner to skip all people placement in round 14 -- a turn-structure control the engine has no hook for; _advance_work/_placement_actions have no per-player 'skip the work phase' key to consult.",
+  "prereq_text": "play this card at the latest during round 13",
   "text": "In round 14, you cannot place any people. Play this card at the latest during round 13.",
   "type": "minor"
  },
@@ -9945,9 +9946,8 @@
    "wood": 1
   },
   "deck": "K",
-  "implemented": false,
+  "min_players": 1,
   "name": "Broom",
-  "reason": "discards the player's whole minor-improvement hand and deals 7 fresh ones from the undealt reserve, then allows an extra minor-improvement play. The engine deals fixed hands once at setup and keeps no residual draw pile at runtime (state has no 'remaining minors' pool to draw from), so there is nothing to redraw from.",
   "text": "Discard all the remaining minor improvements in your hand, and draw 7 new minor improvements. You can play 1 more minor improvement immediately.",
   "type": "minor"
  },
@@ -10205,10 +10205,8 @@
  },
  "K269": {
   "deck": "K",
-  "implemented": false,
   "min_players": 4,
   "name": "Acrobat",
-  "reason": "grants a deferred move of an already-placed person (from \"Traveling Players\") to another space after all players have finished their turns; no hook fires between the end of the work phase and the start of harvest/next round for a card to grant a delayed placement.",
   "text": "Whenever you use the \"Traveling players\" action on an action space, after all of the players have finished their turns you may move that person to one of the \"Take 1 Grain\", \"Plough 1 Field\" and \"Plough Field and Sow\" action spaces, if it's free, and take the action.",
   "type": "occupation"
  },
@@ -10358,10 +10356,8 @@
  },
  "K289": {
   "deck": "K",
-  "implemented": false,
   "min_players": 4,
   "name": "Countryman",
-  "reason": "grants a deferred move of an already-placed person (from \"Take 1 Grain\"/\"Take 1 Vegetable\") to a sow space after all players have finished their turns; same missing post-work-phase hook as K269 Acrobat.",
   "text": "After all players have placed their people, you may move one of your people from a \"Take 1 Grain\" or \"Take 1 Vegetable\" action space to a free action space with a \"sow\" action.",
   "type": "occupation"
  },

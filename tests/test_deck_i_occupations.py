@@ -594,3 +594,47 @@ def test_gardener_keeps_vegetables_on_the_field(engine):
     # Grain is unaffected -- it still decrements normally.
     assert p["resources"]["grain"] == grain_before + 1
     assert p["cells"][1]["crops"]["count"] == 1
+
+
+def test_taster_places_first_then_rotation_resumes(engine):
+    """I260 Taster, the real card: the _resume_from recipe (decks/
+    GUIDE.md's "Turn structure" section; test_first_placer_override_
+    full_round_order in tests/test_agricola.py is the temp_card version
+    of this same flow). Owner pays the starting player 1 food and places
+    first; rotation then resumes from the TRUE starting player."""
+    s = make_state(engine, 4, seed=3)
+    starting = s["starting_player"]
+    owner_idx = next(i for i in range(4) if i != starting)
+    put_in_play(s, owner_idx, "I260")
+    give(s, owner_idx, food=5)
+
+    owner_food_before = s["players"][owner_idx]["resources"]["food"]
+    starting_food_before = s["players"][starting]["resources"]["food"]
+
+    log = []
+    engine._start_round(s, log)  # round 2
+    assert s["prompts"][0]["type"] == "choice"
+    owner_pid = s["players"][owner_idx]["player_id"]
+    s = engine.apply_action(
+        s, owner_pid, {"kind": "choice", "index": 0}).new_state  # "yes"
+
+    assert s["players"][owner_idx]["resources"]["food"] == owner_food_before - 1
+    assert s["players"][starting]["resources"]["food"] == starting_food_before + 1
+    assert s["current_player"] == owner_idx
+
+    s = place(engine, s, {"kind": "place", "space": "grain_seeds"})  # owner
+    # Rotation resumed from the TRUE starting player, not owner+1.
+    assert s["current_player"] == starting
+
+
+def test_taster_no_advantage_when_already_starting_player(engine):
+    """"If you are the starting player yourself, you do not get any
+    advantage" -- the round_start hook never offers the choice."""
+    s = make_state(engine, 4, seed=3)
+    starting = s["starting_player"]
+    put_in_play(s, starting, "I260")
+    give(s, starting, food=5)
+
+    log = []
+    engine._start_round(s, log)
+    assert not s["prompts"]

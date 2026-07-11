@@ -687,3 +687,67 @@ def test_forest_pasture_holds_unlimited_boar(engine):
     inst["held"] = {"sheep": 1}
     ok, err = cards.validate_held(s, p)
     assert not ok  # only boar allowed
+
+
+def test_broom_discards_hand_and_draws_seven(engine):
+    """K125 Broom, the real card: the discard/redraw recipe (decks/
+    GUIDE.md's "Draw and discard piles (K125 Broom)" section;
+    test_broom_style_discard_and_redraw_flow in tests/test_agricola.py
+    is the temp_card version of this same flow). Broom's own play hook
+    runs after it's already been removed from hand_minors, so the
+    discard only touches the REST of the hand, never Broom itself."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "K125")
+    give(s, first, wood=1)
+    p = s["players"][first]
+    old_hand = [c for c in p["hand_minors"] if c != "K125"]
+    draw_pile_before = list(s["minor_draw"])
+
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "K125"}})
+    p = s["players"][first]
+    assert "K125" not in p["hand_minors"]
+    assert any(i["id"] == "K125" for i in p["minors"])
+    assert not any(c in p["hand_minors"] for c in old_hand)
+    expected_draw = min(7, len(draw_pile_before))
+    assert p["hand_minors"] == draw_pile_before[:expected_draw]
+    assert s["minor_discard"] == old_hand
+    assert s["minor_draw"] == draw_pile_before[expected_draw:]
+
+
+def test_broom_plays_a_second_minor_from_the_fresh_hand(engine):
+    """"You can play 1 more minor improvement immediately" -- an
+    optional bonus play, off the freshly-drawn hand, via the play
+    hook's own params channel (params.card2), at that card's own normal
+    cost (not free)."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "K125")
+    second_cid = s["minor_draw"][0]
+    resources = {"wood": 1}
+    for k, v in cards.CARDS[second_cid]["cost"].items():
+        resources[k] = resources.get(k, 0) + v
+    give(s, first, **resources)
+
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "K125",
+                                   "params": {"card2": second_cid}}})
+    p = s["players"][first]
+    assert any(i["id"] == second_cid for i in p["minors"])
+    assert second_cid not in p["hand_minors"]
+
+
+def test_broom_second_minor_must_be_affordable(engine):
+    """A params.card2 that isn't in the freshly-drawn hand (or isn't
+    paid for) is rejected -- Broom itself still gets played (the
+    discard/redraw isn't rolled back into a half-applied state, since
+    the whole action rolls back atomically on a raised ValueError)."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "K125")
+    give(s, first, wood=1)
+    with pytest.raises(ValueError):
+        place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "K125",
+                                   "params": {"card2": "not_a_real_card"}}})

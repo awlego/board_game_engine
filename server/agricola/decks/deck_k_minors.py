@@ -17,8 +17,9 @@ from server.agricola.cards import (
     compendium_card, CARDS, spec, prompt_choice,
     harvest_food, on_play_gain, schedule_on_play, space_bonus,
     animal_totals_of, needs_occupations, combine,
-    card_fields, fire_player,
+    card_fields, fire_player, draw_minors, discard_hand_minors,
 )
+from server.agricola import sub_actions
 from server.agricola.state import (
     ANIMAL_TYPES, NUM_CELLS, TOTAL_ROUNDS,
     MAJOR_IMPROVEMENTS, FIREPLACES,
@@ -59,12 +60,6 @@ UNIMPLEMENTED = {
             "count as a 'plough' exists or is exposed to a deck module "
             "-- hardcoding only this module's own plough cards (Swing "
             "Plough/Crooked Plough) would silently undercount.",
-    "K125": "discards the player's whole minor-improvement hand and "
-            "deals 7 fresh ones from the undealt reserve, then allows "
-            "an extra minor-improvement play. The engine deals fixed "
-            "hands once at setup and keeps no residual draw pile at "
-            "runtime (state has no 'remaining minors' pool to draw "
-            "from), so there is nothing to redraw from.",
     "K138": "places an extra, non-scoring family member token that can "
             "act and must be fed but isn't part of the family -- the "
             "guest-token/extra-people mechanic the guide marks "
@@ -418,6 +413,36 @@ def _strongbox_score(state, player, inst):
     return 4 if rooms >= 6 else 2 if rooms >= 5 else 0
 
 compendium_card("K123", score_bonus=_strongbox_score)
+
+
+# ── K125 Broom ─────────────────────────────────────────────────────────
+# Cost 1W. "Discard all the remaining minor improvements in your hand,
+# and draw 7 new minor improvements. You can play 1 more minor
+# improvement immediately." The motivating example for the draw/discard
+# piles (engine phase 12) -- see decks/GUIDE.md's "Draw and discard
+# piles (K125 Broom)" section for the discard/redraw recipe. Broom's own
+# play hook runs after sub_actions.play_minor has already removed Broom
+# from hand_minors and before it joins player["minors"], so
+# discard_hand_minors only ever sees the REST of the hand (no special-
+# casing needed). The follow-up "play 1 more minor immediately" clause
+# is expressed via the play hook's own params channel (open-ended target
+# -- which of the 7 freshly drawn cards -- same shape as every other
+# on-play bonus-play card): optional, priced at that card's own normal
+# cost (the ruling: "you must pay the costs of the new improvement").
+
+
+def _broom_play(state, player, inst, ctx):
+    discard_hand_minors(state, player, ctx["log"])
+    draw_minors(state, player, 7, ctx["log"])
+    extra_cid = (ctx.get("params") or {}).get("card2")
+    if extra_cid is not None:
+        if extra_cid not in player["hand_minors"]:
+            raise ValueError("Broom: choose a minor from your fresh hand "
+                             "to play immediately (params.card2)")
+        sub_actions.play_minor(state, player, extra_cid, ctx["log"])
+
+
+compendium_card("K125", hooks={"play": _broom_play})
 
 
 # ── K126 Landing Net ──────────────────────────────────────────────────

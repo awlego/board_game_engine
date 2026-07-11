@@ -106,13 +106,6 @@ UNIMPLEMENTED = {
             "firing) inside a card hook; the identically-named Puppeteer "
             "in deck C (C152) declined this same duplication per the "
             "architecture's engine-extension-over-duplication guidance.",
-    "I260": "lets a non-starting player act before the starting player "
-            "for one round while turn order resumes normally after; "
-            "placement order is a fixed round-robin from "
-            "state['starting_player'] with no per-round override hook "
-            "(turn-sequencing changes are the one class of thing the "
-            "architecture reserves for engine-level features, e.g. the "
-            "Lasso).",
     "I263": "grants a follow-up Build Fences action with a player-chosen "
             "action-space marker AND player-chosen fence edges; open-"
             "ended fence-edge parameters have no channel outside the "
@@ -621,6 +614,45 @@ def _animal_dealer_choice(state, player, inst, ctx):
 
 compendium_card("I259", hooks={"space_used": _animal_dealer_space},
                 resolve_choice=_animal_dealer_choice)
+
+
+# ── I260 Taster ────────────────────────────────────────────────────────
+# "Whenever another player is the starting player, you can pay them 1
+# food at the start of the round and be the first to place a family
+# member. After that, play starts with the starting player as usual."
+# The worked _resume_from recipe (engine phase 11) -- see decks/
+# GUIDE.md's "One-shot first-placer override (I260 Taster)" section for
+# the full step-by-step. A round_start hook offers the choice (with its
+# own food-affordability check, per that section's closing note);
+# accepting pays the starting player, places the Taster's owner first
+# via _pending_work_start, and stashes _resume_from so rotation resumes
+# from the TRUE starting player once the owner's single out-of-turn
+# placement is done.
+
+
+def _taster_round_start(state, player, inst, ctx):
+    if state["starting_player"] == player["index"]:
+        return  # "you do not get any advantage" if you're already first
+    if player["resources"]["food"] < 1:
+        return
+    prompt_choice(state, player, inst["id"],
+                 "Taster: pay 1 food to place first this round?",
+                 ["yes", "no"])
+
+
+def _taster_resolve(state, player, inst, ctx):
+    if ctx["option"] != "yes" or player["resources"]["food"] < 1:
+        return
+    starting_p = state["players"][state["starting_player"]]
+    player["resources"]["food"] -= 1
+    cards.grant_goods(state, starting_p, {"food": 1}, ctx["log"])
+    ctx["log"].append(f"{player['name']} pays 1 food to place first (Taster)")
+    state["_pending_work_start"] = player["index"]
+    state["_resume_from"] = state["starting_player"]
+
+
+compendium_card("I260", hooks={"round_start": _taster_round_start},
+                resolve_choice=_taster_resolve)
 
 
 # ── I261 Outrider ─────────────────────────────────────────────────────

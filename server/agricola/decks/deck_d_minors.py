@@ -66,9 +66,6 @@ UNIMPLEMENTED = {
             "action clause (which a ruling notes actually ENDS the work "
             "phase -- not a minor effect) would misrepresent the card, "
             "so it stays UNIMPLEMENTED.",
-    "D053": "skip your 2nd placement now and use it later in the same "
-            "round -- a turn-order deferral the placement flow "
-            "(_advance_work/_apply_place) doesn't support",
     "D056": "no hook fires during feeding-phase cook conversions "
             "(_apply_feed resolves them inline); modeling it as an extra "
             "cook-table entry would also be wrong for owners of a better "
@@ -873,7 +870,32 @@ compendium_card("D052", prereq=needs_occupations(1), hooks=round_income(
     {"food": 1},
     condition=lambda s, p: p["resources"]["clay"] > p["resources"]["wood"]))
 
-# D053 Tea House -- see UNIMPLEMENTED
+# ── D053 Tea House ─────────────────────────────────────────────────────
+# Cost 1W 1S. 2VP. Req play in round 6 or later. "Once per round, you can
+# skip placing your second person and get 1 food instead. (You can place
+# the person later that round.)" The motivating example for skip_turn/
+# after_skip (engine phase 11) -- see decks/GUIDE.md's "Turn structure"
+# section. The FotM-tagged ruling ("you may not do this if you will be
+# placing more people after your second without another player placing
+# in between") is a Farmers of the Moor-specific clarification (deck M
+# is out of scope, see CARDS.md) and isn't modeled.
+
+
+def _tea_house_skip(state, player, inst):
+    if inst["data"].get("used_round") == state["round"]:
+        return None
+    if player["people_placed"] != 1:
+        return None
+    return {"food": 1}
+
+
+def _tea_house_after_skip(state, player, inst, log):
+    inst["data"]["used_round"] = state["round"]
+
+
+compendium_card(
+    "D053", prereq=(lambda s, p: s["round"] >= 6, "play in round 6 or later"),
+    skip_turn=_tea_house_skip, after_skip=_tea_house_after_skip)
 
 # ── D054 Trout Pool ────────────────────────────────────────────────────
 # Cost 2C. 1VP. At the start of each work phase, if Fishing holds >=3

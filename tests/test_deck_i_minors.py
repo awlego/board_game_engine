@@ -609,3 +609,46 @@ def test_clay_deposit_toll_and_owner_choice(engine):
     assert s["players"][first]["resources"]["food"] == owner_food  # no toll
     inst = next(i for i in s["players"][first]["minors"] if i["id"] == "I337")
     assert inst["data"]["bonus"] == 2
+
+
+def test_holiday_house_blocks_round_14_placement(engine):
+    """I71 Holiday House, the real card: placement_blocked (decks/
+    GUIDE.md's "Placement lockout" section; test_placement_lockout_
+    forfeits_with_sensible_log in tests/test_agricola.py is the
+    temp_card version of this same flow, using round 13's transition
+    into round 14 -- round 13 is itself a harvest round, so this test
+    sets round 14 directly rather than re-simulating that harvest).
+    Feeding/scoring are unaffected -- only round 14's placements are
+    blocked, and only for the owner."""
+    s = make_state(engine, 2)
+    put_in_play(s, 0, "I71")
+    other = 1
+    s["round"] = 14
+    s["phase"] = "work"
+
+    assert engine._placement_actions(s, 0) == []
+    assert engine._skip_actions(s, 0) == []
+    assert engine._placement_actions(s, other) != []
+    assert engine._food_needed(s, s["players"][0]) == \
+        engine._food_needed(s, s["players"][other])
+
+    # The forfeit branch (exercised at the temp_card level in
+    # tests/test_agricola.py) picks a blocked player up with a lockout-
+    # specific log line, not the generic "no usable space" one.
+    s["players"][0]["people_placed"] = 0
+    log = []
+    engine._advance_work(s, log, start_pidx=0)
+    assert s["players"][0]["people_placed"] == s["players"][0]["people_total"]
+    assert any("cannot place any people this round and forfeits" in line
+              for line in log)
+
+
+def test_holiday_house_cannot_be_played_after_round_13(engine):
+    # "Play this card at the latest during round 13."
+    s = make_state(engine, 2)
+    s["round"] = 14
+    give_card(s, 0, "I71")
+    give(s, 0, wood=3, reed=2)
+    with pytest.raises(ValueError):
+        place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "I71"}})

@@ -43,9 +43,6 @@ UNIMPLEMENTED = {
     "B022": "requires placing an extra temporary family member mid-game "
             "and removing them later — the guest-token/extra-people "
             "mechanic the guide marks unsupported",
-    "B023": "requires revealing next round's action-space card early as "
-            "a private space only the owner may use; action-space "
-            "deck/reveal manipulation is unsupported",
     "B026": "requires substituting Build Fences for one of Grain "
             "Utilization's own sub-actions; there is no pre-action hook "
             "to alter a space's legal sub-actions",
@@ -427,6 +424,53 @@ compendium_card("B021", cost={"wood": 3}, prereq=needs_occupations(1),
                              "apply": _hayloft_barn_fg_apply,
                              "description": "Family Growth even without "
                                             "room (Hayloft Barn, once empty)"})
+
+
+# ── B023 Final Scenario ───────────────────────────────────────────────
+# The DB text concatenates 3 different B023 printings under one code
+# (this module's documented DB-bleed pattern, see the file header): (1)
+# "Place the action space card for round 14 face up in front of you.
+# Only you can use it until it is placed on the game board. (Cost 1R.)"
+# -- matches this entry's own parsed prereq field ("round 13 or
+# before"); (2) a Lasso-like "place exactly two people... (Cost 1W.)"
+# clause; (3) an on-play 1 food + extra Bake-Bread-per-occupation
+# clause. Only (1) is implemented, per this module's convention of
+# implementing only the cost/vp/prereq-matching clause. The parsed cost
+# field came back empty (a parser artifact, not a real "no cost"), but
+# the clause's own "(Cost 1R.)" annotation is unambiguous -- overridden
+# to match, same precedent as D011 Lawn Fertilizer in deck_d_minors.py.
+#
+# Expressible today via card_space + sub_actions with no engine change
+# (decks/GUIDE.md's "B023 Final Scenario: engine assessment" section,
+# engine phase 12) -- but only because this engine's stage 6 has exactly
+# one card (farm_redevelopment), so state["deck"][13] (round 14's card)
+# is deterministic rather than a genuine random reveal; the resolve fn
+# below asserts that fact at resolve time (not just documents it) so a
+# future second stage-6 card fails loudly instead of silently mirroring
+# the wrong mechanics.
+
+def _b023_usable(state, player, inst):
+    return state["round"] < 14 and sub_actions.renovation_possible(state, player)
+
+
+def _b023_resolve(state, player, inst, action, log):
+    assert state["deck"][13] == "farm_redevelopment", (
+        "B023 Final Scenario: round 14's card is no longer the sole "
+        "stage-6 card -- this recipe's hardcoded mirror of "
+        "farm_redevelopment's own mechanics is stale (see decks/"
+        "GUIDE.md's B023 section)")
+    sub_actions.renovate(state, player, log,
+                         free_stable_cell=action.get("stable"))
+    if action.get("fences"):
+        sub_actions.build_fences(state, player, action["fences"], log)
+    return {}
+
+
+compendium_card(
+    "B023", cost={"reed": 1},
+    prereq=(lambda s, p: s["round"] <= 13, "round 13 or before"),
+    card_space={"owner_only": True, "usable": _b023_usable,
+               "resolve": _b023_resolve})
 
 
 # ── B027 Toolbox ──────────────────────────────────────────────────────

@@ -31,10 +31,6 @@ UNIMPLEMENTED = {
            "fires to the acting player's own cards (fire_player, "
            "to_all=False) -- no card can observe another player's plow "
            "(same gap as the B159 precedent).",
-    "I71": "forces the owner to skip all people placement in round 14 "
-           "-- a turn-structure control the engine has no hook for; "
-           "_advance_work/_placement_actions have no per-player "
-           "'skip the work phase' key to consult.",
     "I73": "guest tokens / extra people placements are explicitly "
            "unsupported.",
     "I78": "requires sowing wood (not grain/vegetable) onto a "
@@ -218,6 +214,35 @@ compendium_card("I67", prereq=needs_occupations(2),
 # ── I69 Strawberry Patch ──────────────────────────────────────────────
 compendium_card("I69", prereq=_needs_veg_field(2),
                 hooks=schedule_on_play("food", rounds_ahead=3))
+
+
+# ── I71 Holiday House ─────────────────────────────────────────────────
+# Cost "3W or 3C, 2R" (ruling: "either 3 wood & 2 reeds or 3 clay & 2
+# reeds"); per this file's/deck_fr_minors.py's established convention
+# for an alternative-payment cost a plain dict can't represent, the
+# first listed option is used. 8VP. "In round 14, you cannot place any
+# people. Play this card at the latest during round 13." The motivating
+# example for placement_blocked (engine phase 11) -- see decks/GUIDE.md's
+# "Placement lockout" section. The "round 13 or before" playability
+# window is real rules text (not just flavor -- "effects of this card
+# are not optional"), so it's enforced as a prereq even though the DB's
+# own parsed prereq field came back empty for this entry. Two rulings
+# not modeled (both narrow cross-card interactions out of this card's
+# own scope): you may not discount this build with the Clay/Brushwood/
+# Straw-thatched Roof cards, and the Church Warden (I227) denies its
+# points if you've built this -- both would require editing those OTHER
+# cards' own logic, not this one.
+
+
+def _holiday_house_blocked(state, player, inst):
+    return state["round"] == 14
+
+
+compendium_card(
+    "I71", cost={"wood": 3, "reed": 2}, points=8,
+    prereq=(lambda s, p: s["round"] <= 13,
+            "play this card at the latest during round 13"),
+    placement_blocked=_holiday_house_blocked)
 
 
 # ── I72 Goose Pond ────────────────────────────────────────────────────

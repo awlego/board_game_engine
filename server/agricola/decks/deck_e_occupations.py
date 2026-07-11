@@ -67,11 +67,6 @@ UNIMPLEMENTED = {
             "Field/Plough-Field-and-Sow action spaces already occupied "
             "by another player; placing on occupied spaces is explicitly "
             "unsupported.",
-    "E173": "Chief's Daughter: must react to another player playing the "
-            "Chief (E172) WHILE STILL IN HAND (unplayed), but the hook "
-            "system only fires events to already-in-play cards "
-            "(cards.fire/fire_player iterate in_play(player)); a card "
-            "sitting in hand can never observe or react to anything.",
     "E179": "Merchant: a second use of a 'minor OR major improvement' "
             "action requires reimplementing the engine-internal major-"
             "improvement transaction (cost, available_improvements "
@@ -508,6 +503,55 @@ compendium_card("E171", card_action={
 compendium_card("E172", cost={"food": 2}, score_bonus=lambda s, p, i: (
     sum(1 for c in p["cells"] if c["type"] == "room")
     if p["house_type"] == "stone" else 0))
+
+
+# ── E173 Chief's Daughter ─────────────────────────────────────────────
+# "If another player plays the Chief E172 card, you can play this card
+# immediately at no cost. At the end of the game, you receive 3 bonus
+# points if you have a stone house, 1 if you have a clay hut." The
+# motivating example for hand_react/prompt_choice(from_hand=True)
+# (engine phase 12) -- see decks/GUIDE.md's "Hand reactions" section for
+# the full contract (including the resolve_choice inst=None contract
+# and the reactive-play termination argument). The `ctx["actor"] ==
+# hand_player["index"]` guard below is "another player" from the card's
+# own text, and also covers the ruling "if you play the Chief yourself,
+# you may not play the Chief's Daughter at the same time" -- fire_hand_
+# react scans every player's hand including the actor's own, so without
+# this check a player who plays Chief while also holding this card in
+# hand would get offered their own reactive play.
+
+
+def _chiefs_daughter_hand_react(state, hand_player, ctx):
+    if ctx["card_id"] != "E172" or ctx["actor"] == hand_player["index"]:
+        return
+    cards.prompt_choice(
+        state, hand_player, "E173",
+        "Another player played the Chief -- play Chief's Daughter now "
+        "at no cost?", ["yes", "no"], from_hand=True)
+
+
+def _chiefs_daughter_resolve(state, player, inst, ctx):
+    # inst is always None here -- the from_hand contract (this card has
+    # no instance yet; it's still sitting unplayed in player's hand).
+    if ctx["option"] == "yes":
+        sub_actions.play_occupation(state, player, "E173", ctx["log"],
+                                    cost_override="free")
+
+
+def _chiefs_daughter_score(state, player, inst):
+    if player["house_type"] == "stone":
+        return 3
+    if player["house_type"] == "clay":
+        return 1
+    return 0
+
+
+compendium_card(
+    "E173",
+    hand_react={"event": "occupation_played",
+               "fn": _chiefs_daughter_hand_react},
+    resolve_choice=_chiefs_daughter_resolve,
+    score_bonus=_chiefs_daughter_score)
 
 
 # ── E174 Tutor ────────────────────────────────────────────────────────

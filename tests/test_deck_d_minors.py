@@ -67,6 +67,8 @@ def _prep_prereqs(state, pidx, cid):
     if cid == "D048":
         for c in (0, 1, 2):
             p["cells"][c]["type"] = "room"
+    if cid == "D053":
+        state["round"] = 6
     if cid == "D058":
         state["round"] = 5
     if cid == "D059":

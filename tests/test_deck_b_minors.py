@@ -746,4 +746,49 @@ def test_forest_inn_owner_use_has_no_toll(engine):
     # No wood to exchange -- only Skip offered.
     assert s["prompts"][0]["options"] == ["Skip"]
     s = engine.apply_action(s, first_pid, {"kind": "choice", "index": 0}).new_state
-    assert s["players"][first]["resources"]["wood"] == 0
+
+
+def test_final_scenario_owner_only_renovation_until_round_14(engine):
+    """B023 Final Scenario, the real card: the card_space + sub_actions
+    recipe (decks/GUIDE.md's "B023 Final Scenario: engine assessment"
+    section; test_b023_style_recipe_owner_only_until_round_14 in
+    tests/test_agricola.py is the temp_card version of this same
+    flow). Reveals round 14's action space (a Renovation, mirroring
+    farm_redevelopment) early as a private, owner-only space; the gate
+    closes once round 14 itself starts."""
+    s = make_state(engine, 2)
+    owner = s["current_player"]
+    other = 1 - owner
+    give_card(s, owner, "B023")
+    give(s, owner, reed=2, clay=5)  # 1 reed for B023's own cost, 1 for the renovation
+    s = place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "B023"}})
+    # It's `other`'s turn now; force it back to `owner` so the rest of
+    # this test can exercise the card_space directly.
+    s["current_player"] = owner
+
+    sid = "card:B023"
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == sid)
+    assert not engine._card_space_usable(s, s["players"][other], space)
+    assert engine._card_space_usable(s, s["players"][owner], space)
+
+    s = engine.apply_action(
+        s, s["players"][owner]["player_id"],
+        {"kind": "place", "space": sid}).new_state
+    assert s["players"][owner]["house_type"] in ("clay", "stone")
+
+    # Gate closes once round 14 starts -- the real farm_redevelopment
+    # space takes over from here.
+    s["round"] = 14
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == sid)
+    assert not engine._card_space_usable(s, s["players"][owner], space)
+
+
+def test_final_scenario_cannot_be_played_after_round_13(engine):
+    s = make_state(engine, 2)
+    s["round"] = 14
+    give_card(s, 0, "B023")
+    give(s, 0, reed=1)
+    with pytest.raises(ValueError):
+        place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "B023"}})

@@ -32,11 +32,6 @@ from server.agricola.state import (
 )
 
 UNIMPLEMENTED = {
-    "K269": "grants a deferred move of an already-placed person (from "
-            "\"Traveling Players\") to another space after all players "
-            "have finished their turns; no hook fires between the end "
-            "of the work phase and the start of harvest/next round for "
-            "a card to grant a delayed placement.",
     "K273": "requires reacting to converting wild boar into food; no "
             "event fires when animals are cooked (neither the "
             "accommodate-prompt \"cook\" branch nor the feeding "
@@ -58,10 +53,6 @@ UNIMPLEMENTED = {
             "minors; this needs re-implementing the build/play "
             "parameter shapes of _resolve_space outside the normal "
             "placement flow (same category of gap as B150 in deck B).",
-    "K289": "grants a deferred move of an already-placed person (from "
-            "\"Take 1 Grain\"/\"Take 1 Vegetable\") to a sow space after "
-            "all players have finished their turns; same missing "
-            "post-work-phase hook as K269 Acrobat.",
     "K299": "requires reacting to any player converting animals to food "
             "(no cook/convert event, as K273/K280) and reordering the "
             "feeding turn sequence; this engine's feeding phase has no "
@@ -253,6 +244,81 @@ def _pieceworker_choice(state, player, inst, ctx):
 
 compendium_card("K268", hooks={"space_used": _pieceworker_space},
                 resolve_choice=_pieceworker_choice)
+
+
+# ── K269 Acrobat ──────────────────────────────────────────────────────
+# "Whenever you use the 'Traveling players' action on an action space,
+# after all of the players have finished their turns you may move that
+# person to one of the 'Take 1 Grain', 'Plough 1 Field' and 'Plough
+# Field and Sow' action spaces, if it's free, and take the action." The
+# documented returning_home recipe (decks/GUIDE.md's "K269 Acrobat /
+# K289 Countryman: no engine change needed" section, engine phase 11):
+# performs the TARGET space's own effect directly (grant/raw plow)
+# instead of literally relocating the person -- see that section for
+# the explicit fidelity simplification (the moved person never actually
+# occupies the destination space for occupied_ok/space_used/adjacency
+# purposes). "Plough Field and Sow" (cultivation) is offered here as a
+# PLOW-only target, same as "Plough 1 Field" (farmland) -- its own
+# additional "and sow" clause is not exposed through this recipe (that
+# would stack a second open-ended crop/target choice on an already
+# fully-enumerated prompt for a card whose primary value is the plow;
+# K289 Countryman below, whose whole point IS a sow, does expose one).
+# Ordering/timing nuances not modeled: the ruling that a card played the
+# same round as its own Traveling Players placement may only move a
+# person placed AFTER it was played (this engine's card instances don't
+# record a play-order timestamp within a round).
+
+_ACROBAT_TARGETS = (("grain_seeds", "Take 1 Grain"),
+                    ("farmland", "Plough 1 Field"),
+                    ("cultivation", "Plough Field and Sow"))
+
+
+def _space_free(state, sid):
+    sp = next((s for s in state["action_spaces"] if s["id"] == sid), None)
+    if sp is None:
+        return False
+    return sp["occupied_by"] is None and not sp.get("extra_occupants")
+
+
+def _acrobat_returning_home(state, player, inst, ctx):
+    if "traveling_players" not in ctx["spaces"]:
+        return
+    options, data = ["Decline"], []
+    for sid, label in _ACROBAT_TARGETS:
+        if not _space_free(state, sid):
+            continue
+        if sid == "grain_seeds":
+            options.append(f"{label}: get 1 grain")
+            data.append(("grain", None))
+        else:
+            for cell in plowable_cells(player):
+                options.append(f"{label}: plow field at cell {cell}")
+                data.append(("plow", cell))
+    if len(options) > 1:
+        prompt_choice(state, player, inst["id"],
+                     "Acrobat: move your Traveling Players person to "
+                     "another free action space?", options,
+                     data={"choices": data})
+
+
+def _acrobat_choice(state, player, inst, ctx):
+    if ctx["index"] == 0:
+        return
+    kind, arg = ctx["data"]["choices"][ctx["index"] - 1]
+    if kind == "grain":
+        if not _space_free(state, "grain_seeds"):
+            return
+        add_goods(ctx["extra"], {"grain": 1})
+        ctx["log"].append(f"{player['name']}'s Acrobat moves to Take 1 "
+                          "Grain and gets 1 grain")
+    elif arg in plowable_cells(player):
+        player["cells"][arg]["type"] = "field"
+        ctx["log"].append(f"{player['name']}'s Acrobat moves to plow a "
+                          "field")
+
+
+compendium_card("K269", hooks={"returning_home": _acrobat_returning_home},
+                resolve_choice=_acrobat_choice)
 
 
 # ── K270 Wet Nurse ────────────────────────────────────────────────────
@@ -650,6 +716,69 @@ def _storehouse_keeper_choice(state, player, inst, ctx):
 
 compendium_card("K288", hooks={"space_used": _storehouse_keeper_space},
                 resolve_choice=_storehouse_keeper_choice)
+
+
+# ── K289 Countryman ───────────────────────────────────────────────────
+# "After all players have placed their people, you may move one of your
+# people from a 'Take 1 Grain' or 'Take 1 Vegetable' action space to a
+# free action space with a 'sow' action." Same returning_home recipe
+# class as K269 Acrobat above (see its header comment and decks/
+# GUIDE.md). The two "sow" action spaces are grain_utilization (stage 1)
+# and cultivation (stage 5) per the ruling ("the second appears during
+# stage 5"). Scoped to a single sow (one field, one crop) per deferred
+# move -- a real placement there could sow several fields with one
+# person, but enumerating every subset of open fields x crop types as
+# prompt options is combinatorially unbounded; this recipe offers one
+# (field, crop) pair at a time, which is the common case and matches the
+# single deferred person's own "take the action" scope. The ruling that
+# using BOTH source spaces the same round only lets you move ONE of the
+# two people falls out for free: this hook only ever queues a single
+# prompt per returning_home firing.
+
+_COUNTRYMAN_SOURCES = ("grain_seeds", "vegetable_seeds")
+_COUNTRYMAN_SOW_SPACES = ("grain_utilization", "cultivation")
+
+
+def _countryman_returning_home(state, player, inst, ctx):
+    if not any(sid in ctx["spaces"] for sid in _COUNTRYMAN_SOURCES):
+        return
+    if not any(_space_free(state, sid) for sid in _COUNTRYMAN_SOW_SPACES):
+        return
+    cells, card_targets = sub_actions.empty_fields(player)
+    options, data = ["Decline"], []
+    for cell in cells:
+        for crop in ("grain", "vegetable"):
+            if player["resources"][crop] > 0:
+                options.append(f"Sow 1 {crop} in field cell {cell}")
+                data.append({"cell": cell, "crop": crop})
+    for tinst in card_targets:
+        allowed = cards.CARDS[tinst["id"]]["field"]["crops"]
+        for crop in allowed:
+            if player["resources"][crop] > 0:
+                options.append(f"Sow 1 {crop} on {cards.spec(tinst)['name']}")
+                data.append({"card": tinst["id"], "crop": crop})
+    if len(options) > 1:
+        prompt_choice(state, player, inst["id"],
+                     "Countryman: move your person to a free sow space?",
+                     options, data={"choices": data})
+
+
+def _countryman_choice(state, player, inst, ctx):
+    if ctx["index"] == 0:
+        return
+    if not any(_space_free(state, sid) for sid in _COUNTRYMAN_SOW_SPACES):
+        return
+    item = ctx["data"]["choices"][ctx["index"] - 1]
+    ctx["log"].append(f"{player['name']}'s Countryman moves their person "
+                      "to a free sow space")
+    try:
+        sub_actions.sow(state, player, [item], ctx["log"])
+    except ValueError:
+        pass
+
+
+compendium_card("K289", hooks={"returning_home": _countryman_returning_home},
+                resolve_choice=_countryman_choice)
 
 
 # ── K290 Clay Worker ──────────────────────────────────────────────────

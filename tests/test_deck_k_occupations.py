@@ -812,3 +812,118 @@ def test_resource_seller_fixed_sequence(engine):
     assert p["resources"]["wood"] == 2  # 1 from the space + 1 from the card
     inst = next(i for i in p["occupations"] if i["id"] == "K310")
     assert inst["data"]["idx"] == 1
+
+
+# ── K269 Acrobat / K289 Countryman: returning_home recipe ────────────
+# The documented recipe (decks/GUIDE.md's "K269 Acrobat / K289
+# Countryman: no engine change needed" section) -- exercised here at the
+# end of the work phase (engine._end_work_phase), following the same
+# "add_space to fake a space this player count wouldn't normally reveal
+# yet" convention test_magician_last_person_bonus/test_animal_trainer_*
+# already use above for traveling_players/grain_utilization.
+
+def test_acrobat_moves_traveling_players_person_to_grain(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "K269")
+    add_space(s, "traveling_players", "Traveling Players", acc=True,
+             supply={"food": 1})
+    space = next(sp for sp in s["action_spaces"]
+                if sp["id"] == "traveling_players")
+    space["occupied_by"] = first
+    for p in s["players"]:
+        p["people_placed"] = p["people_total"]
+
+    grain_before = s["players"][first]["resources"]["grain"]
+    log = []
+    engine._end_work_phase(s, log)
+    assert s["prompts"][0]["type"] == "choice"
+    options = s["prompts"][0]["options"]
+    idx = next(i for i, o in enumerate(options) if "Take 1 Grain" in o)
+    pid = s["players"][first]["player_id"]
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": idx}).new_state
+    assert s["players"][first]["resources"]["grain"] == grain_before + 1
+
+
+def test_acrobat_moves_to_farmland_and_plows(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "K269")
+    add_space(s, "traveling_players", "Traveling Players", acc=True,
+             supply={"food": 1})
+    space = next(sp for sp in s["action_spaces"]
+                if sp["id"] == "traveling_players")
+    space["occupied_by"] = first
+    for pl in s["players"]:
+        pl["people_placed"] = pl["people_total"]
+
+    fields_before = sum(1 for c in p["cells"] if c["type"] == "field")
+    log = []
+    engine._end_work_phase(s, log)
+    options = s["prompts"][0]["options"]
+    idx = next(i for i, o in enumerate(options)
+              if o.startswith("Plough 1 Field"))
+    pid = p["player_id"]
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": idx}).new_state
+    p = s["players"][first]
+    fields_after = sum(1 for c in p["cells"] if c["type"] == "field")
+    assert fields_after == fields_before + 1
+
+
+def test_acrobat_not_offered_without_traveling_players(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    put_in_play(s, first, "K269")
+    add_space(s, "traveling_players", "Traveling Players", acc=True,
+             supply={"food": 1})
+    # No one placed on Traveling Players this round.
+    for p in s["players"]:
+        p["people_placed"] = p["people_total"]
+    log = []
+    engine._end_work_phase(s, log)
+    assert not s["prompts"]
+
+
+def test_countryman_moves_to_free_sow_space(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "K289")
+    p["cells"][0]["type"] = "field"  # an empty, sowable field
+    give(s, first, grain=1)
+    add_space(s, "grain_utilization", "Grain Utilization")
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == "grain_seeds")
+    space["occupied_by"] = first
+    for pl in s["players"]:
+        pl["people_placed"] = pl["people_total"]
+
+    log = []
+    engine._end_work_phase(s, log)
+    assert s["prompts"][0]["type"] == "choice"
+    options = s["prompts"][0]["options"]
+    idx = next(i for i, o in enumerate(options)
+              if "grain" in o and "field cell 0" in o)
+    pid = p["player_id"]
+    s = engine.apply_action(s, pid, {"kind": "choice", "index": idx}).new_state
+    p = s["players"][first]
+    assert p["cells"][0]["crops"] == {"type": "grain", "count": 3}
+    assert p["resources"]["grain"] == 0
+
+
+def test_countryman_not_offered_when_no_sow_space_free(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "K289")
+    p["cells"][0]["type"] = "field"
+    give(s, first, grain=1)
+    # No "sow" action space (grain_utilization/cultivation) has been
+    # revealed at all this round -- nothing to move to.
+    space = next(sp for sp in s["action_spaces"] if sp["id"] == "grain_seeds")
+    space["occupied_by"] = first
+    for pl in s["players"]:
+        pl["people_placed"] = pl["people_total"]
+    log = []
+    engine._end_work_phase(s, log)
+    assert not s["prompts"]

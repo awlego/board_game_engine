@@ -826,3 +826,76 @@ def test_master_forester_owner_no_toll_and_insufficient_food_raises(engine):
             s, other_pid, {"kind": "place", "space": "card:E164"})
     space = next(sp for sp in s["action_spaces"] if sp["id"] == "card:E164")
     assert space["supply"] == {"wood": 2}  # unchanged -- rolled back
+
+
+def test_chiefs_daughter_reacts_when_another_player_plays_the_chief(engine):
+    """E173 Chief's Daughter, the real card: hand_react + prompt_choice(
+    from_hand=True) (decks/GUIDE.md's "Hand reactions" section -- this
+    exact card is the worked example there; test_hand_react_accept_
+    plays_card_from_hand_at_no_cost in tests/test_agricola.py is the
+    temp_card version of this same flow). Chief's Daughter's own
+    reactive play is free, regardless of the Lessons space's own
+    escalating occupation cost."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    give_card(s, first, "E172")
+    give_card(s, other, "E173")
+    other_food_before = s["players"][other]["resources"]["food"]
+
+    s = place(engine, s, {"kind": "place", "space": "lessons", "card": "E172"})
+    other_pid = s["players"][other]["player_id"]
+    assert engine.get_waiting_for(s) == [other_pid]
+    prompt = s["prompts"][0]
+    assert prompt["type"] == "choice" and prompt["from_hand"] is True
+    assert prompt["card"] == "E173"
+
+    s = engine.apply_action(
+        s, other_pid, {"kind": "choice", "index": 0}).new_state  # "yes"
+    p = s["players"][other]
+    assert "E173" not in p["hand_occupations"]
+    assert any(i["id"] == "E173" for i in p["occupations"])
+    assert p["resources"]["food"] == other_food_before  # free
+    assert not s["prompts"]
+
+
+def test_chiefs_daughter_declining_leaves_it_in_hand(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    other = (first + 1) % 2
+    give_card(s, first, "E172")
+    give_card(s, other, "E173")
+
+    s = place(engine, s, {"kind": "place", "space": "lessons", "card": "E172"})
+    other_pid = s["players"][other]["player_id"]
+    s = engine.apply_action(
+        s, other_pid, {"kind": "choice", "index": 1}).new_state  # "no"
+    p = s["players"][other]
+    assert "E173" in p["hand_occupations"]
+    assert not any(i["id"] == "E173" for i in p["occupations"])
+
+
+def test_chiefs_daughter_does_not_react_to_own_chief_play(engine):
+    """"If you play the Chief yourself, you may not play the Chief's
+    Daughter at the same time" -- ctx["actor"] == hand_player guards it."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "E172")
+    give_card(s, first, "E173")
+
+    s = place(engine, s, {"kind": "place", "space": "lessons", "card": "E172"})
+    assert not s["prompts"]
+    assert "E173" in s["players"][first]["hand_occupations"]
+
+
+def test_chiefs_daughter_score_bonus_by_house_type(engine):
+    s = make_state(engine, 2)
+    p = s["players"][0]
+    inst = {"id": "E173", "data": {}}
+    score_fn = cards.CARDS["E173"]["score_bonus"]
+    p["house_type"] = "stone"
+    assert score_fn(s, p, inst) == 3
+    p["house_type"] = "clay"
+    assert score_fn(s, p, inst) == 1
+    p["house_type"] = "wood"
+    assert score_fn(s, p, inst) == 0
