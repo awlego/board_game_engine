@@ -28,7 +28,17 @@ UNIMPLEMENTED = {
             "discount targeted at the Well alone is expressible -- but "
             "the major->minor reclassification itself is a separate, "
             "still-unsupported score/category-manipulation gap (same "
-            "class as E15's Clay/Stone Oven reclassification).",
+            "class as E15's Clay/Stone Oven reclassification). "
+            "Reassessed per the fidelity rule: the reclassification is "
+            "the whole point of the card (its own name is 'Well "
+            "Builder'), and per its own ruling the Well is a minor "
+            "improvement for most purposes but STILL a major one for "
+            "others (Nosebag M022, Administration M070) -- a genuine "
+            "dual-category state this engine's single occupations[]/"
+            "minors[] instance-category split can't represent at all, "
+            "not just a missing scoring tweak. Registering only the "
+            "discount would misrepresent the card, so it stays fully "
+            "unimplemented rather than half-registered.",
     "I222": "requires tracking the game-wide order in which players "
             "first renovate to clay/stone; the 'renovate' event only "
             "fires to the acting player's own cards (fire_player, not a "

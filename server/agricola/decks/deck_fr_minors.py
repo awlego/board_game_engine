@@ -59,11 +59,6 @@ UNIMPLEMENTED = {
              "fence layout from a card's play effect; no channel carries "
              "open-ended fence-edge parameters outside the normal "
              "placement flow (same gap as B088/B093/B130)",
-    "FR024": "discounts the food cost of playing an Occupation or Minor "
-             "Improvement. play_occupation/play_minor now both route "
-             "their cost through modified_cost (kind='occupation'/"
-             "'minor', engine phase 7), so this is now a plain "
-             "implementation gap, not a plumbing one",
     "FR025": "lets a played minor be discarded to fully pay for a major "
              "improvement, and treats Clay/Stone Ovens as minors for "
              "other cards' prerequisites; neither an alternate-payment-"
@@ -536,6 +531,26 @@ def _goblet_improvement(state, player, inst, ctx):
 
 compendium_card("FR023", cost={"wood": 1},
                 hooks={"improvement_built": _goblet_improvement})
+
+
+# ── FR024 Golden Rose ─────────────────────────────────────────────────
+# "Whenever you pay food to play an Occupation or a Minor Improvement,
+# you may pay up to 2 food less." Ruling: any additional food costs the
+# card itself specifies still apply -- that's automatic here since the
+# discount folds over whatever base food cost `play_occupation`/
+# `play_minor` already computed, including a card's own extra food
+# clause baked into its `cost` dict.
+def _golden_rose_mod(state, player, kind, cost, ctx):
+    if kind not in ("occupation", "minor") or not cost.get("food"):
+        return cost
+    cost = dict(cost)
+    cost["food"] = max(0, cost["food"] - 2)
+    return cost
+
+compendium_card(
+    "FR024",
+    prereq=(lambda s, p: _planted_field_count(p) >= 1, "1 planted field"),
+    cost_mod=_golden_rose_mod)
 
 
 # ── FR026 Grotto ──────────────────────────────────────────────────────

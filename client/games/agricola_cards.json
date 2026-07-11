@@ -92,9 +92,8 @@
    "wood": 1
   },
   "deck": "A",
-  "implemented": false,
+  "min_players": 1,
   "name": "Carpenter's Hammer",
-  "reason": "Carpenter's Hammer discounts room-building only when >=2 rooms are built at once. cost_mod for kind='room' now gets a batch count in ctx and room cost is priced as one batch total (engine phase 7), so the condition and the batch-level discount are both expressible -- this is now a plain implementation gap, not a plumbing one",
   "text": "Each time you build at least 2 wood/clay/stone rooms at once, you get a total discount of 2 reed as well as 2 wood/3 clay/4 stone.",
   "type": "minor"
  },
@@ -3239,9 +3238,8 @@
  },
  "C088": {
   "deck": "C",
-  "implemented": false,
+  "min_players": 1,
   "name": "Carpenter's Apprentice",
-  "reason": "wood-room and fence discounts are easy (cost_mod); the '3rd/4th stable costs 1 wood less' clause needed a cost_mod kind for stables, which now exists (kind='stable', with 'index'/'start_index' ctx for per-Nth pricing -- engine phase 7), so all 3 clauses are expressible -- this is now a plain implementation gap, not a plumbing one",
   "text": "Wood rooms cost you 2 wood less. Your 3rd and 4th stable each cost you 1 wood less. Your 13th to 15th fence each cost you nothing.",
   "type": "occupation"
  },
@@ -4364,11 +4362,10 @@
  },
  "D082": {
   "deck": "D",
-  "implemented": false,
+  "min_players": 1,
   "name": "Hunting Trophy",
   "points": 1,
-  "prereq_text": "Return or cook 1 Wild Boar",
-  "reason": "the discount is conditioned on building via House/Farm Redevelopment specifically. engine._resolve_space now threads ctx['space_id'] into every build/renovate/improvement cost_mod call (engine phase 7), so a card can target space_id=='house_redevelopment'/'farm_redevelopment' -- this is now a plain implementation gap, not a plumbing one",
+  "prereq_text": "own 1 wild boar (to return or cook)",
   "text": "Improvements built on \"House Redevelopment\" cost you 1 building resource of your choice less. Fences built on \"Farm Redevelopment\" cost you a total of 3 wood less.",
   "type": "minor"
  },
@@ -4399,9 +4396,8 @@
  },
  "D088": {
   "deck": "D",
-  "implemented": false,
+  "min_players": 1,
   "name": "Millwright",
-  "reason": "Millwright: 'replace up to 2 building resources of any type with 1 grain each' is an optional per-build substitution. engine._resolve_space now threads ctx['payment'] (the client action's own 'payment' field) into build/renovate/improvement cost_mod calls (engine phase 7; see decks/GUIDE.md's cost_mod section), so this is now a plain implementation gap, not a plumbing one.",
   "text": "You immediately get 1 grain. Each time you build fences, stables, and rooms, or renovate your house, you can replace up to 2 building resources of any type with 1 grain each.",
   "type": "occupation"
  },
@@ -4438,9 +4434,8 @@
  },
  "D095": {
   "deck": "D",
-  "implemented": false,
+  "min_players": 1,
   "name": "Site Manager",
-  "reason": "Site Manager: on-play major-improvement build with 'replace up to 1 resource of each type with 1 food' has the same substitution shape as D088/D117 -- build_improvement's ctx['payment'] (engine phase 7) can carry this card's own choice too (the play hook builds the ctx itself, same as any card_action would), so this is a plain implementation gap, not a plumbing one.",
   "text": "When you play this card, immediately build a major improvement. When paying its cost, you can replace up to 1 building resource of each type with 1 food each. (1-5 players) When you play this card, you immediately get 2 wood. After each new room you build, you can build or play 1 improvement for 1 wood less.",
   "type": "occupation"
  },
@@ -4930,7 +4925,7 @@
   "deck": "E",
   "implemented": false,
   "name": "Baking Tray",
-  "reason": "makes Clay Oven/Stone Oven count as minor improvements for you (score-category manipulation beyond bonus points is still unsupported -- this half remains blocked) and discounts their cost by 1 resource of your choice. modified_cost's kind='improvement'/'minor' calls now carry ctx['improvement']/ctx['card'] (engine phase 7), so a cost_mod CAN target just these cards (and the Wood-fired Oven minor, E27) without misfiring on every other improvement/minor -- the discount half is no longer a plumbing gap, only the score-category-manipulation half is.",
+  "reason": "makes Clay Oven/Stone Oven count as minor improvements for you (score-category manipulation beyond bonus points is still unsupported -- this half remains blocked) and discounts their cost by 1 resource of your choice. modified_cost's kind='improvement'/'minor' calls now carry ctx['improvement']/ctx['card'] (engine phase 7), so a cost_mod CAN target just these cards (and the Wood-fired Oven minor, E27) without misfiring on every other improvement/minor -- the discount half is no longer a plumbing gap, only the score-category-manipulation half is. Reassessed per the fidelity rule: the reclassification is the card's headline clause (its own name is 'Baking Tray' after this effect), not a cosmetic aside -- it changes which scoring category and which other cards' 'how many minors do you have' conditions the Ovens count against. Registering only the discount and dropping the reclassification would silently misrepresent the card, so it stays fully unimplemented rather than half-registered.",
   "text": "The Clay Oven A5 and Stone Oven A6 are minor improvements for you. The Clay Oven, Stone Oven and Wood-fired Oven E27 cost you 1 building resource (of your choice) less.",
   "type": "minor"
  },
@@ -5738,11 +5733,10 @@
  },
  "E36": {
   "deck": "E",
-  "implemented": false,
+  "min_players": 1,
   "name": "Clay Roof",
   "points": 1,
-  "prereq_text": "1 occ",
-  "reason": "lets the player substitute up to 2 reed for the same amount of clay when building a room or renovating -- a genuine per-build payment-material choice. engine._resolve_space now threads ctx['payment'] (the client action's own 'payment' field) into every build/renovate cost_mod call (engine phase 7; see decks/GUIDE.md's cost_mod section for the worked 'reed_to_clay' example), so this is now a plain implementation gap, not a plumbing one.",
+  "prereq_text": "1 occupations",
   "text": "You can replace 1 or 2 Reed with the same amount of clay whenever you extend or renovate your home.",
   "type": "minor"
  },
@@ -6840,11 +6834,10 @@
  },
  "FR024": {
   "deck": "FR",
-  "implemented": false,
+  "min_players": 1,
   "name": "Golden Rose",
   "points": 1,
   "prereq_text": "1 planted field",
-  "reason": "discounts the food cost of playing an Occupation or Minor Improvement. play_occupation/play_minor now both route their cost through modified_cost (kind='occupation'/'minor', engine phase 7), so this is now a plain implementation gap, not a plumbing one",
   "text": "Whenever you pay Food to play an Occupation or a Minor Improvement, you may pay up to 2 Food less.",
   "type": "minor"
  },
@@ -7484,10 +7477,8 @@
  },
  "FR094": {
   "deck": "FR",
-  "implemented": false,
   "min_players": 3,
   "name": "Miser",
-  "reason": "Miser: the discount only applies when you build EXACTLY 1 room. cost_mod for kind='room' now gets a batch count in ctx (engine phase 7), so the condition is expressible -- this is now a plain implementation gap, not a plumbing one.",
   "text": "Whenever you use a \"Build Room(s)\" action on an Action space, you may pay 1 Wood/ Clay/ Stone less and 1 Reed less if you build exactly 1 Wood/ Clay/ Stone room. (It is irrelevant whether you build stables.)",
   "type": "occupation"
  },
@@ -8898,7 +8889,7 @@
   "deck": "I",
   "implemented": false,
   "name": "Well Builder",
-  "reason": "reclassifies the Well as a minor improvement with a special cost just for this player. cost_mod for kind='improvement' now carries ctx['improvement'] (engine phase 7), so a discount targeted at the Well alone is expressible -- but the major->minor reclassification itself is a separate, still-unsupported score/category-manipulation gap (same class as E15's Clay/Stone Oven reclassification).",
+  "reason": "reclassifies the Well as a minor improvement with a special cost just for this player. cost_mod for kind='improvement' now carries ctx['improvement'] (engine phase 7), so a discount targeted at the Well alone is expressible -- but the major->minor reclassification itself is a separate, still-unsupported score/category-manipulation gap (same class as E15's Clay/Stone Oven reclassification). Reassessed per the fidelity rule: the reclassification is the whole point of the card (its own name is 'Well Builder'), and per its own ruling the Well is a minor improvement for most purposes but STILL a major one for others (Nosebag M022, Administration M070) -- a genuine dual-category state this engine's single occupations[]/minors[] instance-category split can't represent at all, not just a missing scoring tweak. Registering only the discount would misrepresent the card, so it stays fully unimplemented rather than half-registered.",
   "text": "For you, the Well A10 is not a major but now a minor improvement and costs only 1 stone and 1 wood to build.",
   "type": "occupation"
  },

@@ -104,15 +104,26 @@ UNIMPLEMENTED["C085"] = (
     "runtime, so a purchased/conditional room can't be expressed")
 
 # ═════════════════════════════════════════════════════════════════════
-# C088 Carpenter's Apprentice — UNIMPLEMENTED
+# C088 Carpenter's Apprentice
+# "Wood rooms cost you 2 wood less. Your 3rd and 4th stable each cost
+# you 1 wood less. Your 13th to 15th fence each cost you nothing."
 # ═════════════════════════════════════════════════════════════════════
-UNIMPLEMENTED["C088"] = (
-    "wood-room and fence discounts are easy (cost_mod); the '3rd/4th "
-    "stable costs 1 wood less' clause needed a cost_mod kind for "
-    "stables, which now exists (kind='stable', with 'index'/'start_index' "
-    "ctx for per-Nth pricing -- engine phase 7), so all 3 clauses are "
-    "expressible -- this is now a plain implementation gap, not a "
-    "plumbing one")
+def _carpenters_apprentice_mod(state, player, kind, cost, ctx):
+    cost = dict(cost)
+    if kind == "room" and player["house_type"] == "wood" and cost.get("wood"):
+        n = ctx.get("count", 1)
+        cost["wood"] = max(0, cost["wood"] - 2 * n)
+    elif kind == "stable" and ctx.get("index") in (3, 4) and cost.get("wood"):
+        cost["wood"] = max(0, cost["wood"] - 1)
+    elif kind == "fences" and cost.get("wood"):
+        start = ctx.get("start_index", 0)
+        count = ctx.get("count", 0)
+        free = sum(1 for pos in range(start + 1, start + count + 1)
+                  if 13 <= pos <= 15)
+        cost["wood"] = max(0, cost["wood"] - free)
+    return cost
+
+compendium_card("C088", cost_mod=_carpenters_apprentice_mod)
 
 # ═════════════════════════════════════════════════════════════════════
 # C089 Stablemaster

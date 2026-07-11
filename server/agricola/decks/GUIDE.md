@@ -257,11 +257,16 @@ mechanism.
     `{"reed_to_clay": 2}`). Threaded from `action.get("payment")` (or,
     for a minor played via the `"minor": {...}` sub-dict, that sub-dict's
     own `"payment"` key) into `build_rooms`/`renovate`/
-    `build_improvement`/`build_fences`/`play_minor`'s ctx. A cost_mod
-    that consumes `ctx["payment"]` MUST validate it and raise
-    `ValueError` on garbage (unrecognized shape, out-of-range amount,
-    more than the cost it's replacing) — never silently ignore or clamp
-    it, per rule 2's "don't approximate silently".
+    `build_improvement`/`build_fences`/`play_minor`'s ctx. Every
+    in-play card's cost_mod sees the SAME payment dict, so a mod must
+    first check whether the payment is addressed to it at all — its own
+    key present — and return `cost` unchanged if not (another card's
+    payment, or no payment: both none of this card's business). Once
+    its key IS present, it MUST validate the value and raise
+    `ValueError` on garbage (wrong shape, out-of-range amount, more
+    than the cost it's replacing) — never silently ignore or clamp it,
+    per rule 2's "don't approximate silently". A payment may address
+    several cards at once (one key each).
 
   **Worked payment-channel example** (E36 Clay Roof: "replace 1 or 2
   reed with the same amount of clay whenever you extend or renovate"):
@@ -270,10 +275,8 @@ mechanism.
       if kind not in ("room", "renovation"):
           return cost
       payment = ctx.get("payment")
-      if payment is None:
-          return cost
-      if not isinstance(payment, dict) or set(payment) != {"reed_to_clay"}:
-          raise ValueError("Clay Roof: invalid payment")
+      if not isinstance(payment, dict) or "reed_to_clay" not in payment:
+          return cost  # not addressed to this card
       n = payment["reed_to_clay"]
       if not isinstance(n, int) or n <= 0 or n > 2 or n > cost.get("reed", 0):
           raise ValueError("Clay Roof: invalid payment")

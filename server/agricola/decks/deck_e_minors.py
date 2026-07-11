@@ -60,7 +60,15 @@ UNIMPLEMENTED = {
            "cost_mod CAN target just these cards (and the Wood-fired "
            "Oven minor, E27) without misfiring on every other "
            "improvement/minor -- the discount half is no longer a "
-           "plumbing gap, only the score-category-manipulation half is.",
+           "plumbing gap, only the score-category-manipulation half is. "
+           "Reassessed per the fidelity rule: the reclassification is the "
+           "card's headline clause (its own name is 'Baking Tray' after "
+           "this effect), not a cosmetic aside -- it changes which "
+           "scoring category and which other cards' 'how many minors do "
+           "you have' conditions the Ovens count against. Registering "
+           "only the discount and dropping the reclassification would "
+           "silently misrepresent the card, so it stays fully "
+           "unimplemented rather than half-registered.",
     "E19": "requires detecting a Fireplace/Cooking Hearth 'convert 2+ "
            "goods to food at once' event; the cook conversion in "
            "_apply_feed's feeding-phase loop never fires a card event "
@@ -79,14 +87,6 @@ UNIMPLEMENTED = {
            "pasture regardless of animal type; and unfenced-stable "
            "capacity is hardcoded to 1 in validate_animal_placement "
            "with no card-modifier hook (same class of gap as B012).",
-    "E36": "lets the player substitute up to 2 reed for the same amount "
-           "of clay when building a room or renovating -- a genuine "
-           "per-build payment-material choice. engine._resolve_space now "
-           "threads ctx['payment'] (the client action's own 'payment' "
-           "field) into every build/renovate cost_mod call (engine phase "
-           "7; see decks/GUIDE.md's cost_mod section for the worked "
-           "'reed_to_clay' example), so this is now a plain "
-           "implementation gap, not a plumbing one.",
     "E58": "a card-held slot for 2 animals of any type, kept outside the "
            "house/pastures; validate_animal_placement only recognizes "
            "pastures, unfenced stables, and the house as accommodation "
@@ -399,7 +399,30 @@ compendium_card("E35", cost={"wood": 1},
                 hooks=space_bonus(["grain_seeds"], {"grain": 1}))
 
 
-# ── E36 Clay Roof — UNIMPLEMENTED (see module dict) ──────────────────
+# ── E36 Clay Roof ───────────────────────────────────────────────────────
+# "You can replace 1 or 2 reed with the same amount of clay whenever you
+# extend or renovate your home." This is decks/GUIDE.md's own worked
+# ctx["payment"] example verbatim (the card that motivated the
+# payment-channel mechanism) -- a per-build-ACTION cap of 2, not scaled
+# by ctx["count"]: the printed text is "whenever you [do the action]",
+# and the DB ruling ("can be used for every room you build, if you build
+# more than 1 room") reads as clarifying reusability across separate
+# build actions, not a per-room-scaled cap within one batch.
+def _clay_roof_mod(state, player, kind, cost, ctx):
+    if kind not in ("room", "renovation"):
+        return cost
+    payment = ctx.get("payment")
+    if not isinstance(payment, dict) or "reed_to_clay" not in payment:
+        return cost  # not addressed to this card (another card's payment)
+    n = payment["reed_to_clay"]
+    if not isinstance(n, int) or n <= 0 or n > 2 or n > cost.get("reed", 0):
+        raise ValueError("Clay Roof: invalid payment")
+    cost = dict(cost)
+    cost["reed"] -= n
+    cost["clay"] = cost.get("clay", 0) + n
+    return cost
+
+compendium_card("E36", prereq=needs_occupations(1), cost_mod=_clay_roof_mod)
 
 
 # ── E37 Clay Supports ────────────────────────────────────────────────────

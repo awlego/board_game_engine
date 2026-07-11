@@ -668,3 +668,32 @@ def test_agricultural_labourer_grants_clay_per_grain_gain(engine):
     assert p["resources"]["clay"] == clay_before + 2
     inst = next(i for i in p["occupations"] if i["id"] == "C120")
     assert inst["data"]["clay"] == 6
+
+
+def test_carpenters_apprentice_three_clauses(engine):
+    """C088: wood rooms 2 wood less (batch-scaled, wood house only);
+    3rd/4th stable 1 wood less each; 13th-15th fence free."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "C088")
+
+    cost = cards.modified_cost(s, p, "room", {"wood": 10, "reed": 4},
+                               {"count": 2})
+    assert cost == {"wood": 6, "reed": 4}
+    p["house_type"] = "clay"
+    cost_clay = cards.modified_cost(s, p, "room", {"clay": 5, "reed": 2},
+                                    {"count": 1})
+    assert cost_clay == {"clay": 5, "reed": 2}  # only wood rooms qualify
+    p["house_type"] = "wood"
+
+    for index, expected in [(1, 2), (2, 2), (3, 1), (4, 1), (5, 2)]:
+        stable_cost = cards.modified_cost(s, p, "stable", {"wood": 2},
+                                          {"count": 1, "index": index})
+        assert stable_cost == {"wood": expected}, index
+
+    # A 4-fence batch starting after 12 already built spans positions
+    # 13-16: the first 3 are free, the 16th still costs 1.
+    fence_cost = cards.modified_cost(s, p, "fences", {"wood": 4},
+                                     {"count": 4, "start_index": 12})
+    assert fence_cost == {"wood": 1}

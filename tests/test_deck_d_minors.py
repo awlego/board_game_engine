@@ -80,6 +80,8 @@ def _prep_prereqs(state, pidx, cid):
     if cid == "D070":
         p["cells"][0]["type"] = "field"
         p["cells"][1]["type"] = "field"
+    if cid == "D082":
+        p["cells"][0]["animal"] = {"type": "boar", "count": 1}
 
 
 def _resolve_all_prompts(engine, state, pid):
@@ -792,3 +794,81 @@ def test_straw_manure_pays_grain_to_add_vegetables(engine):
     assert p["cells"][0]["crops"]["count"] == 1
     assert p["cells"][1]["crops"]["count"] == 1
     assert p["resources"]["vegetable"] == veg_before + 2
+
+
+def test_hunting_trophy_space_conditioned_discounts(engine):
+    """D082: majors/minors built via House Redevelopment get 1 building
+    resource (the largest cost entry, standing in for "of your choice")
+    off; fences via Farm Redevelopment get a flat 3 wood off. Neither
+    discount applies when the build didn't come from that specific
+    space."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "D082")
+
+    imp_cost = cards.modified_cost(
+        s, p, "improvement", {"wood": 2, "clay": 3},
+        {"space_id": "house_redevelopment"})
+    assert imp_cost == {"wood": 2, "clay": 2}  # 1 off the largest entry
+
+    minor_cost = cards.modified_cost(
+        s, p, "minor", {"stone": 1},
+        {"space_id": "house_redevelopment"})
+    assert minor_cost == {}  # discounted to 0, dropped
+
+    fence_cost = cards.modified_cost(
+        s, p, "fences", {"wood": 5},
+        {"count": 5, "space_id": "farm_redevelopment"})
+    assert fence_cost == {"wood": 2}
+
+    # Wrong space (or no space at all): no discount.
+    unaffected = cards.modified_cost(
+        s, p, "improvement", {"wood": 2, "clay": 3},
+        {"space_id": "major_improvement"})
+    assert unaffected == {"wood": 2, "clay": 3}
+    unaffected_fences = cards.modified_cost(
+        s, p, "fences", {"wood": 5}, {"count": 5})
+    assert unaffected_fences == {"wood": 5}
+
+
+def test_hunting_trophy_prereq_and_play_consumes_boar(engine):
+    """D082's prereq/cost is 'return or cook 1 wild boar', not a plain
+    resource dict: unplayable with no wild boar, and playing it removes
+    one -- for food if a cooking improvement is owned, otherwise a plain
+    return."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    give_card(s, first, "D082")
+    add_space(s, "meeting_place", "Meeting Place")
+    with pytest.raises(ValueError):
+        place(engine, s, {"kind": "place", "space": "meeting_place",
+                          "minor": {"card": "D082"}})
+
+    s2 = make_state(engine, 2)
+    first2 = s2["current_player"]
+    p2 = s2["players"][first2]
+    give_card(s2, first2, "D082")
+    p2["cells"][0]["animal"] = {"type": "boar", "count": 1}
+    food_before2 = p2["resources"]["food"]
+    add_space(s2, "meeting_place", "Meeting Place")
+    s2 = place(engine, s2, {"kind": "place", "space": "meeting_place",
+                            "minor": {"card": "D082"}})
+    p2 = s2["players"][first2]
+    assert p2["cells"][0]["animal"] is None  # the boar was consumed
+    assert p2["resources"]["food"] == food_before2  # no oven/hearth -> plain return
+
+    s3 = make_state(engine, 2)
+    first3 = s3["current_player"]
+    p3 = s3["players"][first3]
+    give_card(s3, first3, "D082")
+    p3["cells"][0]["animal"] = {"type": "boar", "count": 1}
+    p3["improvements"].append("cooking_hearth_4")
+    food_before3 = p3["resources"]["food"]
+    add_space(s3, "meeting_place", "Meeting Place")
+    s3 = place(engine, s3, {"kind": "place", "space": "meeting_place",
+                            "minor": {"card": "D082"}})
+    p3 = s3["players"][first3]
+    assert p3["cells"][0]["animal"] is None
+    # Cooking Hearth cooks boar for 3.
+    assert p3["resources"]["food"] == food_before3 + 3

@@ -45,8 +45,8 @@ def test_registration_completeness():
 _DUMMY_OCCS = ["occ_woodcutter", "occ_reed_collector", "occ_clay_digger",
               "occ_stonecutter"]
 
-_NEEDS_OCC = {"E18": 2, "E24": 4, "E30": 2, "E43": 3, "E46": 2, "E47": 3,
-             "E48": 3, "E49": 2, "E54": 4, "E61": 3, "E62": 2}
+_NEEDS_OCC = {"E18": 2, "E24": 4, "E30": 2, "E36": 1, "E43": 3, "E46": 2,
+             "E47": 3, "E48": 3, "E49": 2, "E54": 4, "E61": 3, "E62": 2}
 
 
 def _prep_prereqs_and_params(state, pidx, cid):
@@ -718,3 +718,32 @@ def test_riding_plough_plows_up_to_three_fields_twice(engine):
     assert fields_after >= 2
     inst = next(i for i in s["players"][first]["minors"] if i["id"] == "E61")
     assert inst["data"]["uses_left"] == 1
+
+
+def test_clay_roof_reed_to_clay_payment(engine):
+    """E36: replace 1 or 2 reed with the same amount of clay, driven by
+    the client action's own "payment" field -- decks/GUIDE.md's worked
+    ctx["payment"] example, verbatim, for the real card."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "E36")
+    rooms_n = sum(1 for c in p["cells"] if c["type"] == "room")
+    # The unmodified-cost preview (_space_usable) needs the normal reed
+    # too, even though the real payment ends up not spending it.
+    give(s, first, clay=rooms_n + 1, reed=1)
+    add_space(s, "house_redevelopment", "House Redevelopment")
+    s = place(engine, s, {"kind": "place", "space": "house_redevelopment",
+                          "payment": {"reed_to_clay": 1}})
+    p = s["players"][first]
+    assert p["house_type"] == "clay"
+    assert p["resources"]["reed"] == 1 and p["resources"]["clay"] == 0
+
+    # Also applies to kind="room"; garbage payment raises rather than
+    # being silently ignored.
+    cost = cards.modified_cost(s, p, "room", {"wood": 5, "reed": 2},
+                               {"count": 1, "payment": {"reed_to_clay": 2}})
+    assert cost == {"wood": 5, "clay": 2}
+    with pytest.raises(ValueError):
+        cards.modified_cost(s, p, "room", {"wood": 5, "reed": 2},
+                            {"count": 1, "payment": {"reed_to_clay": 5}})

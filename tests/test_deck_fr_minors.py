@@ -59,6 +59,9 @@ def _prep_prereqs(state, pidx, cid):
             p["cells"][c]["crops"] = {"type": "grain", "count": 1}
     if cid == "FR022":
         p["pets"]["sheep"] = 3
+    if cid == "FR024":
+        p["cells"][0]["type"] = "field"
+        p["cells"][0]["crops"] = {"type": "grain", "count": 1}
     if cid == "FR028":
         for c in range(4):
             p["cells"][c]["type"] = "room"
@@ -766,3 +769,32 @@ def test_wood_saw_builds_room_when_behind_in_people(engine):
         "params": {"cells": [cells[0]]}}).new_state
     p = s["players"][first]
     assert p["cells"][cells[0]]["type"] == "room"
+
+
+def test_golden_rose_food_discount_occupation_and_minor(engine):
+    """FR024: up to 2 food off playing an occupation or minor -- never
+    below 0, and only the food entry of the cost, nothing else."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    p["cells"][0]["type"] = "field"
+    p["cells"][0]["crops"] = {"type": "grain", "count": 1}  # prereq
+    put_in_play(s, first, "FR024")
+
+    # Occupations normally cost 1 food; fully waived (capped at 0, not
+    # negative).
+    p["resources"]["food"] = 0
+    give_card(s, first, "occ_woodcutter")
+    add_space(s, "lessons", "Lessons")
+    s = place(engine, s, {"kind": "place", "space": "lessons",
+                          "card": "occ_woodcutter"})
+    p = s["players"][first]
+    assert "occ_woodcutter" in [i["id"] for i in p["occupations"]]
+    assert p["resources"]["food"] == 0
+
+    # A hypothetical 3-food minor/occupation only gets 2 off, and a
+    # cost with no food is untouched.
+    cost = cards.modified_cost(s, p, "minor", {"food": 3}, {"card": "x"})
+    assert cost == {"food": 1}
+    cost2 = cards.modified_cost(s, p, "occupation", {"wood": 1}, {"card": "y"})
+    assert cost2 == {"wood": 1}

@@ -23,9 +23,10 @@ from server.agricola.cards import (
     harvest_food, on_play_gain, animal_totals_of,
     needs_occupations, exact_occupations, needs_grain_field, combine,
 )
-from server.agricola import cards
+from server.agricola import cards, sub_actions
 from server.agricola.state import (
-    ANIMAL_TYPES, BUILDING_RESOURCES, MAX_PEOPLE, MAX_STABLES, TOTAL_ROUNDS,
+    ANIMAL_TYPES, BUILDING_RESOURCES, MAJOR_IMPROVEMENTS, MAX_PEOPLE,
+    MAX_STABLES, TOTAL_ROUNDS,
     table_score, compute_pastures, animal_counts,
 )
 
@@ -36,26 +37,12 @@ UNIMPLEMENTED = {
     "D086": "Sheep Agent: 'keep 1 sheep on each occupation card' needs a "
             "per-occupation-card animal-capacity mode; house_capacity only "
             "supports a flat int or 'per_room'.",
-    "D088": "Millwright: 'replace up to 2 building resources of any type "
-            "with 1 grain each' is an optional per-build substitution. "
-            "engine._resolve_space now threads ctx['payment'] (the "
-            "client action's own 'payment' field) into build/renovate/"
-            "improvement cost_mod calls (engine phase 7; see "
-            "decks/GUIDE.md's cost_mod section), so this is now a plain "
-            "implementation gap, not a plumbing one.",
     "D093": "Sheep Inspector: 'return another person you placed home' "
             "requires vacating an occupied action space mid-round -- the "
             "replacement-effect gap noted in CARDS.md as a known future "
             "engine feature, not yet supported.",
     "D094": "Henpecked Husband: same 'return a placed person home' gap "
             "as D093 -- no way to vacate an occupied action space.",
-    "D095": "Site Manager: on-play major-improvement build with 'replace "
-            "up to 1 resource of each type with 1 food' has the same "
-            "substitution shape as D088/D117 -- build_improvement's "
-            "ctx['payment'] (engine phase 7) can carry this card's own "
-            "choice too (the play hook builds the ctx itself, same as "
-            "any card_action would), so this is a plain implementation "
-            "gap, not a plumbing one.",
     "D102": "Sample Stable Maker: fires 'at the start of each returning "
             "home phase', a phase this engine has no hook for (only "
             "round_start/harvest_field/etc.), and requires removing a "
@@ -170,6 +157,48 @@ def _remove_one_animal(player, animal_type):
     return False
 
 
+# ── D088 Millwright ──────────────────────────────────────────────────
+# "You immediately get 1 grain. Each time you build fences, stables, and
+# rooms, or renovate your house, you can replace up to 2 building
+# resources of any type with 1 grain each." Ruling: "1 or 2
+# substitutions per type of thing built" -- a genuine per-build-action
+# choice (not strictly beneficial: it trades a building resource for a
+# food-phase-relevant grain), so it's a payment-channel cost_mod, same
+# shape as E36 Clay Roof, just generalized to any of the four building
+# resources and to all four buildable-batch kinds.
+def _millwright_mod(state, player, kind, cost, ctx):
+    if kind not in ("room", "stable", "fences", "renovation"):
+        return cost
+    payment = ctx.get("payment")
+    if not isinstance(payment, dict) or "millwright_grain" not in payment:
+        return cost  # not addressed to this card (another card's payment)
+    sub = payment["millwright_grain"]
+    if not isinstance(sub, dict) or not sub:
+        raise ValueError("Millwright: invalid payment")
+    cost = dict(cost)
+    total = 0
+    for res, n in sub.items():
+        if res not in BUILDING_RESOURCES:
+            raise ValueError("Millwright: invalid payment resource")
+        if not isinstance(n, int) or n <= 0 or n > cost.get(res, 0):
+            raise ValueError("Millwright: invalid payment amount")
+        total += n
+    if total > 2:
+        raise ValueError("Millwright: invalid payment amount")
+    for res, n in sub.items():
+        cost[res] -= n
+    cost["grain"] = cost.get("grain", 0) + total
+    return cost
+
+
+def _millwright_play(state, player, inst, ctx):
+    add_goods(ctx["extra"], {"grain": 1})
+    ctx["log"].append(f"{player['name']}'s Millwright grants 1 grain")
+
+
+compendium_card("D088", hooks={"play": _millwright_play}, cost_mod=_millwright_mod)
+
+
 # ── D089 Stablehand ──────────────────────────────────────────────────
 # "Each time you build at least 1 fence, you can also build a stable
 # without paying wood for the stable." (trailing ruling text is bleed
@@ -241,6 +270,84 @@ compendium_card("D092", card_action={
     "apply": _child_ombudsman_apply,
     "description": "Free Family Growth (-2 points)",
 }, score_bonus=lambda s, p, i: -2 * i["data"].get("uses", 0))
+
+
+# ── D095 Site Manager ────────────────────────────────────────────────
+# DB text concatenates multiple printings under one code (see module
+# docstring); only the first, self-contained clause is this card's real
+# text: "When you play this card, immediately build a major improvement.
+# When paying its cost, you can replace up to 1 building resource of
+# each type with 1 food each."
+#
+# The substitution is scoped to just this one on-play build, not a
+# standing ability for the rest of the game -- unlike D088 Millwright's
+# genuinely repeatable payment-channel ability, a persistent cost_mod
+# keyed on a payment blob would leak: engine._do_improvement threads
+# ANY action's own "payment" field into every future Major Improvement
+# build, so a spec-level cost_mod recognizing a fixed payment key would
+# let the player invoke "Site Manager's" substitution again on a later,
+# unrelated improvement purchase. Instead the play hook computes the
+# (already-modified-by-other-cards) cost itself, applies the one-time
+# substitution inline, and hands sub_actions.build_improvement an exact
+# cost_override -- so the ability can never outlive this single call.
+def _site_manager_can_afford(player, cost):
+    """True if SOME 0-or-1-per-type substitution (each building resource
+    swapped for 1 food) makes `cost` affordable."""
+    types = [r for r in BUILDING_RESOURCES if cost.get(r, 0) > 0]
+    for mask in range(1 << len(types)):
+        trial = dict(cost)
+        subbed = 0
+        for i, r in enumerate(types):
+            if mask & (1 << i):
+                trial[r] -= 1
+                subbed += 1
+        if subbed:
+            trial["food"] = trial.get("food", 0) + subbed
+        if all(player["resources"].get(k, 0) >= v for k, v in trial.items()):
+            return True
+    return False
+
+
+def _site_manager_play(state, player, inst, ctx):
+    candidates = []
+    for imp in state["available_improvements"]:
+        base = cards.modified_cost(state, player, "improvement",
+                                   MAJOR_IMPROVEMENTS[imp]["cost"],
+                                   {"improvement": imp})
+        if _site_manager_can_afford(player, base):
+            candidates.append(imp)
+    if not candidates:
+        ctx["log"].append(
+            f"{player['name']}'s Site Manager has no affordable major "
+            "improvement to build")
+        return
+    params = ctx.get("params") or {}
+    imp = params.get("improvement")
+    if imp not in candidates:
+        raise ValueError(
+            "Site Manager: choose an affordable available major "
+            "improvement (params.improvement)")
+    cost = dict(cards.modified_cost(state, player, "improvement",
+                                    MAJOR_IMPROVEMENTS[imp]["cost"],
+                                    {"improvement": imp}))
+    sub = params.get("food_sub") or {}
+    if not isinstance(sub, dict):
+        raise ValueError("Site Manager: invalid food_sub")
+    total_food = 0
+    for res, n in sub.items():
+        if res not in BUILDING_RESOURCES:
+            raise ValueError("Site Manager: invalid food_sub resource")
+        if not isinstance(n, int) or n <= 0 or n > 1 or n > cost.get(res, 0):
+            raise ValueError("Site Manager: invalid food_sub amount")
+        cost[res] -= n
+        total_food += n
+    if total_food:
+        cost["food"] = cost.get("food", 0) + total_food
+    sub_actions.build_improvement(state, player, imp, ctx["log"],
+                                  cost_override=cost)
+
+
+compendium_card("D095", hooks={"play": _site_manager_play})
 
 
 # ── D099 Earthenware Potter ──────────────────────────────────────────

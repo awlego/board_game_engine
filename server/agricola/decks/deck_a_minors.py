@@ -274,13 +274,26 @@ compendium_card(
 )
 
 
-UNIMPLEMENTED["A014"] = (
-    "Carpenter's Hammer discounts room-building only when >=2 rooms are "
-    "built at once. cost_mod for kind='room' now gets a batch count in "
-    "ctx and room cost is priced as one batch total (engine phase 7), "
-    "so the condition and the batch-level discount are both "
-    "expressible -- this is now a plain implementation gap, not a "
-    "plumbing one")
+# ── A014 Carpenter's Hammer ─────────────────────────────────────────────
+# "Each time you build at least 2 wood/clay/stone rooms at once, you get
+# a total discount of 2 reed as well as 2 wood/3 clay/4 stone." A flat,
+# batch-level discount (not scaled by count) gated on the batch being
+# >=2 rooms -- room cost is already a batch total, so this matches the
+# "a total discount of..." phrasing exactly.
+_HAMMER_MATERIAL_DISCOUNT = {"wood": 2, "clay": 3, "stone": 4}
+
+def _carpenters_hammer_mod(state, player, kind, cost, ctx):
+    if kind != "room" or ctx.get("count", 1) < 2:
+        return cost
+    cost = dict(cost)
+    material = player["house_type"]
+    if cost.get(material):
+        cost[material] = max(0, cost[material] - _HAMMER_MATERIAL_DISCOUNT[material])
+    if cost.get("reed"):
+        cost["reed"] = max(0, cost["reed"] - 2)
+    return cost
+
+compendium_card("A014", cost_mod=_carpenters_hammer_mod)
 
 
 # ── A015 Carpenter's Axe ──────────────────────────────────────────────

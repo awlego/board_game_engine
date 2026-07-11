@@ -577,3 +577,81 @@ def test_field_cultivator_pile_sequence_over_two_tiles(engine):
     assert inst["data"]["fc_idx"] == 1  # only the accepted pick advanced the pile
     assert inst["data"]["fc_remaining"] == 0
     assert s["prompts"] == []
+
+
+def test_millwright_grain_gain_and_payment_substitution(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    give_card(s, first, "D088")
+    grain_before = p["resources"]["grain"]
+    add_space(s, "lessons", "Lessons")
+    s = place(engine, s, {"kind": "place", "space": "lessons", "card": "D088"})
+    p = s["players"][first]
+    assert p["resources"]["grain"] == grain_before + 1
+
+    # Up to 2 building resources (any type) swapped for 1 grain each.
+    cost = cards.modified_cost(
+        s, p, "room", {"wood": 5, "reed": 2},
+        {"count": 1, "payment": {"millwright_grain": {"wood": 1, "reed": 1}}})
+    assert cost == {"wood": 4, "reed": 1, "grain": 2}
+
+    # More than 2 total substitutions, or more than the cost actually
+    # has of that resource, raises instead of being silently clamped.
+    with pytest.raises(ValueError):
+        cards.modified_cost(
+            s, p, "room", {"wood": 5, "reed": 2},
+            {"count": 1, "payment": {"millwright_grain": {"wood": 3}}})
+
+
+def test_site_manager_on_play_build_with_food_substitution(engine):
+    """D095: on-play mandatory major-improvement build, with up to 1
+    resource of each type swappable for 1 food each -- scoped to just
+    this one build (not a standing cost_mod for later purchases)."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    give_card(s, first, "D095")
+    # Joinery costs 2 wood + 2 stone; give 1 short of wood, covered by
+    # substituting 1 food for it. (Playing an occupation via Lessons is
+    # free for a player's first occupation, so no extra food is needed
+    # for the card's own play cost.)
+    give(s, first, wood=1, stone=2, food=1)
+    food_before = p["resources"]["food"]
+    add_space(s, "lessons", "Lessons")
+    s = place(engine, s, {"kind": "place", "space": "lessons", "card": "D095",
+                          "params": {"improvement": "joinery",
+                                    "food_sub": {"wood": 1}}})
+    p = s["players"][first]
+    assert "joinery" in p["improvements"]
+    assert p["resources"]["wood"] == 0
+    assert p["resources"]["stone"] == 0
+    assert p["resources"]["food"] == food_before - 1  # 1 food for the swap
+
+    # A later, normal Major Improvement purchase gets no such
+    # substitution -- the ability doesn't outlive the on-play build.
+    cost = cards.modified_cost(s, p, "improvement", {"clay": 2, "stone": 2},
+                               {"improvement": "pottery"})
+    assert cost == {"clay": 2, "stone": 2}
+
+    # Nothing affordable at all (even with the best possible
+    # substitution): the mandatory build is skipped gracefully rather
+    # than blocking the whole card play.
+    s2 = make_state(engine, 2)
+    first2 = s2["current_player"]
+    give_card(s2, first2, "D095")
+    add_space(s2, "lessons", "Lessons")
+    s2 = place(engine, s2, {"kind": "place", "space": "lessons", "card": "D095"})
+    p2 = s2["players"][first2]
+    assert p2["improvements"] == []
+
+    # Something IS affordable, but naming an unaffordable improvement
+    # raises rather than silently doing nothing.
+    s3 = make_state(engine, 2)
+    first3 = s3["current_player"]
+    give_card(s3, first3, "D095")
+    give(s3, first3, clay=2)  # fireplace_2 is affordable outright
+    add_space(s3, "lessons", "Lessons")
+    with pytest.raises(ValueError):
+        place(engine, s3, {"kind": "place", "space": "lessons", "card": "D095",
+                          "params": {"improvement": "well"}})

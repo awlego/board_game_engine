@@ -12,7 +12,7 @@ import random
 import pytest
 
 from server.agricola.engine import AgricolaEngine
-from server.agricola import cards
+from server.agricola import cards, sub_actions
 from server.agricola.decks import deck_fr_occupations as deck_fr
 from server.agricola.state import (
     cell_edges, animal_counts, compute_pastures, shared_edge,
@@ -842,3 +842,29 @@ def test_pasteurization_expert_ignores_breeding_source(engine):
     hook(s, p, inst, ctx2)
     assert ctx2["extra"] == {"sheep": 1}  # matches the top ("sheep")
     assert inst["data"]["idx"] == 1
+
+
+def test_miser_discount_only_exactly_one_room_via_a_space(engine):
+    """FR094: 1 wood + 1 reed off, but only for a single-room build made
+    through an action space (ctx["space_id"] set, ctx["count"] == 1)."""
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "FR094")
+
+    cell = sub_actions.buildable_room_cells(p)[0]
+    give(s, first, wood=5, reed=2)
+    s = place(engine, s, {"kind": "place", "space": "farm_expansion",
+                          "rooms": [cell]})
+    p = s["players"][first]
+    # Normal cost is 5 wood + 2 reed; Miser knocks 1 off each.
+    assert p["resources"]["wood"] == 1 and p["resources"]["reed"] == 1
+
+    # No discount for a 2-room batch, or for a card-driven build with no
+    # originating space (ctx["space_id"] absent).
+    cost_batch = cards.modified_cost(s, p, "room", {"wood": 10, "reed": 4},
+                                     {"count": 2, "space_id": "farm_expansion"})
+    assert cost_batch == {"wood": 10, "reed": 4}
+    cost_no_space = cards.modified_cost(s, p, "room", {"wood": 5, "reed": 2},
+                                        {"count": 1})
+    assert cost_no_space == {"wood": 5, "reed": 2}

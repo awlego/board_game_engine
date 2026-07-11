@@ -68,12 +68,6 @@ UNIMPLEMENTED = {
             "only fires for the acting player's own cards (_do_renovate "
             "calls cards.fire_player, not cards.fire) -- widening that "
             "means editing engine.py",
-    "D082": "the discount is conditioned on building via House/Farm "
-            "Redevelopment specifically. engine._resolve_space now threads "
-            "ctx['space_id'] into every build/renovate/improvement "
-            "cost_mod call (engine phase 7), so a card can target "
-            "space_id=='house_redevelopment'/'farm_redevelopment' -- this "
-            "is now a plain implementation gap, not a plumbing one",
     "D083": "would need to grant an animal through a feeding-phase "
             "conversion, but the engine's conversion 'get' path only "
             "credits player resources with no accommodation route for "
@@ -1242,5 +1236,96 @@ def _roof_ladder_renovate(state, player, inst, ctx):
 compendium_card("D081", cost_mod=_roof_ladder_cost_mod,
                 hooks={"renovate": _roof_ladder_renovate})
 
-# D082 Hunting Trophy -- see UNIMPLEMENTED
+# ── D082 Hunting Trophy ──────────────────────────────────────────────
+# Prereq/cost "Return or cook 1 Wild Boar": you must own >= 1 wild boar
+# to play this card at all, and playing it consumes one (either straight
+# back to the supply, or cooked for food via whichever cooking
+# improvement you own, if any). Cooking is never worse than a plain
+# return (it only ever adds food), so -- per this module's documented
+# convention of auto-applying strictly-beneficial "you can/may" choices
+# -- the play hook always cooks when a cooking improvement is owned and
+# plainly returns the boar otherwise, rather than prompting over a choice
+# with no real downside either way.
+#
+# "Improvements built on 'House Redevelopment' cost you 1 building
+# resource of your choice less. Fences built on 'Farm Redevelopment'
+# cost you a total of 3 wood less." Ruling: "built" (on House
+# Redevelopment) covers both major and minor improvements. "Of your
+# choice" has no player-facing channel in a pure cost_mod query, so (per
+# the FR069 Cat Lover / FR103 Prosecutor precedent in
+# deck_fr_occupations.py) the discount is taken from the largest cost
+# entry, a defensible stand-in for "your choice" of a single unit.
+def _flat_discount(cost, amount):
+    cost = dict(cost)
+    remaining = amount
+    for k in sorted(cost, key=lambda k: -cost[k]):
+        if remaining <= 0:
+            break
+        take = min(cost[k], remaining)
+        cost[k] -= take
+        remaining -= take
+    return cost
+
+
+def _remove_one_boar(player):
+    if player["pets"].get("boar", 0) > 0:
+        player["pets"]["boar"] -= 1
+        if player["pets"]["boar"] == 0:
+            del player["pets"]["boar"]
+        return True
+    for c in player["cells"]:
+        a = c.get("animal")
+        if a and a["type"] == "boar":
+            a["count"] -= 1
+            if a["count"] <= 0:
+                c["animal"] = None
+            return True
+    for inst in player.get("occupations", []) + player.get("minors", []):
+        held = inst.get("held")
+        if held and held.get("boar", 0) > 0:
+            held["boar"] -= 1
+            if held["boar"] == 0:
+                del held["boar"]
+            return True
+    return False
+
+
+def _best_boar_cook_rate(player):
+    best = 0
+    tables = [MAJOR_IMPROVEMENTS[i].get("cook") for i in player["improvements"]]
+    tables += cards.card_cook_specs(player)
+    for cook in tables:
+        if cook and cook.get("boar"):
+            best = max(best, cook["boar"])
+    return best
+
+
+def _hunting_trophy_play(state, player, inst, ctx):
+    if not _remove_one_boar(player):
+        raise ValueError("Hunting Trophy: you must own 1 wild boar to "
+                         "return or cook")
+    food = _best_boar_cook_rate(player)
+    if food:
+        add_goods(ctx["extra"], {"food": food})
+        ctx["log"].append(f"{player['name']} cooks 1 wild boar for {food} "
+                          "food (Hunting Trophy)")
+    else:
+        ctx["log"].append(f"{player['name']} returns 1 wild boar "
+                          "(Hunting Trophy)")
+
+
+def _hunting_trophy_mod(state, player, kind, cost, ctx):
+    if kind in ("improvement", "minor") and ctx.get("space_id") == "house_redevelopment":
+        return _flat_discount(cost, 1)
+    if kind == "fences" and ctx.get("space_id") == "farm_redevelopment" and cost.get("wood"):
+        cost = dict(cost)
+        cost["wood"] = max(0, cost["wood"] - 3)
+    return cost
+
+compendium_card(
+    "D082",
+    prereq=(lambda s, p: animal_counts(p).get("boar", 0) >= 1,
+            "own 1 wild boar (to return or cook)"),
+    hooks={"play": _hunting_trophy_play},
+    cost_mod=_hunting_trophy_mod)
 # D083 Pigswill -- see UNIMPLEMENTED

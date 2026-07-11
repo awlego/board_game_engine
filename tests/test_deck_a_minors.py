@@ -42,8 +42,8 @@ def test_registration_completeness():
     assert registered | unimplemented == codes, \
         f"missing: {codes - registered - unimplemented}"
     assert registered & unimplemented == set()
-    assert len(IMPLEMENTED) == 48
-    assert len(deck_a_minors.UNIMPLEMENTED) == 12
+    assert len(IMPLEMENTED) == 49
+    assert len(deck_a_minors.UNIMPLEMENTED) == 11
 
 
 # ── Smoke test: play every implemented card ───────────────────────────
@@ -734,3 +734,24 @@ def test_silage_breeds_from_returning_home(engine):
     p = s["players"][first]
     assert p["resources"]["grain"] == 0
     assert p["cells"][4]["animal"]["count"] == 2
+
+
+def test_carpenters_hammer_batch_discount(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    p = s["players"][first]
+    put_in_play(s, first, "A014")
+    # >= 2 wood rooms at once: a flat 2-wood/2-reed discount off the batch
+    # total (not scaled per room).
+    cost = cards.modified_cost(s, p, "room", {"wood": 10, "reed": 4},
+                               {"count": 2})
+    assert cost == {"wood": 8, "reed": 2}
+    # A single room in the batch gets no discount at all.
+    cost1 = cards.modified_cost(s, p, "room", {"wood": 5, "reed": 2},
+                                {"count": 1})
+    assert cost1 == {"wood": 5, "reed": 2}
+    # Clay house: 3 clay / 2 reed off the batch total.
+    p["house_type"] = "clay"
+    cost_clay = cards.modified_cost(s, p, "room", {"clay": 10, "reed": 4},
+                                    {"count": 2})
+    assert cost_clay == {"clay": 7, "reed": 2}

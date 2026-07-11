@@ -102,10 +102,6 @@ UNIMPLEMENTED = {
              "FR081 -- 'received exactly 1 type of building resource in "
              "any way' can't be observed without a comprehensive per-"
              "round gain ledger.",
-    "FR094": "Miser: the discount only applies when you build EXACTLY 1 "
-             "room. cost_mod for kind='room' now gets a batch count in "
-             "ctx (engine phase 7), so the condition is expressible -- "
-             "this is now a plain implementation gap, not a plumbing one.",
     "FR095": "Musketeer: 'place an Arrow marker at the intersection of 4 "
              "action spaces' needs 2-D adjacency/positioning between "
              "action spaces, which this engine doesn't model (same gap "
@@ -802,6 +798,26 @@ compendium_card(
           "minor_played": _mastermind_minor,
           "improvement_built": _mastermind_improvement},
     score_bonus=lambda s, p, i: i["data"].get("count", 0))
+
+
+# ── FR094 Miser ──────────────────────────────────────────────────────
+# "Whenever you use a 'Build Room(s)' action on an Action space, you may
+# pay 1 wood/clay/stone less and 1 reed less if you build exactly 1
+# wood/clay/stone room." Ruling: only via an action-space Build Rooms
+# action (ctx["space_id"] not None) -- a card-driven room build (with no
+# originating space) doesn't qualify.
+def _miser_mod(state, player, kind, cost, ctx):
+    if kind != "room" or ctx.get("count", 1) != 1 or ctx.get("space_id") is None:
+        return cost
+    cost = dict(cost)
+    material = player["house_type"]
+    if cost.get(material):
+        cost[material] = max(0, cost[material] - 1)
+    if cost.get("reed"):
+        cost["reed"] = max(0, cost["reed"] - 1)
+    return cost
+
+compendium_card("FR094", cost_mod=_miser_mod)
 
 
 # ── FR096 Oceanographer ───────────────────────────────────────────────
