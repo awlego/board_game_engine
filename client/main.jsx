@@ -16,9 +16,15 @@ import GipfApp from "./games/Gipf_MP.jsx";
 import PunctApp from "./games/Punct_MP.jsx";
 import LyngkApp from "./games/Lyngk_MP.jsx";
 import ShardsApp from "./games/Shards_MP.jsx";
-import AgricolaApp from "./games/Agricola_MP.jsx";
+import AgricolaApp, { DECK_CHOICES as AGRICOLA_DECKS } from "./games/Agricola_MP.jsx";
 
 import { WS_URL } from "./ws.js";
+
+// Player identity is entered once and remembered across games, tabs, and
+// visits. Game clients share this key so their own forms prefill too.
+export const NAME_KEY = "bge_player_name";
+const loadName = () => localStorage.getItem(NAME_KEY) || "";
+const saveName = (n) => localStorage.setItem(NAME_KEY, n);
 
 // ─── Game Registry ─────────────────────────────────────
 const GAMES = [
@@ -36,7 +42,13 @@ const GAMES = [
   { id: "dragon",  name: "In the Year of the Dragon", players: "2–5", component: DragonApp, series: "other", desc: "Survive disasters in medieval China" },
   { id: "caylus",  name: "Caylus",         players: "2–5", component: CaylusApp,     series: "other", desc: "Build a castle for the king, manage workers" },
   { id: "shards",  name: "Shards of Creation", players: "2–4", component: ShardsApp, series: "other", desc: "Cosmere trick-taking — win tricks, forge shards" },
-  { id: "agricola", name: "Agricola", players: "1–4", component: AgricolaApp, series: "other", desc: "Worker-placement farming — grow your family and feed it" },
+  { id: "agricola", name: "Agricola", players: "1–4", component: AgricolaApp, series: "other", desc: "Worker-placement farming — grow your family and feed it",
+    // Game-specific room options rendered inside the Create Room dialog and
+    // passed to the game client via pending_action.options.
+    createForm: {
+      decks: { label: "Card decks", choices: AGRICOLA_DECKS, default: ["A"] },
+    },
+  },
 ];
 
 // ─── Styles ────────────────────────────────────────────
@@ -110,12 +122,23 @@ function GameCard({ game, onClick }) {
 }
 
 // ─── Room Browser ──────────────────────────────────────
-function RoomBrowser({ gameId, gameName, onJoin, onSpectate, onBack }) {
+function RoomBrowser({ gameId, gameName, createForm, onJoin, onSpectate, onBack }) {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(loadName);
   const [joinCode, setJoinCode] = useState("");
   const [mode, setMode] = useState(null); // null | "create" | "join_code"
+  const [createOpts, setCreateOpts] = useState(() =>
+    createForm
+      ? Object.fromEntries(Object.entries(createForm).map(([k, f]) => [k, f.default]))
+      : null);
+
+  const submit = (roomCode) => {
+    const n = name.trim();
+    if (!n) return;
+    saveName(n);
+    onJoin(roomCode, n, mode === "create" ? createOpts : null);
+  };
 
   // Fetch room list
   const fetchRooms = useCallback(() => {
@@ -160,18 +183,33 @@ function RoomBrowser({ gameId, gameName, onJoin, onSpectate, onBack }) {
               {mode === "create" ? "Create Room" : "Join by Code"}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <input style={S.input} placeholder="Your name" value={name} onChange={e => setName(e.target.value)} />
+              <input style={S.input} placeholder="Your name" value={name} autoFocus={!name}
+                onChange={e => setName(e.target.value)} />
               {mode === "join_code" && (
-                <input style={S.input} placeholder="Room code" value={joinCode}
+                <input style={S.input} placeholder="Room code" value={joinCode} autoFocus={!!name}
                   onChange={e => setJoinCode(e.target.value.toUpperCase())} />
               )}
+              {mode === "create" && createForm && Object.entries(createForm).map(([key, field]) => (
+                <div key={key} style={{ fontSize: 12, color: "#aaa" }}>
+                  <div style={{ color: "#c9a84c", marginBottom: 4 }}>{field.label}:</div>
+                  {field.choices.map(c => (
+                    <label key={c.id} style={{ display: "block", cursor: "pointer", padding: "1px 0" }}>
+                      <input type="checkbox" checked={createOpts[key].includes(c.id)}
+                        onChange={e => setCreateOpts({
+                          ...createOpts,
+                          [key]: e.target.checked
+                            ? [...createOpts[key], c.id]
+                            : createOpts[key].filter(x => x !== c.id),
+                        })} />
+                      {" "}{c.label}
+                    </label>
+                  ))}
+                </div>
+              ))}
               <div style={{ display: "flex", gap: 8 }}>
                 <button style={S.btn} onClick={() => setMode(null)}>Cancel</button>
-                <button style={{ ...S.btn, ...S.btnP }} disabled={!name.trim()}
-                  onClick={() => {
-                    if (mode === "create" && name.trim()) onJoin(null, name.trim());
-                    if (mode === "join_code" && name.trim() && joinCode.trim()) onJoin(joinCode.trim(), name.trim());
-                  }}>
+                <button style={{ ...S.btn, ...S.btnP }} disabled={!name.trim() || (mode === "join_code" && !joinCode.trim())}
+                  onClick={() => submit(mode === "create" ? null : joinCode.trim())}>
                   {mode === "create" ? "Create" : "Join"}
                 </button>
               </div>
@@ -192,9 +230,12 @@ function RoomBrowser({ gameId, gameName, onJoin, onSpectate, onBack }) {
                   </span>
                 </div>
                 <button style={{ ...S.playBtn }} onClick={() => {
-                  const n = name.trim() || prompt("Enter your name:");
-                  if (n) onJoin(room.room_code, n);
-                }}>Join</button>
+                  // One click with a remembered name; otherwise open the join
+                  // dialog with the code prefilled so only the name is needed.
+                  const n = name.trim();
+                  if (n) { saveName(n); onJoin(room.room_code, n, null); }
+                  else { setJoinCode(room.room_code); setMode("join_code"); }
+                }}>{name.trim() ? `Join as ${name.trim()}` : "Join"}</button>
               </div>
             ))}
           </>
@@ -293,10 +334,12 @@ function MainApp() {
       <RoomBrowser
         gameId={game.id}
         gameName={game.name}
-        onJoin={(roomCode, playerName) => {
+        createForm={game.createForm}
+        onJoin={(roomCode, playerName, options) => {
           // Store intent for the game hook to auto-create/join on mount
           sessionStorage.setItem("pending_action", JSON.stringify({
             gameId: game.id, roomCode, playerName,
+            ...(options ? { options } : {}),
           }));
           sessionStorage.removeItem("game_token");
           setJoinInfo({ roomCode, playerName });

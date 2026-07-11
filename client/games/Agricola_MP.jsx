@@ -216,6 +216,9 @@ function useGameConnection() {
   const [gameLogs, setGameLogs] = useState([]);
   const [gameOver, setGameOver] = useState(false);
   const [error, setError] = useState(null);
+  // Set while an auto create/join/reconnect is in flight so the lobby can
+  // show progress instead of an entry form: {kind, code?} or null.
+  const [pendingIntent, setPendingIntent] = useState(null);
 
   const wsRef = useRef(null);
   const tokenRef = useRef(null);
@@ -293,10 +296,11 @@ function useGameConnection() {
     const pending = sessionStorage.getItem("pending_action");
     if (pending && !tokenRef.current) {
       try {
-        const { roomCode: rc, playerName } = JSON.parse(pending);
+        const { roomCode: rc, playerName, options } = JSON.parse(pending);
         sessionStorage.removeItem("pending_action");
+        setPendingIntent(rc ? { kind: "join", code: rc } : { kind: "create" });
         if (rc) joinRoom(rc, playerName);
-        else createRoom(playerName);
+        else createRoom(playerName, options);
       } catch {
         sessionStorage.removeItem("pending_action");
       }
@@ -306,6 +310,7 @@ function useGameConnection() {
       const saved = sessionStorage.getItem("game_token");
       if (saved) {
         tokenRef.current = saved;
+        setPendingIntent({ kind: "reconnect" });
         connect();
       }
     }
@@ -317,7 +322,8 @@ function useGameConnection() {
   return {
     connected, roomCode, playerId, isHost, lobby,
     gameStarted, gameState, phaseInfo, yourTurn, waitingFor,
-    gameLogs, gameOver, error,
+    gameLogs, gameOver, error, pendingIntent,
+    cancelPending: () => setPendingIntent(null),
     createRoom, joinRoom, startGame, submitAction,
   };
 }
@@ -1831,7 +1837,7 @@ function GameBoard({ game }) {
 // LOBBY
 // ============================================================
 
-const DECK_CHOICES = [
+export const DECK_CHOICES = [
   { id: "A", label: "Deck A (revised base)" },
   { id: "B", label: "Deck B (Bubulcus)" },
   { id: "C", label: "Deck C (Corbarius)" },
@@ -1840,8 +1846,13 @@ const DECK_CHOICES = [
   { id: "custom", label: "Custom cards" },
 ];
 
+// Shared with the game-selector lobby (main.jsx) so a name entered anywhere
+// prefills everywhere.
+const NAME_KEY = "bge_player_name";
+
 function Lobby({ game }) {
-  const [name, setName] = useState(sessionStorage.getItem("player_name") || "");
+  const [name, setName] = useState(() =>
+    localStorage.getItem(NAME_KEY) || sessionStorage.getItem("player_name") || "");
   const [code, setCode] = useState("");
   const [decks, setDecks] = useState(["A"]);
   const inRoom = !!game.roomCode;
@@ -1851,6 +1862,31 @@ function Lobby({ game }) {
     card: { background: "#fffbeb", borderRadius: 14, padding: 28, width: 380, boxShadow: "0 8px 30px #3f621233" },
     input: { width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #d6d3c1", fontSize: 14, marginBottom: 10, fontFamily: "inherit", boxSizing: "border-box" },
   };
+
+  // An auto create/join/reconnect handed off from the game-selector lobby is
+  // in flight — show what's happening instead of a second entry form. On
+  // error (room full, expired token, …) fall through to the form below.
+  if (!inRoom && game.pendingIntent && !game.error) {
+    const label = {
+      create: "Creating room…",
+      join: `Joining room ${game.pendingIntent.code || ""}…`,
+      reconnect: "Reconnecting to your game…",
+    }[game.pendingIntent.kind] || "Connecting…";
+    return (
+      <div style={S.page}>
+        <div style={{ ...S.card, textAlign: "center" }}>
+          <h2 style={{ marginTop: 0 }}>🚜 Agricola</h2>
+          <div style={{ fontSize: 14, color: "#57534e" }}>{label}</div>
+          <div style={{ marginTop: 14 }}>
+            <a href="#" style={{ fontSize: 12, color: "#a8a29e" }}
+              onClick={(e) => { e.preventDefault(); game.cancelPending(); }}>
+              Taking too long? Enter details manually
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (inRoom) {
     return (
@@ -1889,7 +1925,7 @@ function Lobby({ game }) {
           17th-century farming: place your people, grow your farm, feed your family. 1–4 players.
         </p>
         <input style={S.input} placeholder="Your name" value={name}
-          onChange={(e) => { setName(e.target.value); sessionStorage.setItem("player_name", e.target.value); }} />
+          onChange={(e) => { setName(e.target.value); localStorage.setItem(NAME_KEY, e.target.value); }} />
         <div style={{ fontSize: 12, marginBottom: 8 }}>
           <b>Card decks:</b>
           <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 4 }}>
