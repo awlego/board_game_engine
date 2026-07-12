@@ -755,14 +755,13 @@ _PLOW_SPACES = ("farmland", "cultivation")
 
 
 def _pickaxe_neighbor_cap(state, space_id):
-    pos = cards.space_position(state, space_id)
-    if pos is None:
+    rect = cards.space_rect(state, space_id)
+    if rect is None:
         return 0
-    col, row = pos
-    targets = {(col - 1, row), (col + 1, row), (col, row - 1), (col, row + 1)}
-    all_positions = set(SPACE_POSITIONS.get(state["player_count"], {}).values())
-    all_positions.update(ROUND_SLOTS.values())
-    return min(2, len(targets & all_positions))
+    all_rects = list(SPACE_POSITIONS.get(state["player_count"], {}).values())
+    all_rects += list(ROUND_SLOTS.values())
+    return min(2, sum(1 for r in all_rects
+                      if r != rect and cards.rects_adjacent(rect, r)))
 
 
 def _pickaxe_offer(state, player, inst):

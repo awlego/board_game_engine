@@ -452,118 +452,114 @@ def build_stage_deck(rng):
     return deck
 
 
-# ── Board geometry (engine phase 10) ─────────────────────────────────
-# Physical (col, row) position of every action space, for cards that
-# reference the board's 2D layout (B120 Sweep, C117 Legworker, D144
-# Water Worker, D165 Pig Stalker, FR006 Badger, FR027 Ground Pickaxe
-# Plow, FR037 Necklace -- see CARDS.md item 16 and decks/GUIDE.md's
-# "Board geometry" section for the derivation, worked examples, and
-# fidelity caveats). Columns increase rightward, rows increase downward.
-# Derived from the Revised Edition rulebook's board photos (page 3 of
-# en_agricolare.html_Rules_Agricola-RE_EN.pdf: the 2-player and
-# 3-player board images) plus the Appendix's text (page 4,
-# "Column of the game board" / "The Grove is adjacent to both Farm
-# Expansion and Meeting Place", and the per-stage action-space listing
-# on page 7) -- both PDFs live in
-# overnightlemons.com/game_rulebooks/Agricola/. The rulebook photos are
-# too low-resolution to read pixel-exact, so the round-space grid
-# (below) is a best-effort reconstruction cross-checked against the
-# card text itself (D144 needs Fishing to have exactly 3 neighbors;
-# D165 needs a real "above/below" neighbor for a round-space animal
-# market to ever exist) rather than a pixel-confirmed reading.
+# ── Board geometry (engine phase 10, corrected in phase 20) ──────────
+# Physical rectangle of every action space, for cards that reference
+# the board's 2D layout (B120 Sweep, C117 Legworker, D144 Water
+# Worker, D165 Pig Stalker, FR006 Badger, FR027 Ground Pickaxe Plow,
+# FR037 Necklace -- see CARDS.md item 16 and decks/GUIDE.md's "Board
+# geometry" section). The printed board's boxes are NOT all the same
+# size (FR037's ruling acknowledges this: "Action spaces do not need
+# to be the same dimensions"), so each space is a rect
+#     (col, top, height)
+# with `top`/`height` in HALF-ROWS of the base grid (a 1-row box is 2
+# half-rows tall; every box is exactly 1 column wide). Two spaces are
+# orthogonally adjacent iff their rects share an edge segment of
+# positive length (cards.adjacent_spaces). Columns increase rightward,
+# rows downward.
+#
+# Sources: the Revised Edition rulebook's board photos (page 3 of
+# en_agricolare.html_Rules_Agricola-RE_EN.pdf: 2-player and 3-player
+# boards; both PDFs in overnightlemons.com/game_rulebooks_and_resources
+# /Agricola/), the Appendix's Grove statement, and -- decisive for the
+# round layout -- the Compendium's B120 Sweep ruling ("The action
+# space must be round 1-6 or 8-12"): round cards run HORIZONTALLY,
+# rounds 1-7 left-to-right along the TOP of the board, 8-13 in a
+# second band below them, and 14 alone at the bottom left, each box
+# two base rows tall. That ruling only works in this layout (the card
+# left of round N is round N-1 exactly for N in 2-7 / 9-13; rounds 1,
+# 8, and 14 have no round card to their left), and it reproduces the
+# photo: three label bands, the second one column shorter, the third
+# one box long, with the board's bottom-right cut away in steps
+# (cliff art). It also confirms D144's own text geometrically --
+# Fishing's exactly-three neighbors are Day Laborer, Reed Bank, and
+# the round-14 space (the only round box that reaches Fishing's row).
 
 # The base column (all player counts), top to bottom, and the
-# accumulation column beside it (Forest is beside Grain Seeds, Clay Pit
-# beside Farmland, Reed Bank beside Lessons, Fishing beside Day
-# Laborer -- confirmed directly in the board photo):
-_BASE_POSITIONS = {
-    "farm_expansion": (0, 0),
-    "meeting_place": (0, 1),
-    "grain_seeds": (0, 2),
-    "farmland": (0, 3),
-    "lessons": (0, 4),
-    "day_laborer": (0, 5),
-    "forest": (1, 2),
-    "clay_pit": (1, 3),
-    "reed_bank": (1, 4),
-    "fishing": (1, 5),
+# accumulation column beside it (Forest is beside Grain Seeds, Clay
+# Pit beside Farmland, Reed Bank beside Lessons, Fishing beside Day
+# Laborer -- confirmed directly in the board photo). All are 1-row
+# (2 half-row) boxes.
+_BASE_RECTS = {
+    "farm_expansion": (0, 0, 2),
+    "meeting_place": (0, 2, 2),
+    "grain_seeds": (0, 4, 2),
+    "farmland": (0, 6, 2),
+    "lessons": (0, 8, 2),
+    "day_laborer": (0, 10, 2),
+    "forest": (1, 4, 2),
+    "clay_pit": (1, 6, 2),
+    "reed_bank": (1, 8, 2),
+    "fishing": (1, 10, 2),
 }
 
-# The 3-/4-player extension is a separate strip attached to the LEFT of
-# the base column (confirmed in the board photo), one row per base-row
-# it sits beside. The Appendix gives one concrete adjacency fact --
-# "The Grove is adjacent to both Farm Expansion and Meeting Place" --
-# which a single-cell-per-space grid cannot reproduce exactly (the
-# printed extension boxes are taller than one base row); Grove sits
-# beside Meeting Place (row 1) in the grid, and the Farm-Expansion
-# adjacency is restored by the explicit EXTRA_ADJACENCY override below.
-# Grove/Hollow/Resource Market/Lessons_b are the 3-player extension
-# (counts=(3,) except Grove and Lessons_b, which the Appendix confirms
-# are UNCHANGED at 4 players too, counts=(3, 4) in PERMANENT_SPACES).
-# The 4-player extension additionally has its own Copse (+1 wood) and
-# bigger Hollow/Resource Market -- neither PDF shows the 4-player
-# board's photo, so Copse is placed at row 0 (beside Farm Expansion),
-# the extension column's one otherwise-unused row, rather than a
-# confirmed layout; this incidentally reproduces the Appendix's "Grove
-# adjacent to Farm Expansion" fact for 4p via Copse-then-Grove instead
-# (Copse (-1,0) is adjacent to both Farm Expansion (0,0) and Grove
-# (-1,1)).
+# The 3-player extension is a separate strip attached to the LEFT of
+# the base column (confirmed in the board photo): FOUR boxes over the
+# board's six rows, so each is 1.5 base rows (3 half-rows) tall. That
+# taller-box geometry makes the Appendix's documented fact ("The Grove
+# is adjacent to both Farm Expansion and Meeting Place") fall straight
+# out of the rects -- Grove [0,3) overlaps Farm Expansion [0,2) and
+# Meeting Place [2,4) -- so 3p needs no EXTRA_ADJACENCY override.
 _3P_EXTRA = {
-    "grove": (-1, 1),
-    "resource_market_3p": (-1, 2),
-    "hollow_3p": (-1, 3),
-    "lessons_b": (-1, 4),
+    "grove": (-1, 0, 3),
+    "resource_market_3p": (-1, 3, 3),
+    "hollow_3p": (-1, 6, 3),
+    "lessons_b": (-1, 9, 3),
 }
 
+# Neither PDF shows the 4-player extension's photo; it has six spaces,
+# placed here as six 1-row boxes (a best-effort layout, NOT a
+# confirmed reading). The Appendix's Grove/Farm-Expansion adjacency is
+# restored for 4p by the EXTRA_ADJACENCY override below.
 _4P_EXTRA = {
-    "copse": (-1, 0),
-    "grove": (-1, 1),
-    "resource_market_4p": (-1, 2),
-    "hollow_4p": (-1, 3),
-    "lessons_b": (-1, 4),
-    "traveling_players": (-1, 5),
+    "copse": (-1, 0, 2),
+    "grove": (-1, 2, 2),
+    "resource_market_4p": (-1, 4, 2),
+    "hollow_4p": (-1, 6, 2),
+    "lessons_b": (-1, 8, 2),
+    "traveling_players": (-1, 10, 2),
 }
 
 # Keyed by state["player_count"]; 1 and 2 players share the base board.
 SPACE_POSITIONS = {
-    1: dict(_BASE_POSITIONS),
-    2: dict(_BASE_POSITIONS),
-    3: {**_BASE_POSITIONS, **_3P_EXTRA},
-    4: {**_BASE_POSITIONS, **_4P_EXTRA},
+    1: dict(_BASE_RECTS),
+    2: dict(_BASE_RECTS),
+    3: {**_BASE_RECTS, **_3P_EXTRA},
+    4: {**_BASE_RECTS, **_4P_EXTRA},
 }
 
-# Round-space slot per ROUND NUMBER (1..14), not per card id -- the
-# card revealed in round N always sits at slot N's position, whichever
-# of that stage's (shuffled) cards it happens to be. Each stage gets
-# its own column, stacked downward in round order starting at row 2
-# (beside Grain Seeds/Forest, the accumulation column's second row):
-# stage 1 (4 rounds) fills rows 2-5 of column 2, stage 2 (3 rounds)
-# rows 2-4 of column 3, stages 3-5 (2 rounds each) rows 2-3 of columns
-# 4-6, stage 6 (1 round) row 2 of column 7. This is what gives Fishing
-# (1, 5) exactly 3 neighbors once all 14 rounds are revealed -- Day
-# Laborer (0, 5) left, Reed Bank (1, 4) above, Round 4 (2, 5) right --
-# matching D144's own text ("Fishing... or one of the three
-# orthogonally adjacent action spaces"), and gives every 2+-round stage
-# a genuine internal above/below pair for D165.
-ROUND_SLOTS = {
-    1: (2, 2), 2: (2, 3), 3: (2, 4), 4: (2, 5),
-    5: (3, 2), 6: (3, 3), 7: (3, 4),
-    8: (4, 2), 9: (4, 3),
-    10: (5, 2), 11: (5, 3),
-    12: (6, 2), 13: (6, 3),
-    14: (7, 2),
-}
+# Round-space rect per ROUND NUMBER (1..14), not per card id -- the
+# card revealed in round N always sits at slot N's printed position,
+# whichever of that stage's (shuffled) cards it happens to be. Rounds
+# 1-7 run left to right along the top of the board (columns 2-8),
+# rounds 8-13 in a second band (columns 2-7; the board is cut away
+# under round 7's column), and round 14 sits alone at the bottom of
+# column 2. Every round box is 2 base rows (4 half-rows) tall.
+ROUND_SLOTS = {}
+for _n in range(1, 8):
+    ROUND_SLOTS[_n] = (1 + _n, 0, 4)
+for _n in range(8, 14):
+    ROUND_SLOTS[_n] = (_n - 6, 4, 4)
+ROUND_SLOTS[14] = (2, 8, 4)
 
-# Adjacencies the printed board has but the single-cell grid above
-# cannot express (extension-strip boxes are taller than one base row).
-# Unordered pairs, keyed by player count; unioned into
+# Adjacencies the printed board has but the rects above cannot
+# express. Unordered pairs, keyed by player count; unioned into
 # cards.adjacent_spaces/spaces_adjacent. Only add a pair here when a
-# primary source documents it -- the Grove pair is stated verbatim in
+# primary source documents it: the Grove pair is stated verbatim in
 # the Appendix ("The Grove is adjacent to both Farm Expansion and
-# Meeting Place"); no other extension adjacency is documented, so the
-# rest stay grid-derived.
+# Meeting Place"). At 3p it is now derived from the extension's
+# 1.5-row boxes; the override remains only for the unphotographed
+# 4-player strip.
 EXTRA_ADJACENCY = {
-    3: [("grove", "farm_expansion")],
     4: [("grove", "farm_expansion")],
 }
 

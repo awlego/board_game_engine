@@ -607,28 +607,38 @@ function HandPanel({ me, playableMinors }) {
 // ============================================================
 
 // Engine-canonical board geometry (server/agricola/state.py
-// SPACE_POSITIONS / ROUND_SLOTS): [col, row] with col -1 the 3p/4p
-// extension strip, 0 the scroll column, 1 the accumulation column,
-// 2-7 the stage columns. The card revealed in round N always sits at
-// ROUND_SLOTS[N], so adjacency cards read the same on screen as in
-// the engine.
-const BOARD_POS = {
-  farm_expansion: [0, 0], meeting_place: [0, 1], grain_seeds: [0, 2],
-  farmland: [0, 3], lessons: [0, 4], day_laborer: [0, 5],
-  forest: [1, 2], clay_pit: [1, 3], reed_bank: [1, 4], fishing: [1, 5],
-  copse: [-1, 0], grove: [-1, 1],
-  resource_market_3p: [-1, 2], resource_market_4p: [-1, 2],
-  hollow_3p: [-1, 3], hollow_4p: [-1, 3],
-  lessons_b: [-1, 4], traveling_players: [-1, 5],
+// SPACE_POSITIONS / ROUND_SLOTS): every space is a rect
+// [col, top, height] with top/height in HALF-ROWS of the base grid (a
+// 1-row box is 2 half-rows; round spaces are 4; the 3p extension
+// strip's boxes 3). col -1 is the extension strip, 0 the scroll
+// column, 1 the accumulation column, 2-8 the round columns. Rounds
+// 1-7 run along the TOP of the board, 8-13 in a second band, and 14
+// sits alone at the bottom of column 2 -- the printed board is cut
+// away below the shorter bands (the photo's stepped cliff edge),
+// rendered here as exposed table. The card revealed in round N always
+// sits at ROUND_SLOTS[N], so adjacency cards read the same on screen
+// as in the engine.
+const BASE_POS = {
+  farm_expansion: [0, 0, 2], meeting_place: [0, 2, 2], grain_seeds: [0, 4, 2],
+  farmland: [0, 6, 2], lessons: [0, 8, 2], day_laborer: [0, 10, 2],
+  forest: [1, 4, 2], clay_pit: [1, 6, 2], reed_bank: [1, 8, 2], fishing: [1, 10, 2],
 };
-const ROUND_SLOTS = {
-  1: [2, 2], 2: [2, 3], 3: [2, 4], 4: [2, 5],
-  5: [3, 2], 6: [3, 3], 7: [3, 4],
-  8: [4, 2], 9: [4, 3],
-  10: [5, 2], 11: [5, 3],
-  12: [6, 2], 13: [6, 3],
-  14: [7, 2],
+const EXT_POS_3P = {
+  grove: [-1, 0, 3], resource_market_3p: [-1, 3, 3],
+  hollow_3p: [-1, 6, 3], lessons_b: [-1, 9, 3],
 };
+const EXT_POS_4P = {
+  copse: [-1, 0, 2], grove: [-1, 2, 2], resource_market_4p: [-1, 4, 2],
+  hollow_4p: [-1, 6, 2], lessons_b: [-1, 8, 2], traveling_players: [-1, 10, 2],
+};
+const boardPosFor = (playerCount) =>
+  playerCount >= 4 ? { ...BASE_POS, ...EXT_POS_4P }
+  : playerCount === 3 ? { ...BASE_POS, ...EXT_POS_3P }
+  : BASE_POS;
+const ROUND_SLOTS = {};
+for (let n = 1; n <= 7; n++) ROUND_SLOTS[n] = [1 + n, 0, 4];
+for (let n = 8; n <= 13; n++) ROUND_SLOTS[n] = [n - 6, 4, 4];
+ROUND_SLOTS[14] = [2, 8, 4];
 const stageOfRound = (r) => r <= 4 ? 1 : r <= 7 ? 2 : r <= 9 ? 3 : r <= 11 ? 4 : r <= 13 ? 5 : 6;
 // Official majors-board arrangement: hearths + Well on top, ovens and
 // crafts below.
@@ -735,12 +745,14 @@ function RoundSlot({ round, gridPos }) {
   );
 }
 
-// The red supplemental board holding the major improvements.
-function MajorsBoard({ available, gridColumn, gridRow }) {
+// The red supply board holding the major improvements -- physically a
+// separate board, rendered resting on the table in the main board's
+// cut-away corner.
+function MajorsBoard({ available }) {
   const openSet = new Set(available);
   return (
     <div style={{
-      gridColumn, gridRow,
+      flex: 1, minWidth: 0,
       background: "linear-gradient(165deg,#8e3b2c 0%,#7a2f22 60%,#6c2a1e 100%)",
       border: "1px solid #4e1d13", borderRadius: 8, padding: "5px 7px 7px",
       boxShadow: "inset 0 1px 0 rgba(255,220,190,0.25), 0 3px 6px rgba(30,20,10,0.45)",
@@ -798,15 +810,28 @@ function ActionBoard({ state, validSpaces, onPick, players }) {
   const roundOf = {};
   (state.revealed || []).forEach((cid, i) => { roundOf[cid] = i + 1; });
 
-  const ext = state.action_spaces.some((sp) => (BOARD_POS[sp.id] || [0])[0] === -1);
+  const POS = boardPosFor(players.length);
+  const ext = state.action_spaces.some((sp) => (POS[sp.id] || [0])[0] === -1);
   const off = ext ? 2 : 1; // grid columns are 1-based; shift right if strip present
-  const cols = 8 + (ext ? 1 : 0);
-  const cell = (x, y) => [x + off, y + 1];
+  const cols = 9 + (ext ? 1 : 0);
+  // Rects are [col, top, height] in half-rows; the CSS grid uses 12
+  // half-rows of 40px (2 half-rows + gap = the old 86px full row).
+  const cell = ([x, top, h]) => [`${x + off}`, `${top + 1} / span ${h}`];
 
   // Spaces the printed grid doesn't know: card-created action spaces
   // (Chapel, Forest Inn, ...) and anything else unpositioned.
   const looseSpaces = state.action_spaces.filter(
-    (sp) => !(sp.id in BOARD_POS) && !(sp.id in roundOf));
+    (sp) => !(sp.id in POS) && !(sp.id in roundOf));
+
+  const roundsLeft = 14 - (state.revealed || []).length;
+  // The printed board is cut away below the shorter round bands; the
+  // exposed table hosts the (physically separate) majors supply board
+  // and the harvest reference, plus the face-down stage-card pile.
+  const tableStyle = {
+    background: "linear-gradient(160deg,#63482c 0%,#523a22 55%,#46311c 100%)",
+    borderRadius: 6, margin: -4, zIndex: 0,
+    boxShadow: "inset 0 3px 10px rgba(15,10,4,0.55), inset 0 -1px 0 rgba(255,225,180,0.12)",
+  };
 
   return (
     <div style={{ width: "fit-content" }}>
@@ -838,15 +863,15 @@ function ActionBoard({ state, validSpaces, onPick, players }) {
           <div style={{
             position: "relative", display: "grid", gap: 6,
             gridTemplateColumns: `repeat(${cols}, 92px)`,
-            gridTemplateRows: "repeat(6, 86px)",
+            gridTemplateRows: "repeat(12, 40px)",
           }}>
             {/* Fixed action spaces at their printed positions */}
             {state.action_spaces.map((sp) => {
-              const pos = BOARD_POS[sp.id];
+              const pos = POS[sp.id];
               if (!pos) return null;
               return <BoardSpace key={sp.id} sp={sp} players={players}
                 valid={validSpaces.has(sp.id)} onPick={onPick}
-                gridPos={cell(pos[0], pos[1])} />;
+                gridPos={cell(pos)} />;
             })}
             {/* Round track: revealed cards, then face-down slots */}
             {Object.entries(ROUND_SLOTS).map(([r, pos]) => {
@@ -856,32 +881,58 @@ function ActionBoard({ state, validSpaces, onPick, players }) {
               return sp
                 ? <BoardSpace key={`r${round}`} sp={sp} players={players}
                     valid={validSpaces.has(sp.id)} onPick={onPick}
-                    round={round} gridPos={cell(pos[0], pos[1])} />
-                : <RoundSlot key={`r${round}`} round={round} gridPos={cell(pos[0], pos[1])} />;
+                    round={round} gridPos={cell(pos)} />
+                : <RoundSlot key={`r${round}`} round={round} gridPos={cell(pos)} />;
             })}
-            <MajorsBoard available={state.available_improvements || []}
-              gridColumn={`${cell(2, 0)[0]} / span 6`} gridRow="1 / span 2" />
-            {/* Harvest / end-of-game reference, printed on the board like
-                the original's right-hand panel */}
+            {/* Stepped cut-away right of round 7: the face-down pile
+                of coming stage cards rests on the table there */}
             <div style={{
-              gridColumn: `${cell(6, 4)[0]} / span 2`, gridRow: "5 / span 2",
-              background: "linear-gradient(170deg,#f4ebcf 0%,#e9d8ab 100%)",
-              border: "1px solid #a8895a", borderRadius: 7, padding: "8px 10px",
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.65), 0 2px 4px rgba(30,50,15,0.35)",
-              display: "flex", flexDirection: "column", gap: 4,
-              fontSize: 8.5, color: "#5b4a2c", lineHeight: 1.35,
+              ...tableStyle, gridColumn: `${8 + off}`, gridRow: "5 / span 4",
+              display: "flex", alignItems: "center", justifyContent: "center", padding: 6,
             }}>
-              <div style={{ fontFamily: BOARD_FONT, fontSize: 10.5, fontWeight: 700, color: "#43331a", textAlign: "center" }}>
-                🌾 Harvest
-              </div>
-              <div style={{ textAlign: "center", marginTop: -2 }}>
-                after rounds 4 · 7 · 9 · 11 · 13 · 14
-              </div>
-              <div><b>1. Field</b> — reap 1 grain/vegetable from each sown field</div>
-              <div><b>2. Feed</b> — 2 food per person (1 for newborns)</div>
-              <div><b>3. Breed</b> — 2+ animals of a kind bear one more</div>
-              <div style={{ borderTop: "1px solid #c4ab77", marginTop: "auto", paddingTop: 4, textAlign: "center", fontStyle: "italic" }}>
-                The game ends with the round-14 harvest.
+              {roundsLeft > 0 && (
+                <div title={`${roundsLeft} action space card${roundsLeft === 1 ? "" : "s"} still face down`}
+                  style={{
+                    width: 62, height: 88, borderRadius: 6,
+                    background: "linear-gradient(160deg,#3e5e28,#2c4519 70%)",
+                    border: "1px solid #1e3010",
+                    boxShadow: "0 2px 0 #24361a, 0 4px 0 #1d2c14, 0 6px 8px rgba(0,0,0,0.4)",
+                    display: "flex", flexDirection: "column", alignItems: "center",
+                    justifyContent: "center", gap: 2,
+                    color: "rgba(240,245,215,0.85)",
+                  }}>
+                  <div style={{ fontFamily: BOARD_FONT, fontSize: 16, fontWeight: 700 }}>{roundsLeft}</div>
+                  <div style={{ fontSize: 7.5, textAlign: "center", lineHeight: 1.2 }}>cards<br />to come</div>
+                </div>
+              )}
+            </div>
+            {/* Stepped cut-away below round bands 8-13: the majors
+                supply board and harvest reference sit on the table */}
+            <div style={{
+              ...tableStyle, gridColumn: `${3 + off} / span 6`, gridRow: "9 / span 4",
+              display: "flex", gap: 8, padding: 8, alignItems: "stretch",
+            }}>
+              <MajorsBoard available={state.available_improvements || []} />
+              <div style={{
+                width: 148, flexShrink: 0,
+                background: "linear-gradient(170deg,#f4ebcf 0%,#e9d8ab 100%)",
+                border: "1px solid #a8895a", borderRadius: 7, padding: "7px 9px",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.65), 0 2px 4px rgba(30,50,15,0.35)",
+                display: "flex", flexDirection: "column", gap: 3,
+                fontSize: 8, color: "#5b4a2c", lineHeight: 1.3,
+              }}>
+                <div style={{ fontFamily: BOARD_FONT, fontSize: 10, fontWeight: 700, color: "#43331a", textAlign: "center" }}>
+                  🌾 Harvest
+                </div>
+                <div style={{ textAlign: "center", marginTop: -2 }}>
+                  after rounds 4 · 7 · 9 · 11 · 13 · 14
+                </div>
+                <div><b>1. Field</b> — reap 1 grain/vegetable from each sown field</div>
+                <div><b>2. Feed</b> — 2 food per person (1 for newborns)</div>
+                <div><b>3. Breed</b> — 2+ animals of a kind bear one more</div>
+                <div style={{ borderTop: "1px solid #c4ab77", marginTop: "auto", paddingTop: 3, textAlign: "center", fontStyle: "italic" }}>
+                  The game ends with the round-14 harvest.
+                </div>
               </div>
             </div>
           </div>

@@ -1319,16 +1319,8 @@ def _pig_stalker_hook(state, player, inst, ctx):
         return
     if not any(g in ANIMAL_TYPES for g in ctx["goods"]):
         return
-    pos = cards.space_position(state, ctx["space_id"])
-    if pos is None:
-        return
-    col, row = pos
-    for target in ((col, row - 1), (col, row + 1)):
-        neighbor = next((s for s in state["action_spaces"]
-                         if cards.space_position(state, s["id"]) == target),
-                        None)
-        if neighbor is None:
-            continue
+    for nid in cards.vertical_neighbors(state, ctx["space_id"]):
+        neighbor = next(s for s in state["action_spaces"] if s["id"] == nid)
         occupants = ([neighbor["occupied_by"]]
                     if neighbor["occupied_by"] is not None else []) \
             + neighbor.get("extra_occupants", [])

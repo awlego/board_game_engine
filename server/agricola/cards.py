@@ -510,49 +510,76 @@ def card_space_owner(state, inst):
     return state["players"][space["owner"]]
 
 
-def space_position(state, space_id):
-    """(col, row) of `space_id` on the physical board, or None if it has
-    no position -- a `card_space` ("card:<cid>", it sits beside the
-    board), or an id not on this player count's board at all. Permanent
-    spaces come from the static SPACE_POSITIONS map (keyed by
-    state["player_count"]); a revealed round space's position comes
-    from its ROUND_SLOTS entry, keyed by which ROUND revealed it (its
-    index in state["revealed"]), not by which stage card it is -- see
-    state.py's "Board geometry" comment and GUIDE.md for the derivation
-    and fidelity caveats."""
-    positions = SPACE_POSITIONS.get(state["player_count"], {})
-    if space_id in positions:
-        return positions[space_id]
+def space_rect(state, space_id):
+    """(col, top, height) of `space_id` on the physical board -- top and
+    height in HALF-ROWS (see state.py's "Board geometry" comment) --
+    or None if it has no position: a `card_space` ("card:<cid>", it
+    sits beside the board), or an id not on this player count's board
+    at all. Permanent spaces come from the static SPACE_POSITIONS map
+    (keyed by state["player_count"]); a revealed round space's rect
+    comes from its ROUND_SLOTS entry, keyed by which ROUND revealed it
+    (its index in state["revealed"]), not by which stage card it is."""
+    rects = SPACE_POSITIONS.get(state["player_count"], {})
+    if space_id in rects:
+        return rects[space_id]
     if space_id in state["revealed"]:
         rnd = state["revealed"].index(space_id) + 1
         return ROUND_SLOTS.get(rnd)
     return None
 
 
+def space_position(state, space_id):
+    """(col, top) anchor of `space_id`'s rect (unique per space), or
+    None -- see space_rect. Kept for uniqueness checks and debugging;
+    geometry consumers should use space_rect/adjacent_spaces."""
+    rect = space_rect(state, space_id)
+    return rect[:2] if rect else None
+
+
+def rects_adjacent(a, b):
+    """True if rects `a` and `b` (col, top, height) share an edge
+    segment of positive length. Boxes are 1 column wide, so horizontal
+    neighbors need overlapping row intervals; vertical neighbors are
+    same-column rects whose intervals touch end-to-end. Corner-only
+    contact (zero-length overlap) is NOT adjacency."""
+    ca, ta, ha = a
+    cb, tb, hb = b
+    if abs(ca - cb) == 1:
+        return min(ta + ha, tb + hb) - max(ta, tb) > 0
+    if ca == cb:
+        return ta + ha == tb or tb + hb == ta
+    return False
+
+
 def adjacent_spaces(state, space_id):
     """Ids of action spaces EXISTING right now (in state["action_spaces"])
-    that are orthogonally adjacent (grid distance 1) to `space_id`,
-    plus any EXTRA_ADJACENCY override pairs (printed-board adjacencies
-    the single-cell grid can't express -- Grove/Farm Expansion). A
-    space with no position (see space_position) has no grid neighbors,
-    and a round slot not revealed yet is simply absent from the search --
-    it's not in state["action_spaces"] to be found."""
+    that are orthogonally adjacent to `space_id` -- rects sharing an
+    edge segment (rects_adjacent) -- plus any EXTRA_ADJACENCY override
+    pairs (printed-board adjacencies the rects can't express: the
+    unphotographed 4p strip's Grove/Farm Expansion). A space with no
+    rect (see space_rect) has no neighbors, and a round slot not
+    revealed yet is simply absent from the search -- it's not in
+    state["action_spaces"] to be found."""
     extra = set()
     for a, b in EXTRA_ADJACENCY.get(state["player_count"], ()):
         if a == space_id:
             extra.add(b)
         elif b == space_id:
             extra.add(a)
-    pos = space_position(state, space_id)
-    if pos is None:
-        targets = set()
-    else:
-        col, row = pos
-        targets = {(col - 1, row), (col + 1, row), (col, row - 1), (col, row + 1)}
-    return [s["id"] for s in state["action_spaces"]
-            if s["id"] != space_id
-            and (s["id"] in extra
-                 or space_position(state, s["id"]) in targets)]
+    rect = space_rect(state, space_id)
+    out = []
+    for s in state["action_spaces"]:
+        if s["id"] == space_id:
+            continue
+        if s["id"] in extra:
+            out.append(s["id"])
+            continue
+        if rect is None:
+            continue
+        other = space_rect(state, s["id"])
+        if other is not None and rects_adjacent(rect, other):
+            out.append(s["id"])
+    return out
 
 
 def spaces_adjacent(state, a, b):
@@ -561,16 +588,44 @@ def spaces_adjacent(state, a, b):
 
 
 def left_neighbor(state, space_id):
-    """The existing action space directly to the left of `space_id`
-    (same row, column - 1), or None -- B120 Sweep's recipe: pass
-    state["revealed"][-1] (the round space most recently placed)."""
-    pos = space_position(state, space_id)
-    if pos is None:
+    """The existing action space directly to the left of `space_id` --
+    the SAME rect one column over ((col-1, top, height)) -- or None.
+    B120 Sweep's recipe: pass state["revealed"][-1] (the round space
+    most recently placed). Because round boxes are taller than the
+    permanent boxes, this matches the Compendium's B120 ruling ("The
+    action space must be round 1-6 or 8-12") exactly: the left
+    neighbor of round N is round N-1 for N in 2-7 / 9-13, and rounds
+    1, 8, and 14 have NO left neighbor (meadow, or permanent spaces of
+    a different shape)."""
+    rect = space_rect(state, space_id)
+    if rect is None:
         return None
-    col, row = pos
-    target = (col - 1, row)
+    col, top, height = rect
+    target = (col - 1, top, height)
     return next((s["id"] for s in state["action_spaces"]
-                 if space_position(state, s["id"]) == target), None)
+                 if space_rect(state, s["id"]) == target), None)
+
+
+def vertical_neighbors(state, space_id):
+    """Existing action spaces directly above or below `space_id` --
+    same column, rects touching end-to-end. D165 Pig Stalker's
+    "immediately above or below" recipe. Round bands stack: round N's
+    vertical neighbors are N-7/N+7 (rounds 2-6 over 9-13), round 8
+    sits under round 1 and over round 14, and forest-column spaces
+    neighbor each other as before."""
+    rect = space_rect(state, space_id)
+    if rect is None:
+        return []
+    col, top, height = rect
+    out = []
+    for s in state["action_spaces"]:
+        if s["id"] == space_id:
+            continue
+        other = space_rect(state, s["id"])
+        if other is not None and other[0] == col and (
+                other[1] + other[2] == top or top + height == other[1]):
+            out.append(s["id"])
+    return out
 
 
 def card_fields(player):

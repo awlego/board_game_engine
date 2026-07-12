@@ -459,43 +459,37 @@ Known remaining gaps, and how they'd fit if a future card needs them:
   exercise the mechanism); registering them with `compendium_card` is
   still a separate pass.
 - **The board's 2D geometry (item 16)** is now supported (engine phase
-  10). Previously there was no way for a card to reference the
-  physical layout of action spaces -- which one is left of another, or
-  orthogonally adjacent, on the actual printed board. Now: `state.py`'s
-  `SPACE_POSITIONS` (keyed by player count) gives every permanent
-  action space a static `(col, row)`, and `ROUND_SLOTS` gives every
-  round NUMBER (1-14) a position, so a revealed round space's position
-  follows from `state["revealed"]`'s reveal order; `cards.space_position`,
-  `cards.adjacent_spaces`, `cards.spaces_adjacent`, and
-  `cards.left_neighbor` are the queries a card hook uses. See
-  `decks/GUIDE.md`'s "Board geometry" section for the full coordinate
-  system (ASCII board diagrams per player count), the queries, and a
-  worked example. This unblocks the motivating compendium cards: B120
-  Sweep (left-of a round space), C117 Legworker (adjacent occupied
-  space), D144 Water Worker (Fishing's 3 neighbors), D165 Pig Stalker
-  (above/below an accumulation space), FR006 Badger (a marker that
-  walks between adjacent revealed spaces), FR027 Ground Pickaxe Plow
-  (adjacent-space bonus plows), FR037 Necklace (2 people on adjacent
-  spaces at end of work phase). None are registered by this pass
-  (`temp_card`-only tests exercise the mechanism); registering them is
-  a separate pass, same as items 14/15.
-  **Fidelity caveats**: the coordinate map is a best-effort
-  reconstruction from the Revised Edition rulebook's low-resolution
-  board photos plus its Appendix text, cross-checked against the
-  cards' own text (D144's "exactly 3" Fishing neighbors; D165 needing
-  a genuine above/below pair for a round-space animal market to ever
-  trigger) rather than a pixel-confirmed reading -- see the derivation
-  comment above `SPACE_POSITIONS` in `state.py` for exact PDF pages.
-  Two specific notes: (1) the Appendix's own worked example, "The Grove
-  is adjacent to both Farm Expansion and Meeting Place," can't be
-  reproduced by a single-cell-per-space grid (the printed extension
-  boxes are taller than one base row), so that documented pair is
-  encoded in `state.EXTRA_ADJACENCY` (per-player-count override pairs
-  unioned into the adjacency queries; extend it only from primary
-  sources). (2) neither PDF shows the 4-player board's photo, so the
-  4-player extension's layout (in particular Copse's position) is
-  placed by analogy to the 3-player extension's pattern, not a
-  confirmed layout.
+  10; corrected to the printed layout in phase 20). Previously there
+  was no way for a card to reference the physical layout of action
+  spaces -- which one is left of another, or orthogonally adjacent, on
+  the actual printed board. Now: every space is a RECT `(col, top,
+  height)` in half-row units (the printed boxes are not all one size:
+  round spaces are two base rows tall, the 3p extension's boxes 1.5).
+  `state.py`'s `SPACE_POSITIONS` (keyed by player count) gives every
+  permanent action space its rect, and `ROUND_SLOTS` gives every round
+  NUMBER (1-14) a rect -- rounds 1-7 run left-to-right along the TOP
+  of the board, 8-13 in a second band, 14 alone at the bottom left
+  (pinned by the Compendium's B120 ruling, "The action space must be
+  round 1-6 or 8-12", plus the rulebook photos' stepped board edge) --
+  so a revealed round space's rect follows from `state["revealed"]`'s
+  reveal order; `cards.space_rect`, `cards.adjacent_spaces` (rect
+  edge-sharing), `cards.spaces_adjacent`, `cards.left_neighbor`
+  (same-shape box one column left; None for rounds 1/8/14, matching
+  the B120 ruling), and `cards.vertical_neighbors` (D165's
+  above/below) are the queries a card hook uses. See `decks/GUIDE.md`'s
+  "Board geometry" section for the full coordinate system (ASCII board
+  diagram), the queries, and a worked example. Motivating cards: B120
+  Sweep, C117 Legworker, D144 Water Worker (Fishing's exactly-3
+  neighbors -- Day Laborer, Reed Bank, and the round-14 box, confirmed
+  geometrically), D165 Pig Stalker, FR006 Badger, FR027 Ground Pickaxe
+  Plow, FR037 Necklace.
+  **Fidelity caveats**: the Appendix's worked example ("The Grove is
+  adjacent to both Farm Expansion and Meeting Place") is now DERIVED
+  from the 3p extension's 1.5-row boxes; `state.EXTRA_ADJACENCY` keeps
+  the pair only for the unphotographed 4-player strip, whose layout
+  (six 1-row boxes, Copse on top) remains a placement choice rather
+  than a confirmed reading. Extend EXTRA_ADJACENCY only from primary
+  sources.
 - **Turn-structure manipulation (item 17)** is now supported (engine
   phase 11). Previously there was no way for a card to let a player skip
   their placement turn for a consolation gain, to place out of the

@@ -648,16 +648,27 @@ def test_pet_broker_gains_sheep_and_holds_by_occupation_count(engine):
 
 
 def test_sweep_bonus_on_left_neighbor_of_round_space(engine):
-    """Round 1: left_neighbor(revealed[-1]) is "forest" (per
-    test_agricola.py's own test_left_neighbor_of_round_spaces) -- using
-    Forest grants the Sweep's 2 clay on top of Forest's own payout."""
-    s = make_state(engine, 2)
+    """Rounds run horizontally, so in round 2 the card left of the
+    newest round card is the round-1 card (in round 1 there is nothing
+    to Sweep's left at all -- meadow borders the round-1 slot; the
+    Compendium's B120 ruling). Pick a seed whose round-1 card is Major
+    Improvement so using the target space needs no other setup than
+    2 clay for a Fireplace."""
+    seed = next(k for k in range(200)
+                if make_state(engine, 2, seed=k)["revealed"][0]
+                == "major_improvement")
+    s = make_state(engine, 2, seed=seed)
     first = s["current_player"]
     put_in_play(s, first, "B120")
-    assert cards.left_neighbor(s, s["revealed"][-1]) == "forest"
+    assert cards.left_neighbor(s, s["revealed"][-1]) is None  # round 1
+    engine._start_round(s, [])  # round 2
+    assert cards.left_neighbor(s, s["revealed"][-1]) == s["revealed"][0]
+    give(s, first, clay=2)
     clay_before = s["players"][first]["resources"]["clay"]
-    s = place(engine, s, {"kind": "place", "space": "forest"})
-    assert s["players"][first]["resources"]["clay"] == clay_before + 2
+    s = place(engine, s, {"kind": "place", "space": "major_improvement",
+                          "improvement": "fireplace_2"})
+    # Paid 2 clay for the Fireplace, got 2 back from the Sweep.
+    assert s["players"][first]["resources"]["clay"] == clay_before
 
 
 def test_sweep_no_bonus_off_target(engine):

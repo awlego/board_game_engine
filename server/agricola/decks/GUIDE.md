@@ -799,92 +799,98 @@ mechanism); registering them is a separate pass, same as items 14/15.
 
 ### Coordinate system
 
-`state.py`'s `SPACE_POSITIONS` (keyed by `state["player_count"]`) gives
-every PERMANENT_SPACES id a static `(col, row)`; columns increase
-rightward, rows increase downward. `ROUND_SLOTS` gives every ROUND
-NUMBER (1..14, not stage-card id) a `(col, row)` -- the card revealed
-in round N always sits at slot N's position, whatever that stage's
-(shuffled) card happens to be. Derived from the Revised Edition
-rulebook's board photos and Appendix text (see the derivation comment
-above `SPACE_POSITIONS` in `state.py` for exact page references and
-caveats) -- the photos are too low-resolution to read pixel-exact, so
-the round-space grid is a best-effort reconstruction cross-checked
-against the cards' own text (D144 needs Fishing to have exactly 3
-neighbors; D165 needs a real above/below pair to ever exist for a
-round-space animal market) rather than a confirmed pixel reading.
-Treat it as the best available model, not ground truth photographed
-off the box.
+The printed board's boxes are NOT all one size (FR037's own ruling:
+"Action spaces do not need to be the same dimensions"), so every
+space is a RECT `(col, top, height)` with `top`/`height` in
+HALF-ROWS of the base grid; every box is exactly one column wide, a
+1-row box is 2 half-rows tall. Columns increase rightward, rows
+downward. Two spaces are orthogonally adjacent iff their rects share
+an edge segment of positive length (corner contact doesn't count).
+`state.py`'s `SPACE_POSITIONS` (keyed by `state["player_count"]`)
+gives every PERMANENT_SPACES id its rect; `ROUND_SLOTS` gives every
+ROUND NUMBER (1..14, not stage-card id) its rect -- the card revealed
+in round N always sits at slot N's printed position, whatever that
+stage's (shuffled) card happens to be.
 
-2-player and 1-player board (1p shares the 2p board):
-```
-col        0                 1           2        3        4         5         6         7
-row 0  Farm Expansion         .           .        .        .         .         .         .
-row 1  Meeting Place          .           .        .        .         .         .         .
-row 2  Grain Seeds         Forest      Round1   Round5   Round8    Round10   Round12   Round14
-row 3  Farmland           Clay Pit     Round2   Round6   Round9    Round11   Round13      .
-row 4  Lessons            Reed Bank    Round3   Round7      .         .         .         .
-row 5  Day Laborer         Fishing     Round4      .         .         .         .         .
-```
-Columns 2-7 are the six STAGE_CARDS columns (stage 1: 4 rounds, stage
-2: 3, stages 3-5: 2 each, stage 6: 1), each stacked downward from row 2
-in round order -- so column 2 (stage 1) is the only one that reaches
-row 5, which is what gives Fishing exactly 3 neighbors (Day Laborer
-left, Reed Bank above, Round 4 right) once all rounds are revealed.
+Sources: the Revised Edition rulebook's board photos, the Appendix's
+Grove statement, and -- decisive for the round layout -- the
+Compendium's B120 Sweep ruling ("The action space must be round 1-6
+or 8-12"), which pins the round cards as running HORIZONTALLY:
+rounds 1-7 left-to-right along the top of the board, 8-13 in a
+second band, 14 alone at the bottom left, every round box two base
+rows tall, the board cut away below/right of them (the photo's cliff
+steps). See the derivation comment above `SPACE_POSITIONS` in
+`state.py`.
 
-3-player board adds a column -1 to the left of Farm Expansion:
+2-player and 1-player board (1p shares the 2p board; each round box
+spans TWO of the base rows shown):
 ```
-col       -1                0             1
-row 0       .          Farm Expansion      .
-row 1     Grove         Meeting Place      .
-row 2  Resource Mkt      Grain Seeds     Forest
-row 3     Hollow          Farmland      Clay Pit
-row 4   Lessons_b          Lessons     Reed Bank
-row 5       .            Day Laborer    Fishing
+col        0                 1           2        3        4         5         6         7        8
+row 0  Farm Expansion         .        Round1   Round2   Round3    Round4    Round5    Round6   Round7
+row 1  Meeting Place          .          "        "        "         "         "         "        "
+row 2  Grain Seeds         Forest     Round8   Round9   Round10   Round11   Round12   Round13     --
+row 3  Farmland           Clay Pit      "        "        "         "         "         "        --
+row 4  Lessons            Reed Bank  Round14     --       --        --        --        --       --
+row 5  Day Laborer         Fishing      "        --       --        --        --        --       --
 ```
-(columns 2+ continue exactly as the 2-player board above). Row 0 has no
-column -1 space -- the Appendix's own worked example ("The Grove is
-adjacent to both Farm Expansion and Meeting Place") can't be
-reproduced by a single-cell-per-space grid (the printed extension
-boxes are taller than one base row), so that documented pair is
-restored via `state.EXTRA_ADJACENCY` (per-player-count unordered
-override pairs, unioned into `adjacent_spaces`/`spaces_adjacent`).
-Extend EXTRA_ADJACENCY only for adjacencies a primary source
-documents; everything else stays grid-derived.
+(`--` is the stepped cut-away.) Round 14's box is the only round
+space that reaches Fishing's rows, which is what gives Fishing
+exactly 3 neighbors (Day Laborer left, Reed Bank above, Round 14
+right) once all rounds are revealed -- D144's own text, confirmed
+geometrically. Vertically, round N sits directly above round N+7
+(rounds 1-6 over 8-13) and round 8 sits over round 14.
 
-4-player board fills all six rows of column -1 (Grove/Lessons_b are the
-same spaces as the 3-player board, unchanged per the Appendix; Copse,
-the bigger Hollow/Resource Market, and Traveling Players are 4p-only):
+3-player board adds a column -1 to the left of Farm Expansion: FOUR
+boxes over the six base rows, so each extension box is 1.5 rows (3
+half-rows) tall:
 ```
-col       -1                0             1
-row 0    Copse        Farm Expansion      .
-row 1    Grove         Meeting Place      .
-row 2  Resource Mkt     Grain Seeds     Forest
-row 3    Hollow          Farmland      Clay Pit
-row 4  Lessons_b          Lessons     Reed Bank
-row 5  Traveling Players  Day Laborer   Fishing
+col -1 (3p strip)     rows (half-rows)
+Grove                 0.0-1.5   (0-3)
+Resource Market       1.5-3.0   (3-6)
+Hollow                3.0-4.5   (6-9)
+Lessons_b             4.5-6.0   (9-12)
 ```
-Neither PDF shows the 4-player board's own photo; Copse's row-0 slot
-(the one row the 3-player extension leaves empty) is a placement
-choice, not a confirmed layout -- it does incidentally restore a
-Farm-Expansion adjacency in the extension column (via Copse, one row
-up from Grove) that the 3-player board lacks.
+That taller-box geometry makes the Appendix's worked example ("The
+Grove is adjacent to both Farm Expansion and Meeting Place") fall
+straight out of the rects -- no override needed at 3p.
 
-A `card_space` ("card:<cid>") has no position -- it sits beside the
+Neither PDF shows the 4-player extension's photo; its six spaces
+(Copse, Grove, Resource Market, Hollow, Lessons_b, Traveling
+Players) are placed as six 1-row boxes top to bottom -- a placement
+choice, not a confirmed layout. The Appendix's Grove/Farm-Expansion
+pair is restored for 4p via `state.EXTRA_ADJACENCY` (per-player-count
+unordered override pairs, unioned into
+`adjacent_spaces`/`spaces_adjacent`). Extend EXTRA_ADJACENCY only for
+adjacencies a primary source documents; everything else stays
+rect-derived.
+
+A `card_space` ("card:<cid>") has no rect -- it sits beside the
 board, not on it -- and neither does any id not on the current player
 count's board.
 
 ### Queries (`cards.py`)
 
-- `space_position(state, space_id) -> (col, row) | None` -- the lookup
-  above.
+- `space_rect(state, space_id) -> (col, top, height) | None` -- the
+  lookup above (half-row units).
+- `space_position(state, space_id) -> (col, top) | None` -- the rect's
+  anchor; unique per space, kept for uniqueness checks/debugging.
+- `rects_adjacent(a, b) -> bool` -- raw rect edge-sharing test (no
+  state; used when unrevealed round slots must count, e.g. FR027).
 - `adjacent_spaces(state, space_id) -> [ids]` -- ids of spaces that
-  EXIST right now (are in `state["action_spaces"]`) at grid distance 1.
-  A round slot that hasn't been revealed yet is simply absent from
-  `state["action_spaces"]`, so it never appears.
+  EXIST right now (are in `state["action_spaces"]`) whose rects share
+  an edge, plus EXTRA_ADJACENCY pairs. A round slot that hasn't been
+  revealed yet is simply absent from `state["action_spaces"]`, so it
+  never appears.
 - `spaces_adjacent(state, a, b) -> bool`.
 - `left_neighbor(state, space_id) -> id | None` -- the existing space
-  at `(col - 1, row)`. B120 Sweep's recipe: call this with
-  `state["revealed"][-1]` (the round space most recently placed).
+  with the SAME rect one column left (`(col-1, top, height)`). B120
+  Sweep's recipe: call this with `state["revealed"][-1]` (the round
+  space most recently placed); rounds 1, 8, and 14 start a band, so
+  it returns None for them -- exactly the Compendium's B120 ruling
+  ("The action space must be round 1-6 or 8-12").
+- `vertical_neighbors(state, space_id) -> [ids]` -- existing spaces
+  directly above/below (same column, rects touching end-to-end).
+  D165 Pig Stalker's recipe.
 
 ### Worked example (C117-style hook)
 

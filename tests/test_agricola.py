@@ -3944,10 +3944,11 @@ def test_fishing_has_three_neighbors_4p(engine):
     reveal_all_rounds(engine, s)
     neighbors = cards.adjacent_spaces(s, "fishing")
     # Day Laborer and Reed Bank are always neighbors (same board every
-    # game); the third is whichever stage-1 card landed on round 4 --
-    # column 2 is the only round-space column tall enough to reach
-    # Fishing's row (see decks/GUIDE.md's "Board geometry" section).
-    assert set(neighbors) == {"day_laborer", "reed_bank", s["revealed"][3]}
+    # game); the third is whichever stage-6 card landed on round 14 --
+    # the round-14 box (bottom of the first round column) is the only
+    # round space that reaches Fishing's rows (see decks/GUIDE.md's
+    # "Board geometry" section).
+    assert set(neighbors) == {"day_laborer", "reed_bank", s["revealed"][13]}
     assert len(neighbors) == 3
 
 
@@ -3957,16 +3958,22 @@ def test_adjacent_spaces_only_existing():
     engine = AgricolaEngine()
     s = make_state(engine, 2)
     assert s["round"] == 1 and len(s["revealed"]) == 1
-    # Reed Bank's round-space neighbor (round 3, same column) doesn't
-    # exist yet -- only its three permanent neighbors (Lessons, Clay
-    # Pit, Fishing) do.
+    # Reed Bank's only round-space neighbor is round 14 (the one round
+    # box that reaches its rows), so until the last round it has just
+    # its three permanent neighbors. Forest's round neighbor is round
+    # 8 (the second band's first box, directly beside Forest/Clay Pit).
     assert set(cards.adjacent_spaces(s, "reed_bank")) == \
         {"lessons", "clay_pit", "fishing"}
-
-    engine._start_round(s, [])  # round 2
-    engine._start_round(s, [])  # round 3 -- reveals round 3's card
+    while s["round"] < 8:
+        engine._start_round(s, [])
+    assert set(cards.adjacent_spaces(s, "forest")) == \
+        {"grain_seeds", "clay_pit", s["revealed"][7]}
     assert set(cards.adjacent_spaces(s, "reed_bank")) == \
-        {"lessons", "clay_pit", "fishing", s["revealed"][2]}
+        {"lessons", "clay_pit", "fishing"}
+    while s["round"] < 14:
+        engine._start_round(s, [])
+    assert set(cards.adjacent_spaces(s, "reed_bank")) == \
+        {"lessons", "clay_pit", "fishing", s["revealed"][13]}
 
 
 def test_card_space_has_no_position_and_no_adjacency(engine, temp_card):
@@ -4016,18 +4023,22 @@ def test_extra_adjacency_grove_farm_expansion(engine):
 
 
 def test_left_neighbor_of_round_spaces(engine):
-    """B120 Sweep's recipe: left_neighbor(state, state["revealed"][-1])."""
+    """B120 Sweep's recipe: left_neighbor(state, state["revealed"][-1]).
+    Rounds run horizontally (1-7 along the top, 8-13 below, 14 alone),
+    so the newest round card's left neighbor is the previous round's
+    card -- except rounds 1, 8, and 14, which start a band and have NO
+    left neighbor (the Compendium's B120 ruling: "The action space
+    must be round 1-6 or 8-12"). Permanent spaces still resolve too:
+    Reed Bank's left neighbor is Lessons (same-shape box one column
+    over)."""
     s = make_state(engine, 2)
-    assert cards.left_neighbor(s, s["revealed"][-1]) == "forest"
-    engine._start_round(s, [])  # round 2
-    assert cards.left_neighbor(s, s["revealed"][-1]) == "clay_pit"
-    engine._start_round(s, [])  # round 3
-    assert cards.left_neighbor(s, s["revealed"][-1]) == "reed_bank"
-    engine._start_round(s, [])  # round 4
-    assert cards.left_neighbor(s, s["revealed"][-1]) == "fishing"
-    engine._start_round(s, [])  # round 5 -- left neighbor is round 1
-    assert cards.left_neighbor(s, s["revealed"][-1]) == s["revealed"][0]
-
+    assert cards.left_neighbor(s, s["revealed"][-1]) is None  # round 1
+    for rnd in range(2, 15):
+        engine._start_round(s, [])
+        expect = None if rnd in (8, 14) else s["revealed"][rnd - 2]
+        assert cards.left_neighbor(s, s["revealed"][-1]) == expect, rnd
+    assert cards.left_neighbor(s, "reed_bank") == "lessons"
+    assert cards.left_neighbor(s, "farm_expansion") is None
 
 def test_legworker_style_hook_adjacent_occupancy(engine, temp_card):
     """A C117 Legworker-style card: using a space adjacent to another
