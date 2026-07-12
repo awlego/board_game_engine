@@ -3944,11 +3944,11 @@ def test_fishing_has_three_neighbors_4p(engine):
     reveal_all_rounds(engine, s)
     neighbors = cards.adjacent_spaces(s, "fishing")
     # Day Laborer and Reed Bank are always neighbors (same board every
-    # game); the third is whichever stage-6 card landed on round 14 --
-    # the round-14 box (bottom of the first round column) is the only
-    # round space that reaches Fishing's rows (see decks/GUIDE.md's
-    # "Board geometry" section).
-    assert set(neighbors) == {"day_laborer", "reed_bank", s["revealed"][13]}
+    # game); the third is whichever stage-1 card landed on round 4 --
+    # the round-4 box (bottom of column 2, rows 4-6) is the only round
+    # space that reaches Fishing's row, exactly as the physical board
+    # photo shows (see decks/GUIDE.md's "Board geometry" section).
+    assert set(neighbors) == {"day_laborer", "reed_bank", s["revealed"][3]}
     assert len(neighbors) == 3
 
 
@@ -3958,22 +3958,23 @@ def test_adjacent_spaces_only_existing():
     engine = AgricolaEngine()
     s = make_state(engine, 2)
     assert s["round"] == 1 and len(s["revealed"]) == 1
-    # Reed Bank's only round-space neighbor is round 14 (the one round
-    # box that reaches its rows), so until the last round it has just
-    # its three permanent neighbors. Forest's round neighbor is round
-    # 8 (the second band's first box, directly beside Forest/Clay Pit).
-    assert set(cards.adjacent_spaces(s, "reed_bank")) == \
-        {"lessons", "clay_pit", "fishing"}
-    while s["round"] < 8:
-        engine._start_round(s, [])
+    # Round 1 tops the accumulation column, directly above Forest, so
+    # Forest has a round neighbor from the very first round; its
+    # right-hand neighbor (round 3, rows 4-8 of column 2) doesn't
+    # exist yet. Reed Bank's only round neighbor is round 4.
     assert set(cards.adjacent_spaces(s, "forest")) == \
-        {"grain_seeds", "clay_pit", s["revealed"][7]}
+        {"grain_seeds", "clay_pit", s["revealed"][0]}
     assert set(cards.adjacent_spaces(s, "reed_bank")) == \
         {"lessons", "clay_pit", "fishing"}
-    while s["round"] < 14:
-        engine._start_round(s, [])
+    engine._start_round(s, [])  # round 2
+    engine._start_round(s, [])  # round 3 -- reveals Forest's right neighbor
+    assert set(cards.adjacent_spaces(s, "forest")) == \
+        {"grain_seeds", "clay_pit", s["revealed"][0], s["revealed"][2]}
     assert set(cards.adjacent_spaces(s, "reed_bank")) == \
-        {"lessons", "clay_pit", "fishing", s["revealed"][13]}
+        {"lessons", "clay_pit", "fishing"}
+    engine._start_round(s, [])  # round 4 -- reveals Reed Bank's neighbor
+    assert set(cards.adjacent_spaces(s, "reed_bank")) == \
+        {"lessons", "clay_pit", "fishing", s["revealed"][3]}
 
 
 def test_card_space_has_no_position_and_no_adjacency(engine, temp_card):
@@ -4018,24 +4019,32 @@ def test_extra_adjacency_grove_farm_expansion(engine):
         assert "grove" in cards.adjacent_spaces(s, "farm_expansion")
     s2 = make_state(engine, 2)  # no grove on the 2p board at all
     assert "grove" not in cards.adjacent_spaces(s2, "farm_expansion")
+    # Farm Expansion's 2p neighbors: Meeting Place below, plus the
+    # round-1 card -- round 1 tops the accumulation column, its box
+    # (rows 0-4) bordering both Farm Expansion and Meeting Place.
     assert sorted(cards.adjacent_spaces(s2, "farm_expansion")) == \
-        ["meeting_place"]
+        sorted(["meeting_place", s2["revealed"][0]])
 
 
 def test_left_neighbor_of_round_spaces(engine):
     """B120 Sweep's recipe: left_neighbor(state, state["revealed"][-1]).
-    Rounds run horizontally (1-7 along the top, 8-13 below, 14 alone),
-    so the newest round card's left neighbor is the previous round's
-    card -- except rounds 1, 8, and 14, which start a band and have NO
-    left neighbor (the Compendium's B120 ruling: "The action space
-    must be round 1-6 or 8-12"). Permanent spaces still resolve too:
-    Reed Bank's left neighbor is Lessons (same-shape box one column
-    over)."""
+    Stage columns are top-aligned two-row boxes with round 1 atop the
+    accumulation column, so the newest round card's left neighbor is a
+    round card exactly when the Compendium's B120 ruling allows ("The
+    action space must be round 1-6 or 8-12"): left of round 5 is round
+    2, left of round 10 is round 8, while rounds 3 and 4 border the
+    accumulation column (Forest/Clay Pit/Reed Bank -- printed spaces,
+    not cards) and round 1 borders the base board. Permanent spaces
+    resolve too: Reed Bank's left neighbor is Lessons (same-shape box
+    one column over)."""
     s = make_state(engine, 2)
     assert cards.left_neighbor(s, s["revealed"][-1]) is None  # round 1
+    target_round = {2: 1, 5: 2, 6: 3, 7: 4, 8: 5, 9: 6,
+                    10: 8, 11: 9, 12: 10, 13: 11, 14: 12}
     for rnd in range(2, 15):
         engine._start_round(s, [])
-        expect = None if rnd in (8, 14) else s["revealed"][rnd - 2]
+        expect = (s["revealed"][target_round[rnd] - 1]
+                  if rnd in target_round else None)
         assert cards.left_neighbor(s, s["revealed"][-1]) == expect, rnd
     assert cards.left_neighbor(s, "reed_bank") == "lessons"
     assert cards.left_neighbor(s, "farm_expansion") is None

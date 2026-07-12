@@ -718,23 +718,21 @@ def test_water_worker_no_bonus_off_target(engine):
 # ── D165 Pig Stalker ──────────────────────────────────────────────────
 
 def _setup_pig_stalker(engine, neighbor_owner_fn):
-    """Reveal through round 11 so wherever the stage-1 shuffle landed
-    Sheep Market (rounds 1-4, top band), the round space directly
-    BELOW it (rounds 8-11, second band, same column) already exists
-    too, and directly mark that neighbor occupied by whatever
-    `neighbor_owner_fn(first, other)` returns (its own action --
-    fencing/quarry/wish-for-children -- needs extra params this test
-    isn't about; only its occupied_by matters to the hook under
-    test)."""
+    """Reveal all of stage 1 (rounds 1-4) so wherever the shuffle
+    landed Sheep Market, a vertical neighbor exists: another stage-1
+    round in the same top-aligned column, or Forest itself if Sheep
+    Market landed on round 1 (which tops the accumulation column).
+    Directly mark that neighbor occupied by whatever
+    `neighbor_owner_fn(first, other)` returns (its own action needs
+    extra params this test isn't about; only its occupied_by matters
+    to the hook under test)."""
     s = make_state(engine, 2)
-    while s["round"] < 11:
+    while s["round"] < 4:
         engine._start_round(s, [])
     first = s["current_player"]
     other = 1 - first
     put_in_play(s, first, "D165")
-    vert_id = next(sid for sid in
-                  cards.vertical_neighbors(s, "sheep_market")
-                  if sid in s["revealed"])
+    vert_id = cards.vertical_neighbors(s, "sheep_market")[0]
     neighbor = next(sp for sp in s["action_spaces"] if sp["id"] == vert_id)
     neighbor["occupied_by"] = neighbor_owner_fn(first, other)
     return s, first

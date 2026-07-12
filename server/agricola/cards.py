@@ -593,10 +593,11 @@ def left_neighbor(state, space_id):
     B120 Sweep's recipe: pass state["revealed"][-1] (the round space
     most recently placed). Because round boxes are taller than the
     permanent boxes, this matches the Compendium's B120 ruling ("The
-    action space must be round 1-6 or 8-12") exactly: the left
-    neighbor of round N is round N-1 for N in 2-7 / 9-13, and rounds
-    1, 8, and 14 have NO left neighbor (meadow, or permanent spaces of
-    a different shape)."""
+    action space must be round 1-6 or 8-12") exactly: a round card's
+    left neighbor is the same-height round card one stage column over
+    (or round 1 atop the accumulation column), while rounds 1, 3, and
+    4 have NO left-neighbor card (the base board or the accumulation
+    spaces sit there -- printed spaces of a different shape)."""
     rect = space_rect(state, space_id)
     if rect is None:
         return None
@@ -609,10 +610,9 @@ def left_neighbor(state, space_id):
 def vertical_neighbors(state, space_id):
     """Existing action spaces directly above or below `space_id` --
     same column, rects touching end-to-end. D165 Pig Stalker's
-    "immediately above or below" recipe. Round bands stack: round N's
-    vertical neighbors are N-7/N+7 (rounds 2-6 over 9-13), round 8
-    sits under round 1 and over round 14, and forest-column spaces
-    neighbor each other as before."""
+    "immediately above or below" recipe. Stage columns stack their own
+    rounds (2 over 3 over 4, 5 over 6 over 7, ...), and round 1 sits
+    directly above Forest at the top of the accumulation column."""
     rect = space_rect(state, space_id)
     if rect is None:
         return []

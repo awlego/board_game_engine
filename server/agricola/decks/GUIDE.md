@@ -812,33 +812,39 @@ ROUND NUMBER (1..14, not stage-card id) its rect -- the card revealed
 in round N always sits at slot N's printed position, whatever that
 stage's (shuffled) card happens to be.
 
-Sources: the Revised Edition rulebook's board photos, the Appendix's
-Grove statement, and -- decisive for the round layout -- the
-Compendium's B120 Sweep ruling ("The action space must be round 1-6
-or 8-12"), which pins the round cards as running HORIZONTALLY:
-rounds 1-7 left-to-right along the top of the board, 8-13 in a
-second band, 14 alone at the bottom left, every round box two base
-rows tall, the board cut away below/right of them (the photo's cliff
-steps). See the derivation comment above `SPACE_POSITIONS` in
+Sources: Alex's photo of the physical board (decisive), the Revised
+Edition rulebook's board photos, the Appendix's Grove statement, and
+the Compendium's B120 Sweep ruling ("The action space must be round
+1-6 or 8-12"). The round cards sit in STAGE COLUMNS of two-base-row
+boxes, every column TOP-ALIGNED at the board's top edge, and round 1
+tops the ACCUMULATION column itself, directly above Forest; the board
+is cut away below the shorter columns (the photos' stepped cliff
+edge). See the derivation comment above `SPACE_POSITIONS` in
 `state.py`.
 
 2-player and 1-player board (1p shares the 2p board; each round box
 spans TWO of the base rows shown):
 ```
-col        0                 1           2        3        4         5         6         7        8
-row 0  Farm Expansion         .        Round1   Round2   Round3    Round4    Round5    Round6   Round7
-row 1  Meeting Place          .          "        "        "         "         "         "        "
-row 2  Grain Seeds         Forest     Round8   Round9   Round10   Round11   Round12   Round13     --
-row 3  Farmland           Clay Pit      "        "        "         "         "         "        --
-row 4  Lessons            Reed Bank  Round14     --       --        --        --        --       --
-row 5  Day Laborer         Fishing      "        --       --        --        --        --       --
+col        0                 1           2        3        4         5         6         7
+row 0  Farm Expansion      Round1     Round2   Round5   Round8    Round10   Round12   Round14
+row 1  Meeting Place         "          "        "        "         "         "         "
+row 2  Grain Seeds         Forest     Round3   Round6   Round9    Round11   Round13     --
+row 3  Farmland           Clay Pit      "        "        "         "         "         --
+row 4  Lessons            Reed Bank  Round4   Round7      --        --        --        --
+row 5  Day Laborer         Fishing      "        "        --        --        --        --
 ```
-(`--` is the stepped cut-away.) Round 14's box is the only round
-space that reaches Fishing's rows, which is what gives Fishing
-exactly 3 neighbors (Day Laborer left, Reed Bank above, Round 14
-right) once all rounds are revealed -- D144's own text, confirmed
-geometrically. Vertically, round N sits directly above round N+7
-(rounds 1-6 over 8-13) and round 8 sits over round 14.
+(`--` is the stepped cut-away.) Round 4's box (rows 4-6 of column 2)
+is the only round space that reaches Fishing's rows, which is what
+gives Fishing exactly 3 neighbors (Day Laborer left, Reed Bank above,
+Round 4 right) once all rounds are revealed -- D144's own text,
+visible directly in the board photo. Round 1's box (rows 0-2 of the
+accumulation column) borders Farm Expansion, Meeting Place, Forest
+(below), and round 2. The B120 ruling falls out exactly: the card
+left of the newest card is a round card precisely when that target is
+round 1-6 or 8-12 (left of round 5 is round 2; left of rounds 3/4 is
+the accumulation column -- printed spaces, not cards; rounds 7 and 13
+are never anyone's left neighbor because the columns to their right
+are shorter).
 
 3-player board adds a column -1 to the left of Farm Expansion: FOUR
 boxes over the six base rows, so each extension box is 1.5 rows (3

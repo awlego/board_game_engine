@@ -467,22 +467,22 @@ Known remaining gaps, and how they'd fit if a future card needs them:
   round spaces are two base rows tall, the 3p extension's boxes 1.5).
   `state.py`'s `SPACE_POSITIONS` (keyed by player count) gives every
   permanent action space its rect, and `ROUND_SLOTS` gives every round
-  NUMBER (1-14) a rect -- rounds 1-7 run left-to-right along the TOP
-  of the board, 8-13 in a second band, 14 alone at the bottom left
-  (pinned by the Compendium's B120 ruling, "The action space must be
-  round 1-6 or 8-12", plus the rulebook photos' stepped board edge) --
+  NUMBER (1-14) a rect -- top-aligned stage columns of two-row boxes,
+  with round 1 atop the accumulation column directly above Forest
+  (pinned by Alex's photo of the physical board; the Compendium's
+  B120 ruling, "The action space must be round 1-6 or 8-12", falls
+  out of this layout exactly) --
   so a revealed round space's rect follows from `state["revealed"]`'s
   reveal order; `cards.space_rect`, `cards.adjacent_spaces` (rect
   edge-sharing), `cards.spaces_adjacent`, `cards.left_neighbor`
-  (same-shape box one column left; None for rounds 1/8/14, matching
+  (same-shape box one column left; None for rounds 1/3/4, matching
   the B120 ruling), and `cards.vertical_neighbors` (D165's
   above/below) are the queries a card hook uses. See `decks/GUIDE.md`'s
   "Board geometry" section for the full coordinate system (ASCII board
   diagram), the queries, and a worked example. Motivating cards: B120
-  Sweep, C117 Legworker, D144 Water Worker (Fishing's exactly-3
-  neighbors -- Day Laborer, Reed Bank, and the round-14 box, confirmed
-  geometrically), D165 Pig Stalker, FR006 Badger, FR027 Ground Pickaxe
-  Plow, FR037 Necklace.
+  Sweep, C117 Legworker, D144 Water Worker, D165 Pig Stalker, FR006
+  Badger, FR027 Ground Pickaxe Plow, FR037 Necklace. D144's exactly-three Fishing neighbors are Day
+  Laborer, Reed Bank, and the round-4 box, confirmed by the photo.
   **Fidelity caveats**: the Appendix's worked example ("The Grove is
   adjacent to both Farm Expansion and Meeting Place") is now DERIVED
   from the 3p extension's 1.5-row boxes; `state.EXTRA_ADJACENCY` keeps

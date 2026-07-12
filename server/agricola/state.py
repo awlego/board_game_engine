@@ -467,22 +467,25 @@ def build_stage_deck(rng):
 # positive length (cards.adjacent_spaces). Columns increase rightward,
 # rows downward.
 #
-# Sources: the Revised Edition rulebook's board photos (page 3 of
-# en_agricolare.html_Rules_Agricola-RE_EN.pdf: 2-player and 3-player
-# boards; both PDFs in overnightlemons.com/game_rulebooks_and_resources
-# /Agricola/), the Appendix's Grove statement, and -- decisive for the
-# round layout -- the Compendium's B120 Sweep ruling ("The action
-# space must be round 1-6 or 8-12"): round cards run HORIZONTALLY,
-# rounds 1-7 left-to-right along the TOP of the board, 8-13 in a
-# second band below them, and 14 alone at the bottom left, each box
-# two base rows tall. That ruling only works in this layout (the card
-# left of round N is round N-1 exactly for N in 2-7 / 9-13; rounds 1,
-# 8, and 14 have no round card to their left), and it reproduces the
-# photo: three label bands, the second one column shorter, the third
-# one box long, with the board's bottom-right cut away in steps
-# (cliff art). It also confirms D144's own text geometrically --
-# Fishing's exactly-three neighbors are Day Laborer, Reed Bank, and
-# the round-14 space (the only round box that reaches Fishing's row).
+# Sources: Alex's photo of the physical board (decisive), the Revised
+# Edition rulebook's board photos (page 3 of
+# en_agricolare.html_Rules_Agricola-RE_EN.pdf; both PDFs in
+# overnightlemons.com/game_rulebooks_and_resources/Agricola/), the
+# Appendix's Grove statement, and the Compendium's B120 Sweep ruling
+# ("The action space must be round 1-6 or 8-12"). Round layout: STAGE
+# COLUMNS of two-base-row boxes, each column TOP-ALIGNED at the
+# board's top edge -- and round 1 sits at the top of the ACCUMULATION
+# column itself, directly above Forest. So col 1 reads R1 / Forest /
+# Clay Pit / Reed Bank / Fishing; col 2 is rounds 2-4; col 3 rounds
+# 5-7; cols 4-6 the two-round stages 3-5; col 7 round 14 alone; the
+# board is cut away below the shorter columns (the photos' stepped
+# cliff edge). This reproduces the B120 ruling exactly (the card left
+# of the newest card is a round card precisely when that target is
+# round 1-6 or 8-12: e.g. left of R5 is R2, left of R3 is Forest --
+# not a card; R7/R13 are never anyone's left neighbor), and D144's
+# own text geometrically: Fishing's exactly-three neighbors are Day
+# Laborer, Reed Bank, and ROUND 4, whose box (rows 4-6 of column 2)
+# reaches Fishing's row -- visible directly in the board photo.
 
 # The base column (all player counts), top to bottom, and the
 # accumulation column beside it (Forest is beside Grain Seeds, Clay
@@ -539,17 +542,17 @@ SPACE_POSITIONS = {
 
 # Round-space rect per ROUND NUMBER (1..14), not per card id -- the
 # card revealed in round N always sits at slot N's printed position,
-# whichever of that stage's (shuffled) cards it happens to be. Rounds
-# 1-7 run left to right along the top of the board (columns 2-8),
-# rounds 8-13 in a second band (columns 2-7; the board is cut away
-# under round 7's column), and round 14 sits alone at the bottom of
-# column 2. Every round box is 2 base rows (4 half-rows) tall.
-ROUND_SLOTS = {}
-for _n in range(1, 8):
-    ROUND_SLOTS[_n] = (1 + _n, 0, 4)
+# whichever of that stage's (shuffled) cards it happens to be. Every
+# round box is 2 base rows (4 half-rows) tall, columns top-aligned:
+# round 1 tops the accumulation column (above Forest), rounds 2-4
+# stack down column 2, 5-7 column 3, 8-9 column 4, 10-11 column 5,
+# 12-13 column 6, and 14 sits alone atop column 7.
+ROUND_SLOTS = {1: (1, 0, 4)}
+for _n in range(2, 8):
+    ROUND_SLOTS[_n] = (2 + (_n - 2) // 3, ((_n - 2) % 3) * 4, 4)
 for _n in range(8, 14):
-    ROUND_SLOTS[_n] = (_n - 6, 4, 4)
-ROUND_SLOTS[14] = (2, 8, 4)
+    ROUND_SLOTS[_n] = (4 + (_n - 8) // 2, ((_n - 8) % 2) * 4, 4)
+ROUND_SLOTS[14] = (7, 0, 4)
 
 # Adjacencies the printed board has but the rects above cannot
 # express. Unordered pairs, keyed by player count; unioned into

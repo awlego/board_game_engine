@@ -872,13 +872,18 @@ def test_badger_grants_food_to_whoever_uses_marked_space(engine):
 
 
 def test_badger_moves_to_single_adjacent_space_at_round_start(engine):
-    """Farm Expansion has exactly one orthogonal neighbor (Meeting
-    Place) -- the move is automatic, no prompt needed."""
+    """When exactly one adjacent space exists, the move is automatic --
+    no prompt. No printed space has exactly one neighbor once round 1
+    is revealed (round 1 tops the accumulation column, giving even
+    Farm Expansion a second neighbor), so surgically hide the round-1
+    card to isolate the single-option branch."""
     s = make_state(engine, 2)
     first = s["current_player"]
     put_in_play(s, first, "FR006")
     inst = next(i for i in s["players"][first]["minors"] if i["id"] == "FR006")
     inst["data"]["marker"] = "farm_expansion"
+    s["action_spaces"] = [sp for sp in s["action_spaces"]
+                          if sp["id"] != s["revealed"][0]]
     assert cards.adjacent_spaces(s, "farm_expansion") == ["meeting_place"]
     engine._start_round(s, [])  # round 2
     assert inst["data"]["marker"] == "meeting_place"
