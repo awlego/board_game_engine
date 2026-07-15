@@ -209,6 +209,7 @@ function useGameConnection() {
   const [isHost, setIsHost] = useState(false);
   const [lobby, setLobby] = useState([]);
   const [gameStarted, setGameStarted] = useState(false);
+  const [spectating, setSpectating] = useState(false);
   const [gameState, setGameState] = useState(null);
   const [phaseInfo, setPhaseInfo] = useState(null);
   const [yourTurn, setYourTurn] = useState(false);
@@ -256,6 +257,12 @@ function useGameConnection() {
           setIsHost(msg.is_host);
           setGameStarted(msg.game_started);
           break;
+        case "spectating":
+          setRoomCode(msg.room_code);
+          setSpectating(true);
+          tokenRef.current = msg.token;
+          sessionStorage.setItem("game_token", msg.token);
+          break;
         case "lobby_update":
           setLobby(msg.players);
           if (msg.game_started !== undefined) setGameStarted(msg.game_started);
@@ -291,9 +298,13 @@ function useGameConnection() {
   const createRoom = (name, options) => connect(() =>
     send({ type: "create", game: "agricola", name, ...(options ? { options } : {}) }));
   const joinRoom = (code, name) => connect(() => send({ type: "join", room_code: code.toUpperCase(), name }));
+  const spectateRoom = (code) => connect(() =>
+    send({ type: "spectate", room_code: code.toUpperCase(),
+      name: localStorage.getItem(NAME_KEY) || "Spectator" }));
 
   useEffect(() => {
     const pending = sessionStorage.getItem("pending_action");
+    const pendingSpectate = sessionStorage.getItem("pending_spectate");
     if (pending && !tokenRef.current) {
       try {
         const { roomCode: rc, playerName, options } = JSON.parse(pending);
@@ -303,6 +314,15 @@ function useGameConnection() {
         else createRoom(playerName, options);
       } catch {
         sessionStorage.removeItem("pending_action");
+      }
+    } else if (pendingSpectate && !tokenRef.current) {
+      try {
+        const { roomCode: rc } = JSON.parse(pendingSpectate);
+        sessionStorage.removeItem("pending_spectate");
+        setPendingIntent({ kind: "spectate", code: rc });
+        spectateRoom(rc);
+      } catch {
+        sessionStorage.removeItem("pending_spectate");
       }
     } else if (!tokenRef.current) {
       // Rejoin an existing seat (e.g. after a page reload) — the token
@@ -321,10 +341,10 @@ function useGameConnection() {
 
   return {
     connected, roomCode, playerId, isHost, lobby,
-    gameStarted, gameState, phaseInfo, yourTurn, waitingFor,
+    gameStarted, spectating, gameState, phaseInfo, yourTurn, waitingFor,
     gameLogs, gameOver, error, pendingIntent,
     cancelPending: () => setPendingIntent(null),
-    createRoom, joinRoom, startGame, submitAction,
+    createRoom, joinRoom, spectateRoom, startGame, submitAction,
   };
 }
 
@@ -1790,6 +1810,7 @@ function GameBoard({ game }) {
           </span>
           <span style={{ fontSize: 13, fontStyle: "italic", color: "#57534e" }}>{phase.description}</span>
           <span style={{ marginLeft: "auto", fontSize: 12 }}>
+            {game.spectating && <span style={{ fontStyle: "italic", color: "#57534e" }}>👁 spectating · </span>}
             Room {game.roomCode} {game.connected ? "🟢" : "🔴"}
           </span>
         </div>
@@ -1922,6 +1943,7 @@ function Lobby({ game }) {
     const label = {
       create: "Creating room…",
       join: `Joining room ${game.pendingIntent.code || ""}…`,
+      spectate: `Joining room ${game.pendingIntent.code || ""} as spectator…`,
       reconnect: "Reconnecting to your game…",
     }[game.pendingIntent.kind] || "Connecting…";
     return (
@@ -2017,6 +2039,6 @@ function Lobby({ game }) {
 
 export default function App() {
   const game = useGameConnection();
-  if (!game.gameStarted) return <Lobby game={game} />;
+  if (!game.gameStarted && !game.spectating) return <Lobby game={game} />;
   return <GameBoard game={game} />;
 }
