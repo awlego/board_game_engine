@@ -876,7 +876,6 @@ function ActionBoard({ state, validSpaces, onPick, players }) {
   const POS = boardPosFor(players.length);
   const ext = state.action_spaces.some((sp) => (POS[sp.id] || [0])[0] === -1);
   const off = ext ? 2 : 1; // grid columns are 1-based; shift right if strip present
-  const cols = 8 + (ext ? 1 : 0);
   // Rects are [col, top, height] in half-rows; the CSS grid uses 12
   // half-rows of 40px (2 half-rows + gap = the old 86px full row).
   const cell = ([x, top, h]) => [`${x + off}`, `${top + 1} / span ${h}`];
@@ -925,10 +924,14 @@ function ActionBoard({ state, validSpaces, onPick, players }) {
           }} />
           {/* Cell geometry matches the printed board: 1-row spaces are
               ~1.73:1 landscape (107x62), round spaces 107x130 -- so the
-              board-scan crops fit without cutoff. */}
+              board-scan crops fit without cutoff. The stage columns and
+              the extension strip are exactly as wide as a contain-fit
+              card at their cell heights, so no blank meadow flanks the
+              portrait card scans. */}
           <div style={{
             position: "relative", display: "grid", gap: 6,
-            gridTemplateColumns: `repeat(${cols}, 107px)`,
+            gridTemplateColumns:
+              `${ext ? `${players.length >= 4 ? 42 : 64}px ` : ""}107px 107px repeat(6, 86px)`,
             gridTemplateRows: "repeat(12, 28px)",
           }}>
             {/* Fixed action spaces at their printed positions */}
