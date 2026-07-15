@@ -112,7 +112,7 @@ function GameCard({ game, onClick }) {
     <div style={{ ...S.card, ...(hovered ? S.cardHover : {}), ...boxart }}
       onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onClick={onClick}>
       <div style={S.cardName}>{game.name}</div>
-      <div style={S.cardDesc}>{game.desc}</div>
+      <div style={{ ...S.cardDesc, opacity: hovered ? 1 : 0, transition: "opacity 0.25s ease" }}>{game.desc}</div>
       <div style={S.cardMeta}>
         <span style={S.cardPlayers}>{game.players} players</span>
         <span style={{ ...S.playBtn, ...(hovered ? { background: "rgba(201,168,76,0.15)" } : {}) }}>Play</span>
