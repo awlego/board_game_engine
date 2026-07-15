@@ -634,11 +634,12 @@ function HandPanel({ me, playableMinors }) {
 // ACTION BOARD
 // ============================================================
 
-// Engine-canonical board geometry (server/agricola/state.py
-// SPACE_POSITIONS / ROUND_SLOTS): every space is a rect
+// Board geometry for display (the engine keeps its own rects in
+// server/agricola/state.py SPACE_POSITIONS for card adjacency):
+// every space is a rect
 // [col, top, height] with top/height in HALF-ROWS of the base grid (a
-// 1-row box is 2 half-rows; round spaces are 4; the 3p extension
-// strip's boxes 3). col -1 is the extension strip, 0 the scroll
+// 1-row box is 2 half-rows; round spaces and extension slots are 4).
+// cols -2/-1 are the extension grid, 0 the scroll
 // column, 1 the accumulation column, 2-7 the stage columns. Round
 // boxes are two rows tall, every stage column top-aligned, and round
 // 1 tops the ACCUMULATION column itself, directly above Forest --
@@ -652,13 +653,19 @@ const BASE_POS = {
   farmland: [0, 6, 2], lessons: [0, 8, 2], day_laborer: [0, 10, 2],
   forest: [1, 4, 2], clay_pit: [1, 6, 2], reed_bank: [1, 8, 2], fishing: [1, 10, 2],
 };
+// The extension area left of the scroll column is a 2x3 grid of
+// card-sized slots (printed on the board at every player count; cards
+// fill them per count -- slot order TL, TR, ML, MR, BL, BR matches the
+// physical board). 3p fills the top four, 4p all six; 1p/2p leave all
+// six empty.
 const EXT_POS_3P = {
-  grove: [-1, 0, 3], resource_market_3p: [-1, 3, 3],
-  hollow_3p: [-1, 6, 3], lessons_b: [-1, 9, 3],
+  grove: [-2, 0, 4], hollow_3p: [-1, 0, 4],
+  lessons_b: [-2, 4, 4], resource_market_3p: [-1, 4, 4],
 };
 const EXT_POS_4P = {
-  copse: [-1, 0, 2], grove: [-1, 2, 2], resource_market_4p: [-1, 4, 2],
-  hollow_4p: [-1, 6, 2], lessons_b: [-1, 8, 2], traveling_players: [-1, 10, 2],
+  grove: [-2, 0, 4], copse: [-1, 0, 4],
+  hollow_4p: [-2, 4, 4], lessons_b: [-1, 4, 4],
+  resource_market_4p: [-2, 8, 4], traveling_players: [-1, 8, 4],
 };
 const boardPosFor = (playerCount) =>
   playerCount >= 4 ? { ...BASE_POS, ...EXT_POS_4P }
@@ -874,8 +881,10 @@ function ActionBoard({ state, validSpaces, onPick, players }) {
   (state.revealed || []).forEach((cid, i) => { roundOf[cid] = i + 1; });
 
   const POS = boardPosFor(players.length);
-  const ext = state.action_spaces.some((sp) => (POS[sp.id] || [0])[0] === -1);
-  const off = ext ? 2 : 1; // grid columns are 1-based; shift right if strip present
+  // Grid columns are 1-based; the 2x3 extension grid (cols -2/-1) is
+  // printed on the board at every player count, so it always renders
+  // (its slots just sit empty at 1p/2p).
+  const off = 3;
   // Rects are [col, top, height] in half-rows; the CSS grid uses 12
   // half-rows of 40px (2 half-rows + gap = the old 86px full row).
   const cell = ([x, top, h]) => [`${x + off}`, `${top + 1} / span ${h}`];
@@ -923,15 +932,13 @@ function ActionBoard({ state, validSpaces, onPick, players }) {
             background: GRASS_NOISE, pointerEvents: "none",
           }} />
           {/* Cell geometry matches the printed board: 1-row spaces are
-              ~1.73:1 landscape (107x62), round spaces 107x130 -- so the
-              board-scan crops fit without cutoff. The stage columns and
-              the extension strip are exactly as wide as a contain-fit
-              card at their cell heights, so no blank meadow flanks the
-              portrait card scans. */}
+              ~1.73:1 landscape (107x62), round spaces and extension
+              slots 107x130. The extension and stage columns are exactly
+              as wide as a contain-fit card at that height (86px), so no
+              blank meadow flanks the portrait card scans. */}
           <div style={{
             position: "relative", display: "grid", gap: 6,
-            gridTemplateColumns:
-              `${ext ? `${players.length >= 4 ? 42 : 64}px ` : ""}107px 107px repeat(6, 86px)`,
+            gridTemplateColumns: "repeat(2, 86px) 107px 107px repeat(6, 86px)",
             gridTemplateRows: "repeat(12, 28px)",
           }}>
             {/* Fixed action spaces at their printed positions */}
