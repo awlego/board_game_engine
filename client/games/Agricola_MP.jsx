@@ -372,6 +372,26 @@ function Btn({ children, onClick, disabled, variant = "primary", small, style: x
   );
 }
 
+// Physical goods tokens (play-agricola.com bit scans, white-outlined
+// so they read on top of card art) for goods sitting on action spaces.
+const goodImg = (good) => `${import.meta.env.BASE_URL}agricola/goods/${good}.png`;
+
+function GoodToken({ good, count }) {
+  if (!count) return null;
+  return (
+    <span title={`${count} ${GOODS[good].label}`} style={{
+      display: "inline-flex", alignItems: "center", gap: 3,
+      background: "rgba(255,251,235,0.92)", border: "1px solid #7c5a37",
+      borderRadius: 999, padding: "2px 8px 2px 4px",
+      boxShadow: "0 1px 3px rgba(20,15,5,0.45)",
+    }}>
+      <img src={goodImg(good)} alt={GOODS[good].label}
+        style={{ width: 20, height: 20, objectFit: "contain" }} />
+      <b style={{ fontSize: 12.5, color: "#43331a", lineHeight: 1 }}>{count}</b>
+    </span>
+  );
+}
+
 function GoodChip({ good, count, small }) {
   if (!count) return null;
   return (
@@ -785,9 +805,22 @@ function BoardSpace({ sp, valid, onPick, players, round, gridPos }) {
         {sp.desc}
       </div>}
       {art && <div style={{ flex: 1 }} />}
+      {/* Goods lying on the space sit centered on the art, one token
+          pill per type, stacked (wrapping into columns if ever needed) */}
+      {art && (
+        <div style={{
+          position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center", flexWrap: "wrap",
+          gap: 3, pointerEvents: "none",
+        }}>
+          {Object.entries(sp.supply || {}).map(([good, count]) => (
+            <GoodToken key={good} good={good} count={count} />
+          ))}
+        </div>
+      )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 2 }}>
         <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-          {Object.entries(sp.supply || {}).map(([good, count]) => (
+          {!art && Object.entries(sp.supply || {}).map(([good, count]) => (
             <GoodChip key={good} good={good} count={count} small />
           ))}
         </div>
