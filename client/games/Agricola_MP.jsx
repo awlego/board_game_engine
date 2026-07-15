@@ -675,6 +675,28 @@ const MAJORS_LAYOUT = [
   "clay_oven", "stone_oven", "joinery", "pottery", "basketmaker",
 ];
 
+// Action-space art (client/public/agricola/board/<id>.jpg): the ten
+// printed spaces are crops of the play-agricola.com board scan
+// (landscape), everything else is that site's round/expansion card
+// scans (portrait). grove and lessons_b appear on both the 3p and 4p
+// strips with different printed cards, hence the _4p variants.
+const BOARD_ART_BASE = new Set(Object.keys(BASE_POS));
+const BOARD_ART_CARDS = new Set([
+  "sheep_market", "fencing", "grain_utilization", "major_improvement",
+  "basic_wish", "house_redevelopment", "western_quarry", "vegetable_seeds",
+  "pig_market", "cattle_market", "eastern_quarry", "urgent_wish",
+  "cultivation", "farm_redevelopment",
+  "grove", "hollow_3p", "resource_market_3p", "lessons_b",
+  "copse", "hollow_4p", "resource_market_4p", "traveling_players",
+]);
+function boardArt(sp, playerCount) {
+  let key = sp.id;
+  const landscape = BOARD_ART_BASE.has(key);
+  if (!landscape && !BOARD_ART_CARDS.has(key)) return null;
+  if (playerCount >= 4 && (key === "grove" || key === "lessons_b")) key += "_4p";
+  return { url: `${import.meta.env.BASE_URL}agricola/board/${key}.jpg`, landscape };
+}
+
 const BOARD_FONT = "'Cinzel', Georgia, serif";
 const GRASS_NOISE = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E")`;
 
@@ -701,6 +723,7 @@ function WorkerDiscs({ space, players }) {
 function BoardSpace({ sp, valid, onPick, players, round, gridPos }) {
   const occupied = sp.occupied_by !== null && sp.occupied_by !== undefined;
   const isRoundCard = round !== undefined;
+  const art = boardArt(sp, players.length);
   const base = sp.accumulates
     ? "linear-gradient(170deg,#efdfb4 0%,#e2cd94 55%,#d5bc7e 100%)"
     : isRoundCard
@@ -714,6 +737,10 @@ function BoardSpace({ sp, valid, onPick, players, round, gridPos }) {
       style={{
         gridColumn: gridPos[0], gridRow: gridPos[1],
         background: base,
+        ...(art ? {
+          backgroundImage: `url("${art.url}")`, backgroundSize: "cover",
+          backgroundPosition: art.landscape ? "center" : "top",
+        } : {}),
         border: valid ? "2px solid #f59e0b" : "1px solid #a8895a",
         boxShadow: valid
           ? "0 0 0 3px rgba(245,158,11,0.35), 0 3px 5px rgba(30,50,15,0.4)"
@@ -724,11 +751,11 @@ function BoardSpace({ sp, valid, onPick, players, round, gridPos }) {
         filter: occupied ? "saturate(0.65)" : "none",
       }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 2 }}>
-        <b style={{
+        {!art && <b style={{
           fontFamily: BOARD_FONT, fontSize: 9.5, lineHeight: 1.15,
           color: "#43331a", letterSpacing: 0.2, flex: 1, minWidth: 0,
           hyphens: "auto", WebkitHyphens: "auto",
-        }}>{sp.name}</b>
+        }}>{sp.name}</b>}
         {isRoundCard ? (
           <span title={`Revealed in round ${round}${HARVEST_ROUNDS.includes(round) ? " — harvest" : ""}`}
             style={{
@@ -737,12 +764,14 @@ function BoardSpace({ sp, valid, onPick, players, round, gridPos }) {
               fontSize: 8.5, fontWeight: 800, display: "inline-flex",
               alignItems: "center", justifyContent: "center", gap: 1,
               border: "1px solid #37591f",
+              marginLeft: "auto",
             }}>{round}{HARVEST_ROUNDS.includes(round) ? "🌾" : ""}</span>
         ) : null}
       </div>
-      <div style={{ fontSize: 7.5, color: "#6d5a3a", lineHeight: 1.25, marginTop: 1, flex: 1, overflow: "hidden" }}>
+      {!art && <div style={{ fontSize: 7.5, color: "#6d5a3a", lineHeight: 1.25, marginTop: 1, flex: 1, overflow: "hidden" }}>
         {sp.desc}
-      </div>
+      </div>}
+      {art && <div style={{ flex: 1 }} />}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 2 }}>
         <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
           {Object.entries(sp.supply || {}).map(([good, count]) => (
