@@ -252,7 +252,7 @@ needed one (`lasso=True`, consulted by the placement flow).
 
 ## Importing cards from the CSV dump
 
-`game_rulebooks/Agricola/AgricolaCards-5-4-2026/agricola_cards.csv`
+`game_rulebooks_and_resources/Agricola/AgricolaCards-5-4-2026/agricola_cards.csv`
 (overnightlemons.com repo) holds 4,360 community cards from
 play-agricola.com: `card_id, deck, type (occ-1/occ-3/occ-4/minor), name,
 text, cost ("1W,1S" — W/C/R/S/F/G/V), vps, prereq (free text), ...`.
