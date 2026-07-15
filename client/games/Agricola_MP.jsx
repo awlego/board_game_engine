@@ -418,11 +418,15 @@ function edgeRect(edge) {
   return { x: PAD + c * (CELL + GAP) - GAP, y: PAD + r * (CELL + GAP), w: GAP, h: CELL };
 }
 
+// Room and field tiles use the actual play-agricola.com tile scans
+// (client/public/agricola/tiles/, 78×78 sources).
+const tileUrl = (name) => `${import.meta.env.BASE_URL}agricola/tiles/${name}.jpg`;
 const HOUSE_STYLE = {
-  wood:  { bg: "#a16207", label: "🏠" },
-  clay:  { bg: "#c2410c", label: "🏠" },
-  stone: { bg: "#78716c", label: "🏠" },
+  wood:  { bg: "#a16207", tile: tileUrl("room_wood") },
+  clay:  { bg: "#c2410c", tile: tileUrl("room_clay") },
+  stone: { bg: "#78716c", tile: tileUrl("room_stone") },
 };
+const FIELD_TILE = tileUrl("field");
 
 function FarmYard({ player, mode, selection, onCellClick, onEdgeClick, plannedFences, plannedCells }) {
   // mode: null | "cells" | "edges"; plannedFences: Set of edge keys being added
@@ -444,17 +448,18 @@ function FarmYard({ player, mode, selection, onCellClick, onEdgeClick, plannedFe
         const { x, y } = cellXY(idx);
         const clickable = mode === "cells" && onCellClick;
         const isPlanned = plannedCells?.has?.(idx);
-        let bg = "#bef264", content = null;
+        let bg = "#bef264", bgImage = null, content = null;
         if (cell.type === "room") {
           bg = HOUSE_STYLE[player.house_type].bg;
-          content = <span style={{ fontSize: 24 }}>🏠</span>;
+          bgImage = HOUSE_STYLE[player.house_type].tile;
         } else if (cell.type === "field") {
           bg = "#a16207";
+          bgImage = FIELD_TILE;
           content = cell.crops ? (
-            <span style={{ fontSize: 13, fontWeight: 800, color: "#fef9c3" }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: "#fef9c3", textShadow: "0 1px 2px #00000099" }}>
               {GOODS[cell.crops.type].icon}×{cell.crops.count}
             </span>
-          ) : <span style={{ fontSize: 18, opacity: 0.6 }}>🟫</span>;
+          ) : null;
         } else {
           const bits = [];
           if (cell.stable) bits.push(<span key="s" style={{ fontSize: 16 }}>🛖</span>);
@@ -470,6 +475,9 @@ function FarmYard({ player, mode, selection, onCellClick, onEdgeClick, plannedFe
             style={{
               position: "absolute", left: x, top: y, width: CELL, height: CELL,
               background: isPlanned ? "#fde047" : bg, borderRadius: 4,
+              ...(bgImage && !isPlanned ? {
+                backgroundImage: `url("${bgImage}")`, backgroundSize: "cover", backgroundPosition: "center",
+              } : {}),
               display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
               cursor: clickable ? "pointer" : "default",
               outline: selection?.has?.(idx) ? "3px solid #f59e0b" : "1px solid #86a83955",
