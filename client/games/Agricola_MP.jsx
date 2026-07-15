@@ -724,6 +724,23 @@ function boardArt(sp, playerCount) {
   return { url: `${import.meta.env.BASE_URL}agricola/board/${key}.jpg`, landscape };
 }
 
+// Where goods pile up on each space's art -- the center of the
+// "collectable area" (crate / pen / pond), in percent of the cell, so
+// token pills don't cover the printed text. Fallbacks: landscape
+// crops keep their parchment on the left (art right), portrait cards
+// their text plate on top (drop area below); cards whose plate runs
+// deeper get explicit anchors.
+const GOODS_ANCHOR = {
+  forest: [30, 52], clay_pit: [72, 52], reed_bank: [30, 52], fishing: [72, 55],
+  grain_utilization: [50, 78], house_redevelopment: [50, 80],
+  basic_wish: [50, 78], urgent_wish: [50, 80],
+  vegetable_seeds: [50, 76], cultivation: [50, 74], farm_redevelopment: [50, 78],
+  resource_market_3p: [50, 78], resource_market_4p: [50, 78],
+  lessons_b: [50, 62],
+};
+const goodsAnchor = (sp, art) =>
+  GOODS_ANCHOR[sp.id] || (art.landscape ? [72, 50] : [50, 64]);
+
 const BOARD_FONT = "'Cinzel', Georgia, serif";
 const GRASS_NOISE = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E")`;
 
@@ -805,19 +822,24 @@ function BoardSpace({ sp, valid, onPick, players, round, gridPos }) {
         {sp.desc}
       </div>}
       {art && <div style={{ flex: 1 }} />}
-      {/* Goods lying on the space sit centered on the art, one token
-          pill per type, stacked (wrapping into columns if ever needed) */}
-      {art && (
-        <div style={{
-          position: "absolute", inset: 0, display: "flex", flexDirection: "column",
-          alignItems: "center", justifyContent: "center", flexWrap: "wrap",
-          gap: 3, pointerEvents: "none",
-        }}>
-          {Object.entries(sp.supply || {}).map(([good, count]) => (
-            <GoodToken key={good} good={good} count={count} />
-          ))}
-        </div>
-      )}
+      {/* Goods lying on the space sit centered on its collectable
+          area (crate / pen / pond -- not the printed text), one token
+          pill per type, stacked */}
+      {art && (() => {
+        const [ax, ay] = goodsAnchor(sp, art);
+        return (
+          <div style={{
+            position: "absolute", left: `${ax}%`, top: `${ay}%`,
+            transform: "translate(-50%, -50%)",
+            display: "flex", flexDirection: "column", alignItems: "center",
+            gap: 3, pointerEvents: "none",
+          }}>
+            {Object.entries(sp.supply || {}).map(([good, count]) => (
+              <GoodToken key={good} good={good} count={count} />
+            ))}
+          </div>
+        );
+      })()}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 2 }}>
         <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
           {!art && Object.entries(sp.supply || {}).map(([good, count]) => (
