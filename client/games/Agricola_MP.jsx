@@ -737,9 +737,15 @@ function BoardSpace({ sp, valid, onPick, players, round, gridPos }) {
       style={{
         gridColumn: gridPos[0], gridRow: gridPos[1],
         background: base,
-        ...(art ? {
+        ...(art ? art.landscape ? {
+          // Printed-space crops share the cell's aspect ratio -- fill it.
           backgroundImage: `url("${art.url}")`, backgroundSize: "cover",
-          backgroundPosition: art.landscape ? "center" : "top",
+          backgroundPosition: "center",
+        } : {
+          // Portrait card scans rest on the meadow like the physical
+          // cards do -- show the whole card, meadow at the margins.
+          background: `url("${art.url}") center / contain no-repeat,
+            linear-gradient(155deg,#8aa85e 0%,#74954b 100%)`,
         } : {}),
         border: valid ? "2px solid #f59e0b" : "1px solid #a8895a",
         boxShadow: valid
@@ -917,10 +923,13 @@ function ActionBoard({ state, validSpaces, onPick, players }) {
             position: "absolute", inset: 0, borderRadius: 8,
             background: GRASS_NOISE, pointerEvents: "none",
           }} />
+          {/* Cell geometry matches the printed board: 1-row spaces are
+              ~1.73:1 landscape (107x62), round spaces 107x130 -- so the
+              board-scan crops fit without cutoff. */}
           <div style={{
             position: "relative", display: "grid", gap: 6,
-            gridTemplateColumns: `repeat(${cols}, 92px)`,
-            gridTemplateRows: "repeat(12, 40px)",
+            gridTemplateColumns: `repeat(${cols}, 107px)`,
+            gridTemplateRows: "repeat(12, 28px)",
           }}>
             {/* Fixed action spaces at their printed positions */}
             {state.action_spaces.map((sp) => {
