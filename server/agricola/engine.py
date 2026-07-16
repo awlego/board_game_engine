@@ -1,10 +1,11 @@
 """
 Agricola (Revised Edition) game engine — full game with hand cards.
 
-Each player is dealt 7 occupations and 7 minor improvements. Card effects
-are implemented via the registry/hook architecture described in CARDS.md;
-the engine fires events and asks modifier queries but never references
-individual cards.
+Each player is dealt 7 occupations and 7 minor improvements (or drafts
+them pick-and-pass style before round 1 when the room enables the
+draft -- see draft.py). Card effects are implemented via the
+registry/hook architecture described in CARDS.md; the engine fires
+events and asks modifier queries but never references individual cards.
 
 Round flow: preparation (auto) → work (players place people one at a
 time) → returning home (auto) → harvest on rounds 4/7/9/11/13/14
@@ -30,6 +31,7 @@ from server.agricola.state import (
     plowable_cells,
 )
 from server.agricola import cards
+from server.agricola import draft
 from server.agricola import sub_actions
 from server.agricola.scoring import final_scores
 
@@ -74,12 +76,23 @@ class AgricolaEngine(GameEngine):
         known = cards.implemented_decks()
         decks = [d for d in decks if d in known] or list(self.DEFAULT_DECKS)
 
+        # With a draft, the "hands" deal_hands returns are the draft
+        # packets instead; players' hands start empty and grow as they
+        # pick. deal_hands' auto-shrink (decks too small) clamps the
+        # packet size, and keep clamps to that.
+        draft_cfg = draft.resolve_options(options)
         rng = random.Random(random.randrange(2 ** 31))
         occ_hands, minor_hands, hand_size, occ_draw, minor_draw = \
-            cards.deal_hands(n, rng, decks)
-        for p in players:
-            p["hand_occupations"] = occ_hands[p["index"]]
-            p["hand_minors"] = minor_hands[p["index"]]
+            cards.deal_hands(n, rng, decks,
+                             hand_size=draft_cfg["deal"] if draft_cfg else 7)
+        if draft_cfg:
+            draft_cfg["deal"] = hand_size
+            draft_cfg["keep"] = min(draft_cfg["keep"], hand_size)
+            hand_size = draft_cfg["keep"]
+        else:
+            for p in players:
+                p["hand_occupations"] = occ_hands[p["index"]]
+                p["hand_minors"] = minor_hands[p["index"]]
 
         state = {
             "game": "agricola",
@@ -113,8 +126,16 @@ class AgricolaEngine(GameEngine):
             "scores": None,
             "winners": None,
         }
-        self._start_round(state, [])
+        if draft_cfg:
+            if draft.start(state, draft_cfg, occ_hands, minor_hands, []):
+                self._finish_draft(state, [])
+        else:
+            self._start_round(state, [])
         return state
+
+    def _finish_draft(self, state, log):
+        del state["draft"]
+        self._start_round(state, log)
 
     # Draw/discard piles are shuffled/hidden state for EVERY player, not
     # just opponents (unlike hands, where only the owner may see their
@@ -123,7 +144,8 @@ class AgricolaEngine(GameEngine):
     # "revealed" is public knowledge. (An I238 Chamberlain-style card
     # that reveals it to one player will need a per-player exception.)
     _PILE_KEYS = ("occupation_draw", "minor_draw",
-                 "occupation_discard", "minor_discard", "deck")
+                 "occupation_discard", "minor_discard", "deck",
+                 "removed_cards")
 
     def _hide_draw_piles(self, view):
         for key in self._PILE_KEYS:
@@ -141,6 +163,7 @@ class AgricolaEngine(GameEngine):
                 p["hand_occupations"] = len(p["hand_occupations"])
                 p["hand_minors"] = len(p["hand_minors"])
         self._hide_draw_piles(view)
+        draft.redact_view(view, pidx)
         if pidx is not None:
             me = state["players"][pidx]
             view["playable_minors"] = [
@@ -163,12 +186,16 @@ class AgricolaEngine(GameEngine):
             p["hand_occupations"] = len(p["hand_occupations"])
             p["hand_minors"] = len(p["hand_minors"])
         self._hide_draw_piles(view)
+        draft.redact_view(view, None)
         return view
 
     def get_valid_actions(self, state, player_id):
         pidx = self._player_idx(state, player_id)
         if pidx is None or state["game_over"]:
             return []
+
+        if state["phase"] == "draft":
+            return draft.valid_actions(state, pidx)
 
         prompt = self._prompt(state)
         if prompt:
@@ -216,6 +243,8 @@ class AgricolaEngine(GameEngine):
             raise ValueError("The game is over")
 
         kind = action.get("kind")
+        if kind == "draft_pick":
+            return self._apply_draft_pick(state, pidx, action)
         if kind == "accommodate":
             return self._apply_accommodate(state, pidx, action)
         if kind == "choice":
@@ -230,9 +259,20 @@ class AgricolaEngine(GameEngine):
             return self._apply_skip(state, pidx, action)
         raise ValueError(f"Unknown action kind: {kind}")
 
+    def _apply_draft_pick(self, state, pidx, action):
+        if state["phase"] != "draft":
+            raise ValueError("No draft in progress")
+        log = []
+        if draft.apply_pick(state, pidx, action.get("card"), log):
+            self._finish_draft(state, log)
+        return self._result(state, log)
+
     def get_waiting_for(self, state):
         if state["game_over"]:
             return []
+        if state["phase"] == "draft":
+            return [state["players"][i]["player_id"]
+                    for i in draft.waiting_on(state)]
         prompt = self._prompt(state)
         if prompt:
             return [state["players"][prompt["player"]]["player_id"]]
@@ -253,6 +293,8 @@ class AgricolaEngine(GameEngine):
             desc = (f"{p['name']} accommodates animals"
                     if prompt["type"] == "accommodate"
                     else f"{p['name']} decides: {prompt.get('prompt', '')}")
+        elif state["phase"] == "draft":
+            desc = draft.phase_description(state)
         elif state["phase"] == "feeding":
             desc = "Harvest — feed your family"
         else:

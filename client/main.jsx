@@ -16,9 +16,10 @@ import GipfApp from "./games/Gipf_MP.jsx";
 import PunctApp from "./games/Punct_MP.jsx";
 import LyngkApp from "./games/Lyngk_MP.jsx";
 import ShardsApp from "./games/Shards_MP.jsx";
-import AgricolaApp, { DECK_CHOICES as AGRICOLA_DECKS } from "./games/Agricola_MP.jsx";
+import AgricolaApp, { CREATE_FORM as AGRICOLA_CREATE_FORM } from "./games/Agricola_MP.jsx";
 
 import { WS_URL } from "./ws.js";
+import { CreateFormFields, defaultOptions } from "./games/create_form.jsx";
 
 // Player identity is entered once and remembered across games, tabs, and
 // visits. Game clients share this key so their own forms prefill too.
@@ -44,10 +45,9 @@ const GAMES = [
   { id: "shards",  name: "Shards of Creation", players: "2–4", component: ShardsApp, series: "other", desc: "Cosmere trick-taking — win tricks, forge shards" },
   { id: "agricola", name: "Agricola", players: "1–4", component: AgricolaApp, series: "other", desc: "Worker-placement farming — grow your family and feed it",
     // Game-specific room options rendered inside the Create Room dialog and
-    // passed to the game client via pending_action.options.
-    createForm: {
-      decks: { label: "Card decks", choices: AGRICOLA_DECKS, default: ["A"] },
-    },
+    // passed to the game client via pending_action.options. The spec lives
+    // with the game client so its own lobby renders the identical form.
+    createForm: AGRICOLA_CREATE_FORM,
   },
 ];
 
@@ -129,9 +129,7 @@ function RoomBrowser({ gameId, gameName, createForm, onJoin, onSpectate, onBack 
   const [joinCode, setJoinCode] = useState("");
   const [mode, setMode] = useState(null); // null | "create" | "join_code"
   const [createOpts, setCreateOpts] = useState(() =>
-    createForm
-      ? Object.fromEntries(Object.entries(createForm).map(([k, f]) => [k, f.default]))
-      : null);
+    createForm ? defaultOptions(createForm) : null);
 
   const submit = (roomCode) => {
     const n = name.trim();
@@ -189,23 +187,13 @@ function RoomBrowser({ gameId, gameName, createForm, onJoin, onSpectate, onBack 
                 <input style={S.input} placeholder="Room code" value={joinCode} autoFocus={!!name}
                   onChange={e => setJoinCode(e.target.value.toUpperCase())} />
               )}
-              {mode === "create" && createForm && Object.entries(createForm).map(([key, field]) => (
-                <div key={key} style={{ fontSize: 12, color: "#aaa" }}>
-                  <div style={{ color: "#c9a84c", marginBottom: 4 }}>{field.label}:</div>
-                  {field.choices.map(c => (
-                    <label key={c.id} style={{ display: "block", cursor: "pointer", padding: "1px 0" }}>
-                      <input type="checkbox" checked={createOpts[key].includes(c.id)}
-                        onChange={e => setCreateOpts({
-                          ...createOpts,
-                          [key]: e.target.checked
-                            ? [...createOpts[key], c.id]
-                            : createOpts[key].filter(x => x !== c.id),
-                        })} />
-                      {" "}{c.label}
-                    </label>
-                  ))}
+              {mode === "create" && createForm && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, color: "#aaa" }}>
+                  <CreateFormFields form={createForm} value={createOpts}
+                    onChange={setCreateOpts}
+                    labelStyle={{ color: "#c9a84c", fontWeight: 400 }} />
                 </div>
-              ))}
+              )}
               <div style={{ display: "flex", gap: 8 }}>
                 <button style={S.btn} onClick={() => setMode(null)}>Cancel</button>
                 <button style={{ ...S.btn, ...S.btnP }} disabled={!name.trim() || (mode === "join_code" && !joinCode.trim())}

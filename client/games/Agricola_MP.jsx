@@ -3,6 +3,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { WS_URL } from "../ws.js";
 import CARD_CATALOG from "./agricola_cards.json";
 import { AgricolaCard } from "./agricola_card.jsx";
+import { CreateFormFields, defaultOptions } from "./create_form.jsx";
 
 // ============================================================
 // CONSTANTS (mirrored from server/agricola/state.py)
@@ -1861,6 +1862,130 @@ const SIMPLE_SPACES = new Set([
 ]);
 const MARKETS = new Set(["sheep_market", "pig_market", "cattle_market"]);
 
+// ============================================================
+// DRAFT SCREEN (pre-game pick-and-pass card draft)
+// ============================================================
+
+// Rendered instead of the board while state.phase === "draft". The
+// server only ever exposes the FRONT packet of your queue
+// (draft.your_packet); picks pass packets on immediately, so a new
+// packet can slide in the moment you confirm.
+function DraftScreen({ game }) {
+  const { gameState: state, gameLogs, submitAction, error } = game;
+  const [selected, setSelected] = useState(null);
+  const logRef = useRef(null);
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [gameLogs]);
+
+  const d = state.draft || {};
+  const myIdx = state.your_player_idx;
+  const me = myIdx !== null && myIdx !== undefined ? state.players[myIdx] : null;
+  const packet = d.your_packet || null;
+  // Never let a selection carry over onto a different packet's cards.
+  const packetKey = (packet || []).join("|");
+  useEffect(() => { setSelected(null); }, [packetKey]);
+
+  const keep = d.keep || 0;
+  const picksMade = d.picks_made || [];
+  const queueCounts = d.queue_counts || [];
+  const stageLabel = d.stage === "minors" ? "minor improvements" : "occupations";
+  const passing = (d.directions || {})[d.stage] === 1 ? "left" : "right";
+
+  const status = (i) =>
+    picksMade[i] >= keep ? "✓ done"
+    : queueCounts[i] > 0
+      ? `picking${queueCounts[i] > 1 ? ` (+${queueCounts[i] - 1} queued)` : ""}`
+      : "waiting for a packet";
+
+  return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg,#f7fee7,#ecfccb)", fontFamily: FONT, color: "#292524" }}>
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 10, flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0, fontSize: 20 }}>🚜 Agricola — Card draft</h2>
+          <span style={{ fontSize: 13 }}>
+            Drafting <b>{stageLabel}</b> · packets pass <b>{passing}</b>
+          </span>
+          <span style={{ marginLeft: "auto", fontSize: 12 }}>
+            {game.spectating && <span style={{ fontStyle: "italic", color: "#57534e" }}>👁 spectating · </span>}
+            Room {game.roomCode} {game.connected ? "🟢" : "🔴"}
+          </span>
+        </div>
+
+        {/* Who's picked, who's thinking */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          {state.players.map((p) => (
+            <div key={p.index} style={{
+              display: "flex", alignItems: "center", gap: 6, fontSize: 12,
+              background: "#fefce8", border: "1px solid #d6d3c1", borderRadius: 8,
+              padding: "4px 10px",
+            }}>
+              <span style={{ width: 10, height: 10, borderRadius: "50%", background: PLAYER_COLORS[p.index].bg, display: "inline-block" }} />
+              <b>{p.name}{p.index === myIdx ? " (you)" : ""}</b>
+              <span style={{ color: "#57534e" }}>
+                {Math.min(picksMade[p.index] ?? 0, keep)}/{keep} · {status(p.index)}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {error && <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 6 }}>{error}</div>}
+
+        {me && packet && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "#57534e", textTransform: "uppercase" }}>
+                Your packet — pick {Math.min((picksMade[myIdx] ?? 0) + 1, keep)} of {keep}
+              </div>
+              <Btn disabled={!selected}
+                onClick={() => submitAction({ kind: "draft_pick", card: selected })}>
+                Draft {selected ? cardSpec(selected).name : "…"}
+              </Btn>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {packet.map((cid) => (
+                <HandCard key={cid} cid={cid} selected={selected === cid}
+                  onClick={() => setSelected(selected === cid ? null : cid)} />
+              ))}
+            </div>
+          </div>
+        )}
+        {me && !packet && (
+          <div style={{ fontSize: 13, fontStyle: "italic", color: "#57534e", marginBottom: 12 }}>
+            {(picksMade[myIdx] ?? 0) >= keep
+              ? "All your picks are in — waiting for the other players…"
+              : "Waiting for the next packet to reach you…"}
+          </div>
+        )}
+        {!me && (
+          <div style={{ fontSize: 13, fontStyle: "italic", color: "#57534e", marginBottom: 12 }}>
+            The players are drafting their hands…
+          </div>
+        )}
+
+        {me && <HandPanel me={me} playableMinors={state.playable_minors} />}
+
+        <div style={{ marginTop: 12, maxWidth: 480 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: "#57534e", textTransform: "uppercase", marginBottom: 4 }}>
+            Game log
+          </div>
+          <div ref={logRef} style={{
+            background: "#fefce8", border: "1px solid #d6d3c1", borderRadius: 8,
+            padding: 8, height: 160, overflowY: "auto", fontSize: 11, lineHeight: 1.5,
+          }}>
+            {gameLogs.map((m, i) => (
+              <div key={i} style={{
+                borderBottom: "1px solid #f5f5f0", padding: "2px 0",
+                fontWeight: m.startsWith("—") ? 800 : 400,
+              }}>{m}</div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GameBoard({ game }) {
   const { gameState: state, gameLogs, submitAction, error, playerId } = game;
   const [planner, setPlanner] = useState(null);
@@ -1874,6 +1999,7 @@ function GameBoard({ game }) {
   if (!state || !state.players) {
     return <div style={{ padding: 40, fontFamily: FONT }}>Loading game…</div>;
   }
+  if (state.phase === "draft") return <DraftScreen game={game} />;
 
   const myIdx = state.your_player_idx;
   const me = myIdx !== null && myIdx !== undefined ? state.players[myIdx] : null;
@@ -2019,6 +2145,37 @@ export const DECK_CHOICES = [
   { id: "custom", label: "Custom cards" },
 ];
 
+// Room options shown in BOTH create dialogs (this file's Lobby and the
+// game-selector lobby in main.jsx). Keys/values mirror what
+// server/agricola/engine.py initial_state + draft.resolve_options read.
+export const CREATE_FORM = {
+  decks: { type: "checkboxes", label: "Card decks", choices: DECK_CHOICES, default: ["A"] },
+  draft_mode: {
+    type: "select", label: "Hand cards", default: "none",
+    choices: [
+      { id: "none", label: "Deal 7 + 7 (no draft)" },
+      { id: "pick_and_pass", label: "Draft — pick one, pass the rest" },
+    ],
+  },
+  draft_deal: {
+    type: "number", label: "Cards dealt per packet", min: 1, max: 14, default: 7,
+    showIf: (o) => o.draft_mode === "pick_and_pass",
+  },
+  draft_keep: {
+    type: "number", label: "Cards kept (the rest leave the game)", min: 1, max: 14, default: 7,
+    showIf: (o) => o.draft_mode === "pick_and_pass",
+  },
+  draft_directions: {
+    type: "select", label: "Passing direction", default: "alternate",
+    choices: [
+      { id: "alternate", label: "Occupations left, minors right" },
+      { id: "left", label: "Both left" },
+      { id: "right", label: "Both right" },
+    ],
+    showIf: (o) => o.draft_mode === "pick_and_pass",
+  },
+};
+
 // Shared with the game-selector lobby (main.jsx) so a name entered anywhere
 // prefills everywhere.
 const NAME_KEY = "bge_player_name";
@@ -2027,7 +2184,7 @@ function Lobby({ game }) {
   const [name, setName] = useState(() =>
     localStorage.getItem(NAME_KEY) || sessionStorage.getItem("player_name") || "");
   const [code, setCode] = useState("");
-  const [decks, setDecks] = useState(["A"]);
+  const [opts, setOpts] = useState(() => defaultOptions(CREATE_FORM));
   const inRoom = !!game.roomCode;
 
   const S = {
@@ -2100,22 +2257,12 @@ function Lobby({ game }) {
         </p>
         <input style={S.input} placeholder="Your name" value={name}
           onChange={(e) => { setName(e.target.value); localStorage.setItem(NAME_KEY, e.target.value); }} />
-        <div style={{ fontSize: 12, marginBottom: 8 }}>
-          <b>Card decks:</b>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 4 }}>
-            {DECK_CHOICES.map((d) => (
-              <label key={d.id}>
-                <input type="checkbox" checked={decks.includes(d.id)}
-                  onChange={(e) => setDecks(e.target.checked
-                    ? [...decks, d.id] : decks.filter((x) => x !== d.id))} />
-                {" "}{d.label}
-              </label>
-            ))}
-          </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
+          <CreateFormFields form={CREATE_FORM} value={opts} onChange={setOpts} />
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <Btn onClick={() => name.trim() && game.createRoom(name.trim(),
-            decks.length ? { decks } : undefined)} disabled={!name.trim()}>
+          <Btn onClick={() => name.trim() && game.createRoom(name.trim(), opts)}
+            disabled={!name.trim()}>
             Create room
           </Btn>
         </div>

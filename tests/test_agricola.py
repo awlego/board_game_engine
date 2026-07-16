@@ -1781,6 +1781,9 @@ def test_plow_any_broadcasts_to_other_players(engine, temp_card):
 def random_bot_action(engine, state, pid, rng):
     """Pick a random valid action with randomly generated parameters."""
     acts = engine.get_valid_actions(state, pid)
+    # During the pre-game draft every action is a draft_pick.
+    if acts and acts[0]["kind"] == "draft_pick":
+        return {"kind": "draft_pick", "card": rng.choice(acts)["card"]}
     # Answer card choice prompts randomly.
     choice = next((a for a in acts if a["kind"] == "choice"), None)
     if choice:
