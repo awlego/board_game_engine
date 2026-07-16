@@ -19,7 +19,7 @@ import ShardsApp from "./games/Shards_MP.jsx";
 import AgricolaApp, { CREATE_FORM as AGRICOLA_CREATE_FORM } from "./games/Agricola_MP.jsx";
 
 import { WS_URL } from "./ws.js";
-import { CreateFormFields, defaultOptions } from "./games/create_form.jsx";
+import { CreateFormFields, defaultOptions, fetchCardSets, cardSetChoices } from "./games/create_form.jsx";
 
 // Player identity is entered once and remembered across games, tabs, and
 // visits. Game clients share this key so their own forms prefill too.
@@ -48,6 +48,8 @@ const GAMES = [
     // passed to the game client via pending_action.options. The spec lives
     // with the game client so its own lobby renders the identical form.
     createForm: AGRICOLA_CREATE_FORM,
+    // Extra per-game pages linked from the room browser.
+    tools: [{ label: "Draft Set Builder", query: "setbuilder" }],
   },
 ];
 
@@ -122,7 +124,7 @@ function GameCard({ game, onClick }) {
 }
 
 // ─── Room Browser ──────────────────────────────────────
-function RoomBrowser({ gameId, gameName, createForm, onJoin, onSpectate, onBack }) {
+function RoomBrowser({ gameId, gameName, createForm, tools, onJoin, onSpectate, onBack }) {
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState(loadName);
@@ -130,6 +132,18 @@ function RoomBrowser({ gameId, gameName, createForm, onJoin, onSpectate, onBack 
   const [mode, setMode] = useState(null); // null | "create" | "join_code"
   const [createOpts, setCreateOpts] = useState(() =>
     createForm ? defaultOptions(createForm) : null);
+  const [cardSets, setCardSets] = useState([]);
+
+  // Saved card sets feed any choicesFrom: "card_sets" field in the
+  // game's create form (today: Agricola's custom draft pools).
+  const wantsCardSets = createForm &&
+    Object.values(createForm).some((f) => f.choicesFrom === "card_sets");
+  useEffect(() => {
+    if (!wantsCardSets) return;
+    let alive = true;
+    fetchCardSets(gameId).then((s) => { if (alive) setCardSets(s); });
+    return () => { alive = false; };
+  }, [gameId, wantsCardSets]);
 
   const submit = (roomCode) => {
     const n = name.trim();
@@ -171,6 +185,10 @@ function RoomBrowser({ gameId, gameName, createForm, onJoin, onSpectate, onBack 
           <button style={S.btn} onClick={() => setMode("join_code")}>Join by Code</button>
           <button style={{ ...S.btn, borderColor: "#555", color: "#999" }}
             onClick={() => alert("Rules viewer coming soon!")}>Rules</button>
+          {(tools || []).map((t) => (
+            <button key={t.query} style={{ ...S.btn, borderColor: "#555", color: "#999" }}
+              onClick={() => { window.location.search = `?${t.query}`; }}>{t.label}</button>
+          ))}
           <button style={{ ...S.btn, color: "#888" }} onClick={onBack}>← Back</button>
         </div>
 
@@ -191,6 +209,7 @@ function RoomBrowser({ gameId, gameName, createForm, onJoin, onSpectate, onBack 
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, color: "#aaa" }}>
                   <CreateFormFields form={createForm} value={createOpts}
                     onChange={setCreateOpts}
+                    dynamicChoices={{ card_sets: cardSetChoices(cardSets) }}
                     labelStyle={{ color: "#c9a84c", fontWeight: 400 }} />
                 </div>
               )}
@@ -323,6 +342,7 @@ function MainApp() {
         gameId={game.id}
         gameName={game.name}
         createForm={game.createForm}
+        tools={game.tools}
         onJoin={(roomCode, playerName, options) => {
           // Store intent for the game hook to auto-create/join on mount
           sessionStorage.setItem("pending_action", JSON.stringify({
@@ -359,10 +379,15 @@ function MainApp() {
   );
 }
 
-// Dev card gallery: /?cardlab renders the Agricola card lab instead of the app.
+// Standalone pages: /?cardlab renders the Agricola card gallery,
+// /?setbuilder the Agricola draft set builder, instead of the app.
 const CardLabLazy = React.lazy(() => import("./games/agricola_cardlab.jsx"));
-const root = new URLSearchParams(window.location.search).has("cardlab")
+const SetBuilderLazy = React.lazy(() => import("./games/agricola_set_builder.jsx"));
+const params = new URLSearchParams(window.location.search);
+const root = params.has("cardlab")
   ? <React.Suspense fallback={null}><CardLabLazy /></React.Suspense>
-  : <MainApp />;
+  : params.has("setbuilder")
+    ? <React.Suspense fallback={null}><SetBuilderLazy /></React.Suspense>
+    : <MainApp />;
 
 createRoot(document.getElementById("root")).render(root);

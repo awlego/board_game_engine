@@ -85,6 +85,23 @@ Broadcasts: `chat` to all players
 ```
 Response: `spectating` + (if game started) `game_state` (spectator view)
 
+### `list_card_sets` / `save_card_set` / `delete_card_set` — Custom card sets (pre-auth)
+```json
+{"type": "list_card_sets", "game": "agricola"}
+{"type": "save_card_set", "game": "agricola",
+ "set": {"id": "my-set-1a2b", "name": "My Set", "author": "Alice", "cards": ["A001", "..."]}}
+{"type": "delete_card_set", "game": "agricola", "id": "my-set-1a2b"}
+```
+Named card pools a room can deal/draft from instead of whole decks
+(built in the set-builder UI, chosen via `options.card_set_id` in
+`create` — the server freezes the set's card list into the room's
+options at creation). Omit `set.id` when saving to create a new set;
+include it to overwrite. Card ids are validated by the game engine's
+`validate_card_set` hook (games without one can't save sets). Sets are
+shared — there is no ownership. Responses: `card_set_list`
+(`{game, sets: [...]}`), `card_set_saved` (`{game, set}` with the
+stored record incl. its id), `card_set_deleted` (`{game, id}`).
+
 ### `kick` — Host kicks a player from lobby (before game starts)
 ```json
 {"type": "kick", "player_id": "p_def456"}

@@ -238,6 +238,13 @@ Builder — is the reference for how to use the module.
 - **Traveling cards** (`traveling=True`): after the play effect resolves, the
   card goes to the left neighbor's hand instead of into play (removed from
   play in solo games, per the solo rules).
+- **Custom card sets**: instead of whole decks, a room can deal/draft from a
+  saved, hand-curated card list (`options["card_pool"]`, resolved by the
+  server from `options["card_set_id"]` at room creation — see
+  `server/card_sets.py` and the client's Draft Set Builder at `/?setbuilder`).
+  `deal_hands(pool=...)` restricts the deal to exactly those ids;
+  `AgricolaEngine.validate_card_set` rejects unimplemented/major/unknown ids
+  at save time. The chosen set's name lands in `state["card_set"]`.
 
 ## Factories keep the common cases one-liners
 

@@ -7,13 +7,14 @@ commands to pluggable game engines. Knows nothing about specific game rules.
 
 import asyncio
 import json
+import os
 import secrets
 import time
 from dataclasses import dataclass, field
 
 import websockets
 
-from server import persistence
+from server import card_sets, persistence
 from server.game_engine import GameEngine
 
 
@@ -75,11 +76,12 @@ class GameServer:
     Game-agnostic — delegates all game logic to the engine.
     """
 
-    def __init__(self, data_dir=None):
+    def __init__(self, data_dir=None, card_set_dir=None):
         self.rooms: dict[str, Room] = {}               # code -> Room
         self.tokens: dict[str, tuple] = {}             # token -> (room_code, player_id_or_"spectator")
         self.engines: dict[str, type] = {}              # game_name -> GameEngine class
         self.data_dir = data_dir                        # room snapshot dir; None = in-memory only
+        self.card_sets = card_sets.CardSetStore(card_set_dir)
 
     def register_engine(self, game_name, engine_class):
         """Register a game engine class by name."""
@@ -111,6 +113,17 @@ class GameServer:
         code = generate_room_code()
         while code in self.rooms:
             code = generate_room_code()
+
+        # A room built on a saved card set freezes the set's card list
+        # into its options at creation, so editing or deleting the set
+        # afterwards never changes an existing room.
+        if options and options.get("card_set_id"):
+            card_set = self.card_sets.get(game_name, options["card_set_id"])
+            if card_set is None:
+                raise ValueError("Card set not found (was it deleted?)")
+            options = dict(options)
+            options["card_pool"] = list(card_set["cards"])
+            options["card_set_name"] = card_set["name"]
 
         engine = self.engines[game_name]()
         player_id = f"p_{generate_token()[:8]}"
@@ -224,6 +237,20 @@ class GameServer:
 
                 if msg_type == "list_rooms":
                     await self._handle_list_rooms(websocket, msg)
+                    continue
+
+                # Card sets are shared pre-game config (like list_rooms,
+                # no room membership required).
+                if msg_type == "list_card_sets":
+                    await self._handle_list_card_sets(websocket, msg)
+                    continue
+
+                if msg_type == "save_card_set":
+                    await self._handle_save_card_set(websocket, msg)
+                    continue
+
+                if msg_type == "delete_card_set":
+                    await self._handle_delete_card_set(websocket, msg)
                     continue
 
                 if msg_type == "reconnect":
@@ -405,6 +432,54 @@ class GameServer:
                 "spectator_count": connected_specs,
             })
         await self._send(websocket, {"type": "room_list", "rooms": rooms})
+
+    async def _handle_list_card_sets(self, websocket, msg):
+        """List saved card sets for a game (full records — the set
+        builder edits them and the create dialog only needs id/name)."""
+        game = msg.get("game", "")
+        try:
+            sets = self.card_sets.list_sets(game)
+        except ValueError as e:
+            await self._send(websocket, {"type": "error", "message": str(e)})
+            return
+        await self._send(websocket, {
+            "type": "card_set_list", "game": game, "sets": sets,
+        })
+
+    async def _handle_save_card_set(self, websocket, msg):
+        """Create or update a card set. The card ids are validated by
+        the game engine's validate_card_set hook."""
+        game = msg.get("game", "")
+        engine_class = self.engines.get(game)
+        validator = getattr(engine_class, "validate_card_set", None)
+        if validator is None:
+            await self._send(websocket, {
+                "type": "error",
+                "message": f"Game {game!r} does not support card sets"})
+            return
+        try:
+            saved = self.card_sets.save(game, msg.get("set"), validator)
+            await self._send(websocket, {
+                "type": "card_set_saved", "game": game, "set": saved,
+            })
+        except ValueError as e:
+            await self._send(websocket, {"type": "error", "message": str(e)})
+
+    async def _handle_delete_card_set(self, websocket, msg):
+        game = msg.get("game", "")
+        set_id = msg.get("id", "")
+        try:
+            deleted = self.card_sets.delete(game, set_id)
+        except ValueError as e:
+            await self._send(websocket, {"type": "error", "message": str(e)})
+            return
+        if deleted:
+            await self._send(websocket, {
+                "type": "card_set_deleted", "game": game, "id": set_id,
+            })
+        else:
+            await self._send(websocket, {
+                "type": "error", "message": "Card set not found"})
 
     async def _handle_auth(self, websocket, msg):
         """Authenticate with a token and bind this websocket to a room/player."""
@@ -640,6 +715,10 @@ class GameServer:
 # ── Server Entry Point ───────────────────────────────────────────────
 
 async def run_server(host="0.0.0.0", port=8765, data_dir="data/rooms"):
+    # Card sets live beside the room snapshots (data/card_sets); with
+    # persistence disabled they are memory-only like everything else.
+    card_set_dir = os.path.join(os.path.dirname(data_dir), "card_sets") \
+        if data_dir else None
     from server.dragon.engine import DragonEngine
     from server.battleline.engine import BattleLineEngine
     from server.arboretum.engine import ArboretumEngine
@@ -656,7 +735,7 @@ async def run_server(host="0.0.0.0", port=8765, data_dir="data/rooms"):
     from server.shards.engine import ShardsEngine
     from server.agricola.engine import AgricolaEngine
 
-    server = GameServer(data_dir=data_dir)
+    server = GameServer(data_dir=data_dir, card_set_dir=card_set_dir)
     server.register_engine("dragon", DragonEngine)
     server.register_engine("battleline", BattleLineEngine)
     server.register_engine("arboretum", ArboretumEngine)

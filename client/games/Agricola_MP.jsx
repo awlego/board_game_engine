@@ -3,7 +3,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { WS_URL } from "../ws.js";
 import CARD_CATALOG from "./agricola_cards.json";
 import { AgricolaCard } from "./agricola_card.jsx";
-import { CreateFormFields, defaultOptions } from "./create_form.jsx";
+import { CreateFormFields, defaultOptions, fetchCardSets, cardSetChoices } from "./create_form.jsx";
 
 // ============================================================
 // CONSTANTS (mirrored from server/agricola/state.py)
@@ -1905,6 +1905,7 @@ function DraftScreen({ game }) {
           <h2 style={{ margin: 0, fontSize: 20 }}>🚜 Agricola — Card draft</h2>
           <span style={{ fontSize: 13 }}>
             Drafting <b>{stageLabel}</b> · packets pass <b>{passing}</b>
+            {state.card_set && <> · set: <b>{state.card_set}</b></>}
           </span>
           <span style={{ marginLeft: "auto", fontSize: 12 }}>
             {game.spectating && <span style={{ fontStyle: "italic", color: "#57534e" }}>👁 spectating · </span>}
@@ -2149,7 +2150,19 @@ export const DECK_CHOICES = [
 // game-selector lobby in main.jsx). Keys/values mirror what
 // server/agricola/engine.py initial_state + draft.resolve_options read.
 export const CREATE_FORM = {
-  decks: { type: "checkboxes", label: "Card decks", choices: DECK_CHOICES, default: ["A"] },
+  // Saved custom card sets (built in the Draft Set Builder, /?setbuilder)
+  // replace deck selection when chosen; choices beyond "decks" are
+  // fetched by the lobby (fetchCardSets) and injected via
+  // dynamicChoices. The server resolves card_set_id at room creation.
+  card_set_id: {
+    type: "select", label: "Card pool", default: "",
+    choices: [{ id: "", label: "Decks (choose below)" }],
+    choicesFrom: "card_sets",
+  },
+  decks: {
+    type: "checkboxes", label: "Card decks", choices: DECK_CHOICES, default: ["A"],
+    showIf: (o) => !o.card_set_id,
+  },
   draft_mode: {
     type: "select", label: "Hand cards", default: "none",
     choices: [
@@ -2185,7 +2198,14 @@ function Lobby({ game }) {
     localStorage.getItem(NAME_KEY) || sessionStorage.getItem("player_name") || "");
   const [code, setCode] = useState("");
   const [opts, setOpts] = useState(() => defaultOptions(CREATE_FORM));
+  const [cardSets, setCardSets] = useState([]);
   const inRoom = !!game.roomCode;
+
+  useEffect(() => {
+    let alive = true;
+    fetchCardSets("agricola").then((s) => { if (alive) setCardSets(s); });
+    return () => { alive = false; };
+  }, []);
 
   const S = {
     page: { minHeight: "100vh", background: "linear-gradient(160deg,#f7fee7,#d9f99d)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT },
@@ -2258,7 +2278,11 @@ function Lobby({ game }) {
         <input style={S.input} placeholder="Your name" value={name}
           onChange={(e) => { setName(e.target.value); localStorage.setItem(NAME_KEY, e.target.value); }} />
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
-          <CreateFormFields form={CREATE_FORM} value={opts} onChange={setOpts} />
+          <CreateFormFields form={CREATE_FORM} value={opts} onChange={setOpts}
+            dynamicChoices={{ card_sets: cardSetChoices(cardSets) }} />
+          <a href="?setbuilder" style={{ fontSize: 11, color: "#65a30d" }}>
+            Build a custom card set →
+          </a>
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
           <Btn onClick={() => name.trim() && game.createRoom(name.trim(), opts)}

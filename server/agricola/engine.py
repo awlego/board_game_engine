@@ -59,6 +59,33 @@ class AgricolaEngine(GameEngine):
     # default set once implemented.
     DEFAULT_DECKS = ("base", "custom")
 
+    @staticmethod
+    def validate_card_set(card_ids):
+        """GameServer save_card_set hook: check that every id in a
+        custom card set is an implemented occupation or minor
+        improvement (majors are the fixed supply board, never dealt or
+        drafted). Returns the ids unchanged; raises ValueError naming
+        the first few offenders so the set builder can show them."""
+        cards.load_decks()
+        compendium = cards.compendium()
+        bad = {}
+        for cid in card_ids:
+            spec = cards.CARDS.get(cid)
+            if spec is not None and spec["type"] in ("occupation", "minor"):
+                continue
+            db = compendium.get(cid)
+            if db and db["type"] == "major":
+                bad[cid] = "major improvements can't be in a card set"
+            elif spec is not None or db:
+                bad[cid] = "not implemented yet"
+            else:
+                bad[cid] = "unknown id"
+        if bad:
+            shown = [f"{cid} ({why})" for cid, why in list(bad.items())[:5]]
+            more = f" and {len(bad) - 5} more" if len(bad) > 5 else ""
+            raise ValueError("Invalid cards: " + ", ".join(shown) + more)
+        return card_ids
+
     def initial_state(self, player_ids, player_names, options=None):
         n = len(player_ids)
         options = options or {}
@@ -76,6 +103,13 @@ class AgricolaEngine(GameEngine):
         known = cards.implemented_decks()
         decks = [d for d in decks if d in known] or list(self.DEFAULT_DECKS)
 
+        # A custom card set (options["card_pool"], resolved from a
+        # saved set by GameServer.create_room) replaces deck selection
+        # entirely: the deal/draft pool is exactly those ids.
+        pool = options.get("card_pool")
+        if not (isinstance(pool, list) and pool):
+            pool = None
+
         # With a draft, the "hands" deal_hands returns are the draft
         # packets instead; players' hands start empty and grow as they
         # pick. deal_hands' auto-shrink (decks too small) clamps the
@@ -84,7 +118,8 @@ class AgricolaEngine(GameEngine):
         rng = random.Random(random.randrange(2 ** 31))
         occ_hands, minor_hands, hand_size, occ_draw, minor_draw = \
             cards.deal_hands(n, rng, decks,
-                             hand_size=draft_cfg["deal"] if draft_cfg else 7)
+                             hand_size=draft_cfg["deal"] if draft_cfg else 7,
+                             pool=pool)
         if draft_cfg:
             draft_cfg["deal"] = hand_size
             draft_cfg["keep"] = min(draft_cfg["keep"], hand_size)
@@ -126,6 +161,8 @@ class AgricolaEngine(GameEngine):
             "scores": None,
             "winners": None,
         }
+        if pool is not None and options.get("card_set_name"):
+            state["card_set"] = options["card_set_name"]
         if draft_cfg:
             if draft.start(state, draft_cfg, occ_hands, minor_hands, []):
                 self._finish_draft(state, [])

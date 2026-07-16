@@ -1474,14 +1474,24 @@ def implemented_decks():
     return sorted({c["deck"] for c in CARDS.values()})
 
 
-def deck_for(ctype, player_count, decks):
+def deck_for(ctype, player_count, decks, pool=None):
+    """Card ids of `ctype` playable at `player_count`, drawn from the
+    selected `decks` — or, when `pool` (an explicit card-id list, e.g.
+    a saved custom card set) is given, from exactly those ids instead
+    of whole decks."""
+    if pool is not None:
+        pool = set(pool)
+        return sorted(
+            cid for cid, c in CARDS.items()
+            if c["type"] == ctype and c["min_players"] <= player_count
+            and cid in pool)
     return sorted(
         cid for cid, c in CARDS.items()
         if c["type"] == ctype and c["min_players"] <= player_count
         and c["deck"] in decks)
 
 
-def deal_hands(player_count, rng, decks, hand_size=7):
+def deal_hands(player_count, rng, decks, hand_size=7, pool=None):
     """Returns (occ_hands, minor_hands, hand_size, occ_draw, minor_draw).
     If the selected decks cannot cover 7+7 per player, the hand size
     shrinks to fit. `occ_draw`/`minor_draw` are whatever's left of the
@@ -1490,9 +1500,10 @@ def deal_hands(player_count, rng, decks, hand_size=7):
     store these as the persistent `state["occupation_draw"]`/
     ["minor_draw"] piles that `draw_occupations`/`draw_minors` below
     draw from; together, every dealt hand plus its draw pile accounts
-    for the FULL implemented deck with no overlap or duplicates."""
-    occs = deck_for("occupation", player_count, decks)
-    minors = deck_for("minor", player_count, decks)
+    for the FULL implemented deck with no overlap or duplicates.
+    `pool` narrows the deal to an explicit card list (see deck_for)."""
+    occs = deck_for("occupation", player_count, decks, pool)
+    minors = deck_for("minor", player_count, decks, pool)
     rng.shuffle(occs)
     rng.shuffle(minors)
     size = min(hand_size, len(occs) // player_count,
