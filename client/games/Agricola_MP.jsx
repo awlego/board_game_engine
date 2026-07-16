@@ -877,7 +877,7 @@ function MajorsBoard({ available }) {
   const openSet = new Set(available);
   return (
     <div style={{
-      flex: 1, minWidth: 0,
+      width: "fit-content",
       background: "linear-gradient(165deg,#8e3b2c 0%,#7a2f22 60%,#6c2a1e 100%)",
       border: "1px solid #4e1d13", borderRadius: 8, padding: "5px 7px 7px",
       boxShadow: "inset 0 1px 0 rgba(255,220,190,0.25), 0 3px 6px rgba(30,20,10,0.45)",
@@ -888,7 +888,10 @@ function MajorsBoard({ available }) {
         color: "#f3d9a8", textTransform: "uppercase", textAlign: "center", marginBottom: 4,
         textShadow: "0 1px 2px rgba(0,0,0,0.6)",
       }}>Major Improvements</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 4, flex: 1 }}>
+      {/* Card scans (client/public/agricola/board/<improvement_id>.jpg)
+          at the action-space card size: contain-fit in the same
+          86x130 cell the round cards use, red board at the margins. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 86px)", gridAutoRows: "130px", gap: 6 }}>
         {MAJORS_LAYOUT.map((imp) => {
           const spec = IMPROVEMENTS[imp];
           const open = openSet.has(imp);
@@ -896,23 +899,9 @@ function MajorsBoard({ available }) {
             <div key={imp}
               title={`${spec.name} — ${spec.desc} · cost: ${Object.entries(spec.cost).map(([g, n]) => `${n} ${g}`).join(", ")}`}
               style={{
-                background: "linear-gradient(175deg,#f9efd6,#eeddb2)",
-                border: "1px solid #9c7c4c", borderRadius: 5, padding: "3px 4px",
-                boxShadow: "0 2px 3px rgba(30,20,10,0.5)",
-                display: "flex", flexDirection: "column", gap: 1, overflow: "hidden",
-              }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
-                <b style={{ fontFamily: BOARD_FONT, fontSize: 8.5, lineHeight: 1.15, color: "#43331a" }}>
-                  {spec.name}
-                </b>
-                <span style={{ fontSize: 8, fontWeight: 800, color: "#7f1d1d", flexShrink: 0 }}>⭐{spec.points}</span>
-              </div>
-              <div style={{ display: "flex", gap: 2, flexWrap: "wrap", marginTop: "auto" }}>
-                {Object.entries(spec.cost).map(([g, n]) => (
-                  <span key={g} style={{ fontSize: 8, fontWeight: 700, color: "#57431f" }}>{n}{GOODS[g].icon}</span>
-                ))}
-              </div>
-            </div>
+                background: `url("${import.meta.env.BASE_URL}agricola/board/${imp}.jpg") center / contain no-repeat`,
+                filter: "drop-shadow(0 2px 3px rgba(30,20,10,0.5))",
+              }} />
           ) : (
             <div key={imp} title={`${spec.name} — built`} style={{
               border: "1px dashed rgba(240,210,170,0.35)", borderRadius: 5,
