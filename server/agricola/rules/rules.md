@@ -31,7 +31,8 @@ implemented. Solo rules are supported (see below).
   and 2); 2 people (in the rooms); supply of 3 more people, 4 stables,
   15 fences.
 - Starting player is random; they get 2 food, everyone else 3 food.
-  (Solo: 0 food.)
+  (Solo: 0 food.) House rule (3-player games): the player going third
+  gets 4 food instead of 3.
 - The 14 action space cards are stacked by stage, shuffled within each stage:
   stage 1 (rounds 1–4): Sheep Market, Fencing, Grain Utilization, Major
   Improvement; stage 2 (5–7): Basic Wish for Children, House Redevelopment,

@@ -99,6 +99,10 @@ class AgricolaEngine(GameEngine):
                 p["resources"]["food"] = 0
             else:
                 p["resources"]["food"] = 2 if p["index"] == starting else 3
+        if n == 3:
+            # House rule: the player going third starts with 4 food
+            # (printed rule gives every non-starting player 3).
+            players[(starting + 2) % 3]["resources"]["food"] = 4
 
         decks = options.get("decks") or list(self.DEFAULT_DECKS)
         known = cards.implemented_decks()

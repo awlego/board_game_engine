@@ -123,6 +123,20 @@ def test_initial_setup(engine):
     assert s["players"][s["starting_player"]]["resources"]["food"] == 2
 
 
+def test_3p_third_player_food_house_rule(engine):
+    """House rule: in 3-player games the player going third starts
+    with 4 food (starting player 2, second player 3 as printed)."""
+    s = make_state(engine, 3)
+    starting = s["starting_player"]
+    by_turn_order = [s["players"][(starting + i) % 3]["resources"]["food"]
+                     for i in range(3)]
+    assert by_turn_order == [2, 3, 4]
+    # 2p and 4p keep the printed distribution.
+    foods_4p = sorted(p["resources"]["food"]
+                      for p in make_state(engine, 4)["players"])
+    assert foods_4p == [2, 3, 3, 3]
+
+
 def test_solo_setup(engine):
     s = make_state(engine, 1)
     assert s["players"][0]["resources"]["food"] == 0
