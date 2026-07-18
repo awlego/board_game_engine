@@ -1022,10 +1022,8 @@ function ActionBoard({ state, validSpaces, onPick, players }) {
   const looseSpaces = state.action_spaces.filter(
     (sp) => !(sp.id in POS) && !(sp.id in roundOf));
 
-  const roundsLeft = 14 - (state.revealed || []).length;
-  // The printed board is cut away below the shorter round bands; the
-  // exposed table hosts the (physically separate) majors supply board
-  // and the harvest reference, plus the face-down stage-card pile.
+  // The printed board is cut away below the shorter round bands,
+  // exposing the bare table.
   const tableStyle = {
     background: "linear-gradient(160deg,#63482c 0%,#523a22 55%,#46311c 100%)",
     borderRadius: 6, margin: -4, zIndex: 0,
@@ -1088,53 +1086,15 @@ function ActionBoard({ state, validSpaces, onPick, players }) {
                     round={round} gridPos={cell(pos)} />
                 : <RoundSlot key={`r${round}`} round={round} gridPos={cell(pos)} />;
             })}
-            {/* Stepped cut-away below round 14's column: the
-                face-down pile of coming stage cards rests there */}
+            {/* Stepped cut-away below round 14's column */}
             <div style={{
               ...tableStyle, gridColumn: `${7 + off}`, gridRow: "5 / span 8",
-              display: "flex", alignItems: "center", justifyContent: "center", padding: 6,
-            }}>
-              {roundsLeft > 0 && (
-                <div title={`${roundsLeft} action space card${roundsLeft === 1 ? "" : "s"} still face down`}
-                  style={{
-                    width: 62, height: 88, borderRadius: 6,
-                    background: "linear-gradient(160deg,#3e5e28,#2c4519 70%)",
-                    border: "1px solid #1e3010",
-                    boxShadow: "0 2px 0 #24361a, 0 4px 0 #1d2c14, 0 6px 8px rgba(0,0,0,0.4)",
-                    display: "flex", flexDirection: "column", alignItems: "center",
-                    justifyContent: "center", gap: 2,
-                    color: "rgba(240,245,215,0.85)",
-                  }}>
-                  <div style={{ fontFamily: BOARD_FONT, fontSize: 16, fontWeight: 700 }}>{roundsLeft}</div>
-                  <div style={{ fontSize: 7.5, textAlign: "center", lineHeight: 1.2 }}>cards<br />to come</div>
-                </div>
-              )}
-            </div>
-            {/* Stepped cut-away below the two-round stage columns: the
-                harvest reference rests on the table */}
+            }} />
+            {/* Stepped cut-away below the two-round stage columns */}
             <div style={{
               ...tableStyle, gridColumn: `${4 + off} / span 3`, gridRow: "9 / span 4",
-              display: "flex", padding: 8, alignItems: "stretch",
-            }}>
-              <div style={{
-                flex: 1,
-                background: "linear-gradient(170deg,#f4ebcf 0%,#e9d8ab 100%)",
-                border: "1px solid #a8895a", borderRadius: 7, padding: "7px 10px",
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.65), 0 2px 4px rgba(30,50,15,0.35)",
-                display: "flex", flexDirection: "column", gap: 3,
-                fontSize: 8.5, color: "#5b4a2c", lineHeight: 1.3,
-              }}>
-                <div style={{ fontFamily: BOARD_FONT, fontSize: 10.5, fontWeight: 700, color: "#43331a", textAlign: "center" }}>
-                  🌾 Harvest — after rounds 4 · 7 · 9 · 11 · 13 · 14
-                </div>
-                <div><b>1. Field</b> — reap 1 grain/vegetable from each sown field</div>
-                <div><b>2. Feed</b> — 2 food per person (1 for newborns)</div>
-                <div><b>3. Breed</b> — 2+ animals of a kind bear one more</div>
-                <div style={{ borderTop: "1px solid #c4ab77", marginTop: "auto", paddingTop: 3, textAlign: "center", fontStyle: "italic" }}>
-                  The game ends with the round-14 harvest.
-                </div>
-              </div>
-            </div>
+            }} />
+
           </div>
         </div>
       </div>
