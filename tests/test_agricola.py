@@ -337,6 +337,17 @@ def test_hedge_keeper_free_fences(engine):
     assert compute_pastures(p) == [[4]]
 
 
+def test_fence_costs_view_reflects_hedge_keeper(engine):
+    s = make_state(engine, 2)
+    first = s["current_player"]
+    view = engine.get_player_view(s, f"p_{first}")
+    assert view["fence_costs"][3] == {"wood": 4}
+    put_in_play(s, first, "occ_hedge_keeper")
+    view = engine.get_player_view(s, f"p_{first}")
+    assert view["fence_costs"][0] == {}            # 1 fence: free
+    assert view["fence_costs"][3] == {"wood": 1}   # 4 fences: 3 free
+
+
 def test_stonecutter_cost_mod(engine):
     s = make_state(engine, 2)
     first = s["current_player"]

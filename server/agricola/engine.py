@@ -217,6 +217,17 @@ class AgricolaEngine(GameEngine):
             view["occ_costs"] = {
                 sid: self._occupation_cost(state, me, sid)
                 for sid in ("lessons", "lessons_b")}
+            # Wood cost of building 1..N more fences with cost_mods
+            # applied (Hedge Keeper etc.), so the client can show real
+            # prices in the fence planner. Space-specific mods (ctx
+            # "space_id") aren't reflected here.
+            remaining = max(0, MAX_FENCES - len(me["fences"])
+                            + len(me.get("fence_tokens", {})))
+            view["fence_costs"] = [
+                cards.modified_cost(state, me, "fences", {"wood": n},
+                                    {"count": n,
+                                     "start_index": len(me["fences"])})
+                for n in range(1, remaining + 1)]
         view["valid_actions"] = self.get_valid_actions(state, player_id)
         return view
 

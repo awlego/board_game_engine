@@ -192,10 +192,48 @@ function pastureCapacity(cells, pasture) {
   return 2 * pasture.length * Math.pow(2, stables);
 }
 
+// ── Legal-placement helpers (mirror server/agricola rules) ──
+
+const MAX_STABLES = 4;
+
+// server state.plowable_cells: empty, unstabled, outside pastures,
+// adjacent to an existing field once you have any.
+function plowableCells(player) {
+  const pastures = new Set(computePastures(player.cells, player.fences).flat());
+  const fields = player.cells.map((c, i) => c.type === "field" ? i : -1).filter((i) => i >= 0);
+  return player.cells.map((c, i) => {
+    if (c.type !== "empty" || c.stable || pastures.has(i)) return -1;
+    if (fields.length && !fields.some((f) => neighbors(i).includes(f))) return -1;
+    return i;
+  }).filter((i) => i >= 0);
+}
+
+// server sub_actions.buildable_room_cells: empty, unstabled, outside
+// pastures, adjacent to a room (including rooms planned this batch).
+function buildableRoomCells(player, extra = []) {
+  const roomSet = new Set(player.cells.map((c, i) => c.type === "room" ? i : -1).filter((i) => i >= 0));
+  extra.forEach((i) => roomSet.add(i));
+  const pastures = new Set(computePastures(player.cells, player.fences).flat());
+  return player.cells.map((c, i) => {
+    if (roomSet.has(i) || c.type !== "empty" || c.stable || pastures.has(i)) return -1;
+    return neighbors(i).some((nb) => roomSet.has(nb)) ? i : -1;
+  }).filter((i) => i >= 0);
+}
+
+// server sub_actions.build_stables: any empty cell without one (pasture
+// cells allowed), up to 4 stables total.
+function stableCells(player, extra = []) {
+  const built = player.cells.filter((c) => c.stable).length;
+  if (built + extra.length >= MAX_STABLES) return [];
+  return player.cells.map((c, i) =>
+    c.type === "empty" && !c.stable && !extra.includes(i) ? i : -1
+  ).filter((i) => i >= 0);
+}
+
 function animalTotals(player) {
   const totals = { sheep: 0, boar: 0, cattle: 0 };
   for (const c of player.cells) if (c.animal) totals[c.animal.type] += c.animal.count;
-  if (player.pet) totals[player.pet] += 1;
+  for (const [t, n] of Object.entries(player.pets || {})) totals[t] += n;
   return totals;
 }
 
@@ -452,8 +490,10 @@ const HOUSE_STYLE = {
 };
 const FIELD_TILE = tileUrl("field");
 
-function FarmYard({ player, mode, selection, onCellClick, onEdgeClick, plannedFences, plannedCells }) {
+function FarmYard({ player, mode, selection, onCellClick, onEdgeClick, plannedFences, plannedCells, validCells }) {
   // mode: null | "cells" | "edges"; plannedFences: Set of edge keys being added
+  // validCells: Set of cell indexes — when given, only these are
+  // clickable and they get a highlight so legal targets are obvious
   const allEdges = useMemo(() => {
     const out = [];
     for (let r = 0; r <= ROWS; r++) for (let c = 0; c < COLS; c++) out.push(`h-${r}-${c}`);
@@ -470,7 +510,8 @@ function FarmYard({ player, mode, selection, onCellClick, onEdgeClick, plannedFe
     }}>
       {player.cells.map((cell, idx) => {
         const { x, y } = cellXY(idx);
-        const clickable = mode === "cells" && onCellClick;
+        const isValid = validCells?.has?.(idx);
+        const clickable = mode === "cells" && onCellClick && (!validCells || isValid);
         const isPlanned = plannedCells?.has?.(idx);
         let bg = "#bef264", bgImage = null, content = null;
         if (cell.type === "room") {
@@ -498,13 +539,19 @@ function FarmYard({ player, mode, selection, onCellClick, onEdgeClick, plannedFe
             onClick={clickable ? () => onCellClick(idx) : undefined}
             style={{
               position: "absolute", left: x, top: y, width: CELL, height: CELL,
-              background: isPlanned ? "#fde047" : bg, borderRadius: 4,
+              // Tile scans have square decorative borders — a rounded
+              // radius visibly clips their corners, so keep it minimal
+              // and stretch to the exact cell box.
+              background: isPlanned ? "#fde047" : bg, borderRadius: bgImage ? 1 : 4,
               ...(bgImage && !isPlanned ? {
-                backgroundImage: `url("${bgImage}")`, backgroundSize: "cover", backgroundPosition: "center",
+                backgroundImage: `url("${bgImage}")`, backgroundSize: "100% 100%",
               } : {}),
               display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
               cursor: clickable ? "pointer" : "default",
-              outline: selection?.has?.(idx) ? "3px solid #f59e0b" : "1px solid #86a83955",
+              outline: selection?.has?.(idx) ? "3px solid #f59e0b"
+                : isValid && !isPlanned ? "3px dashed #d97706"
+                : "1px solid #86a83955",
+              boxShadow: isValid && !isPlanned ? "0 0 8px #f59e0b88" : "none",
               transition: "background 0.15s",
             }}>
             {content}
@@ -537,6 +584,8 @@ function FarmYard({ player, mode, selection, onCellClick, onEdgeClick, plannedFe
 
 function PlayerPanel({ player, color, isYou, isCurrent, isStarting, state, children }) {
   const totals = animalTotals(player);
+  const [showCards, setShowCards] = useState(true);
+  const played = inPlay(player);
   return (
     <div style={{
       background: "#fefce8", border: `2px solid ${isCurrent ? color.bg : "#d6d3c1"}`,
@@ -565,25 +614,43 @@ function PlayerPanel({ player, color, isYou, isCurrent, isStarting, state, child
         {ANIMALS.map((a) => <GoodChip key={a} good={a} count={totals[a]} small />)}
       </div>
       {children}
-      {(player.improvements.length > 0 || inPlay(player).length > 0) && (
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+      {(player.improvements.length > 0 || played.length > 0) && (
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
           {player.improvements.map((imp) => (
             <span key={imp} title={IMPROVEMENTS[imp].desc} style={{
               fontSize: 10, background: "#fecaca55", border: "1px solid #f87171",
               borderRadius: 6, padding: "1px 6px", fontWeight: 700, color: "#7f1d1d",
             }}>{IMPROVEMENTS[imp].name}</span>
           ))}
-          {(player.occupations || []).map((inst) => (
+          {!showCards && (player.occupations || []).map((inst) => (
             <span key={inst.id} title={cardSpec(inst.id).text} style={{
               fontSize: 10, background: "#fef9c3", border: "1px solid #eab308",
               borderRadius: 6, padding: "1px 6px", fontWeight: 700, color: "#713f12",
             }}>{cardSpec(inst.id).name}</span>
           ))}
-          {(player.minors || []).map((inst) => (
+          {!showCards && (player.minors || []).map((inst) => (
             <span key={inst.id} title={cardSpec(inst.id).text + (inst.crops ? ` — planted: ${inst.crops.count} ${inst.crops.type}` : "")} style={{
               fontSize: 10, background: "#ffedd5", border: "1px solid #fb923c",
               borderRadius: 6, padding: "1px 6px", fontWeight: 700, color: "#7c2d12",
             }}>{cardSpec(inst.id).name}{inst.crops ? ` ${GOODS[inst.crops.type].icon}×${inst.crops.count}` : ""}</span>
+          ))}
+          {played.length > 0 && (
+            <Btn small variant="secondary" onClick={() => setShowCards(!showCards)}>
+              {showCards ? "Hide cards" : `Show cards (${played.length})`}
+            </Btn>
+          )}
+        </div>
+      )}
+      {showCards && played.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+          {played.map((inst) => (
+            <HandCard key={inst.id} cid={inst.id} extra={inst.crops ? (
+              <span title={`Planted: ${inst.crops.count} ${GOODS[inst.crops.type].label}`} style={{
+                position: "absolute", left: 4, bottom: 4, background: "#fffbeb",
+                border: "1px solid #d6d3c1", borderRadius: 6, padding: "0 5px",
+                fontSize: 12, fontWeight: 700,
+              }}>{GOODS[inst.crops.type].icon}×{inst.crops.count}</span>
+            ) : null} />
           ))}
         </div>
       )}
@@ -748,21 +815,36 @@ const goodsAnchor = (sp, art) =>
 const BOARD_FONT = "'Cinzel', Georgia, serif";
 const GRASS_NOISE = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E")`;
 
+// Subtle horizontal wood-grain streaks (feTurbulence stretched on x),
+// layered over each disc's color like a painted wooden piece.
+const WOOD_GRAIN = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='72'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.045 0.4' numOctaves='4'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.32 0'/%3E%3C/filter%3E%3Crect width='72' height='72' filter='url(%23w)'/%3E%3C/svg%3E")`;
+
+// Big wooden discs resting on the space like physical workers —
+// centered on the art, fanned when several share the space.
 function WorkerDiscs({ space, players }) {
   const idxs = [space.occupied_by, ...(space.extra_occupants || [])]
     .filter((i) => i !== null && i !== undefined);
   if (!idxs.length) return null;
+  const D = 36;
   return (
-    <span style={{ display: "inline-flex", gap: 2, flexShrink: 0 }}>
+    <div style={{
+      position: "absolute", left: "50%", top: "50%",
+      transform: "translate(-50%, -50%)", zIndex: 3,
+      display: "flex", pointerEvents: "none",
+    }}>
       {idxs.map((i, k) => (
-        <span key={k} title={players[i]?.name} style={{
-          width: 13, height: 13, borderRadius: "50%",
-          background: PLAYER_COLORS[i].bg,
-          border: "1.5px solid #fff",
-          boxShadow: "0 1px 2px rgba(0,0,0,0.5)",
-        }} />
+        <span key={k} style={{
+          width: D, height: D, borderRadius: "50%", flexShrink: 0,
+          marginLeft: k ? -D * 0.35 : 0,
+          background: `${WOOD_GRAIN}, radial-gradient(circle at 40% 32%, ${PLAYER_COLORS[i].light} 0%, ${PLAYER_COLORS[i].bg} 72%, rgba(0,0,0,0.4) 150%)`,
+          border: "2px solid rgba(30,20,10,0.45)",
+          boxShadow: "inset 0 2px 3px rgba(255,255,255,0.45), inset 0 -3px 5px rgba(0,0,0,0.35), 0 3px 5px rgba(0,0,0,0.5)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "#fff", fontWeight: 800, fontSize: D * 0.42,
+          textShadow: "0 1px 2px rgba(0,0,0,0.7)", userSelect: "none",
+        }}>{(players[i]?.name || "?")[0].toUpperCase()}</span>
       ))}
-    </span>
+    </div>
   );
 }
 
@@ -844,14 +926,12 @@ function BoardSpace({ sp, valid, onPick, players, round, gridPos }) {
           </div>
         );
       })()}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 2 }}>
-        <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-          {!art && Object.entries(sp.supply || {}).map(([good, count]) => (
-            <GoodChip key={good} good={good} count={count} small />
-          ))}
-        </div>
-        <WorkerDiscs space={sp} players={players} />
+      <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+        {!art && Object.entries(sp.supply || {}).map(([good, count]) => (
+          <GoodChip key={good} good={good} count={count} small />
+        ))}
       </div>
+      <WorkerDiscs space={sp} players={players} />
     </div>
   );
 }
@@ -1137,11 +1217,18 @@ function BakePlanner({ me, bake, setBake, grainBudget }) {
   );
 }
 
-function SowPlanner({ me, sow, setSow }) {
+function SowPlanner({ me, sow, setSow, extraCells }) {
   // sow: {targetKey: "grain"|"vegetable"}; targetKey = cell index (number
   // as string) or "card:<id>" for card fields (Beanfield etc.)
+  // extraCells: cells being plowed in this same action (Cultivation) —
+  // sowable even though they aren't fields yet.
   const targets = me.cells.map((c, i) => ({ key: String(i), label: `Field ${i}`, allowed: ["grain", "vegetable"], empty: c.type === "field" && !c.crops }))
     .filter((t) => t.empty);
+  for (const i of extraCells || []) {
+    if (!targets.some((t) => t.key === String(i))) {
+      targets.push({ key: String(i), label: `Field ${i} (new)`, allowed: ["grain", "vegetable"], empty: true });
+    }
+  }
   for (const inst of (me.minors || [])) {
     const spec = cardSpec(inst.id);
     if (spec.field && !inst.crops) {
@@ -1296,10 +1383,14 @@ function Planner({ space, state, me, actionInfo, submit, cancel, error }) {
     const extraBake = canBakeOnSpace(space);
     body = (
       <>
-        <div style={{ fontSize: 12, marginBottom: 6 }}>Click an empty space to plow{space === "cultivation" ? " (optional)" : ""}.</div>
+        <div style={{ fontSize: 12, marginBottom: 6 }}>Click a highlighted space to plow{space === "cultivation" ? " (optional)" : ""}.</div>
         <FarmYard {...farmProps} mode="cells" plannedCells={new Set(cells)}
+          validCells={new Set([...plowableCells(me), ...cells])}
           onCellClick={(i) => setCells(cells[0] === i ? [] : [i])} />
-        {space === "cultivation" && <div style={{ marginTop: 8 }}><SowPlanner me={me} sow={sow} setSow={setSow} /></div>}
+        {space === "cultivation" && <div style={{ marginTop: 8 }}>
+          <SowPlanner me={me} sow={sow} setSow={setSow}
+            extraCells={plowCell !== undefined ? [plowCell] : []} />
+        </div>}
         {extraBake && (
           <div style={{ marginTop: 8 }}>
             <div style={{ fontSize: 11, color: "#78716c" }}>Threshing Board: extra Bake Bread action</div>
@@ -1313,10 +1404,15 @@ function Planner({ space, state, me, actionInfo, submit, cancel, error }) {
       if (Object.keys(bakeDict).length) action.bake = bakeDict;
       disabled = plowCell === undefined;
     } else {
-      action = { kind: "place", space, plow: plowCell ?? null, sow: sowList };
+      // Drop sow targets that stopped being legal (e.g. the planned
+      // plow cell was deselected after a sow was planned on it).
+      const sowOk = sowList.filter((s) => s.card !== undefined
+        || s.cell === plowCell
+        || (me.cells[s.cell]?.type === "field" && !me.cells[s.cell]?.crops));
+      action = { kind: "place", space, plow: plowCell ?? null, sow: sowOk };
       if (plowCell === undefined) delete action.plow;
       if (Object.keys(bakeDict).length) action.bake = bakeDict;
-      disabled = plowCell === undefined && !sowList.length;
+      disabled = plowCell === undefined && !sowOk.length;
     }
   } else if (space === "lessons" || space === "lessons_b") {
     const cost = actionInfo?.occ_cost ?? state.occ_costs?.[space] ?? 1;
@@ -1364,6 +1460,13 @@ function Planner({ space, state, me, actionInfo, submit, cancel, error }) {
     disabled = chosenCard === "minor_shifting_cultivation" && cardParams?.cell === undefined;
   } else if (space === "farm_expansion") {
     title = "Farm Expansion: build rooms and/or stables";
+    const plannedRooms = cells.filter((c) => c.t === "room").map((c) => c.i);
+    const plannedAll = cells.map((c) => c.i);
+    const targets = mode === "rooms"
+      ? buildableRoomCells(me, plannedRooms)
+      : stableCells(me, cells.filter((c) => c.t === "stable").map((c) => c.i));
+    // planned cells stay clickable so they can be deselected
+    const valid = new Set([...targets.filter((i) => !plannedAll.includes(i)), ...plannedAll]);
     body = (
       <>
         <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
@@ -1378,7 +1481,7 @@ function Planner({ space, state, me, actionInfo, submit, cancel, error }) {
           Click cells — rooms: {cells.filter((c) => c.t === "room").map((c) => c.i).join(", ") || "none"};
           stables: {cells.filter((c) => c.t === "stable").map((c) => c.i).join(", ") || "none"}
         </div>
-        <FarmYard {...farmProps} mode="cells"
+        <FarmYard {...farmProps} mode="cells" validCells={valid}
           plannedCells={new Set(cells.map((c) => c.i))}
           onCellClick={(i) => {
             const existing = cells.find((c) => c.i === i);
@@ -1395,6 +1498,13 @@ function Planner({ space, state, me, actionInfo, submit, cancel, error }) {
     const isReno = space === "farm_redevelopment";
     title = isReno ? "Farm Redevelopment: renovate, then fences" : "Build fences (1 wood each)";
     const hasMiningHammer = inPlay(me).some((i) => i.id === "minor_mining_hammer");
+    // Server-computed cost of this many fences with card discounts
+    // (Hedge Keeper etc.) applied; fall back to face price.
+    const fenceCost = fences.size
+      ? (state.fence_costs?.[fences.size - 1] ?? { wood: fences.size })
+      : null;
+    const fenceCostLabel = !fenceCost ? "0🪵"
+      : Object.entries(fenceCost).map(([g, n]) => `${n}${GOODS[g].icon}`).join(" ") || "free";
     body = (
       <>
         {isReno && (
@@ -1404,7 +1514,7 @@ function Planner({ space, state, me, actionInfo, submit, cancel, error }) {
           </div>
         )}
         <div style={{ fontSize: 12, marginBottom: 6 }}>
-          Click edges to plan fences — {fences.size} planned ({fences.size}🪵).
+          Click edges to plan fences — {fences.size} planned ({fenceCostLabel}).
           Fences must fully enclose pastures.
         </div>
         <FarmYard {...farmProps} mode="edges" onEdgeClick={toggleEdge} />
@@ -1653,66 +1763,173 @@ function AccommodateDialog({ me, gained, submit, error }) {
     .map(({ i }) => i);
   const houseCap = houseCapacity(me);
   const pBonus = pastureBonus(me);
+  const cook = bestCook(me);
+  const caps = pastures.map((p) => pastureCapacity(me.cells, p) + pBonus);
 
   // Pool: current farm animals + gained.
   const pool = animalTotals(me);
   for (const [a, n] of Object.entries(gained || {})) pool[a] += n;
 
-  // Assignment state: pastures[i] → {type, count}; stables → {idx: type|null};
-  // pets → {animal: count} in the house.
-  const [pastureAssign, setPastureAssign] = useState(() =>
-    pastures.map((p) => {
-      // Start from current contents if they exist.
+  // Greedy auto-arrangement: keep what's already placed, top up
+  // same-type pastures, fill empty spots with the most numerous
+  // leftover type, cook (else discard) the overflow — so the common
+  // case is a single Confirm click.
+  const autoArrange = () => {
+    const remaining = { ...pool };
+    const pa = pastures.map((p, i) => {
       let type = null, count = 0;
-      for (const i of p) {
-        if (me.cells[i].animal) { type = me.cells[i].animal.type; count += me.cells[i].animal.count; }
+      for (const c of p) if (me.cells[c].animal) { type = me.cells[c].animal.type; count += me.cells[c].animal.count; }
+      if (!type) return { type: null, count: 0 };
+      const take = Math.min(count, caps[i], remaining[type]);
+      if (take <= 0) return { type: null, count: 0 };
+      remaining[type] -= take;
+      return { type, count: take };
+    });
+    const st = {};
+    for (const i of stables) {
+      const t = me.cells[i].animal?.type;
+      if (t && remaining[t] > 0) { st[i] = t; remaining[t] -= 1; } else st[i] = null;
+    }
+    const pets = {};
+    let petsTotal = 0;
+    for (const [t, n] of Object.entries(me.pets || {})) {
+      const keep = Math.min(n, remaining[t], houseCap - petsTotal);
+      if (keep > 0) { pets[t] = keep; petsTotal += keep; remaining[t] -= keep; }
+    }
+    pa.forEach((a, i) => {
+      if (a.type && remaining[a.type] > 0) {
+        const add = Math.min(caps[i] - a.count, remaining[a.type]);
+        a.count += add; remaining[a.type] -= add;
       }
-      return { type, count };
-    }));
-  const [stableAssign, setStableAssign] = useState(() => {
-    const out = {};
-    for (const i of stables) out[i] = me.cells[i].animal ? me.cells[i].animal.type : null;
-    return out;
-  });
-  const [pets, setPets] = useState({ ...(me.pets || {}) });
-  const [cookN, setCookN] = useState({});
-  const [discardN, setDiscardN] = useState({});
-  const cook = bestCook(me);
+    });
+    pa.forEach((a, i) => {
+      if (a.type) return;
+      const t = ANIMALS.filter((x) => remaining[x] > 0).sort((x, y) => remaining[y] - remaining[x])[0];
+      if (t) { a.type = t; a.count = Math.min(caps[i], remaining[t]); remaining[t] -= a.count; }
+    });
+    for (const i of stables) {
+      if (st[i]) continue;
+      const t = ANIMALS.filter((x) => remaining[x] > 0).sort((x, y) => remaining[y] - remaining[x])[0];
+      if (t) { st[i] = t; remaining[t] -= 1; }
+    }
+    for (const t of ANIMALS) {
+      const add = Math.min(remaining[t], houseCap - petsTotal);
+      if (add > 0) { pets[t] = (pets[t] || 0) + add; petsTotal += add; remaining[t] -= add; }
+    }
+    const ck = {}, dc = {};
+    for (const t of ANIMALS) {
+      if (remaining[t] > 0) { (cook ? ck : dc)[t] = remaining[t]; remaining[t] = 0; }
+    }
+    return { pa, st, pets, cook: ck, discard: dc };
+  };
+
+  const [assign, setAssign] = useState(autoArrange);
+  const [sel, setSel] = useState(null);
 
   const placed = { sheep: 0, boar: 0, cattle: 0 };
-  pastureAssign.forEach((a) => { if (a.type) placed[a.type] += a.count; });
-  Object.values(stableAssign).forEach((t) => { if (t) placed[t] += 1; });
-  for (const [a, n] of Object.entries(pets)) placed[a] += n;
-  const petsTotal = Object.values(pets).reduce((x, y) => x + y, 0);
-  const leftover = {};
-  for (const a of ANIMALS) {
-    leftover[a] = pool[a] - placed[a] - (cookN[a] || 0) - (discardN[a] || 0);
+  assign.pa.forEach((a) => { if (a.type) placed[a.type] += a.count; });
+  Object.values(assign.st).forEach((t) => { if (t) placed[t] += 1; });
+  for (const d of [assign.pets, assign.cook, assign.discard]) {
+    for (const [a, n] of Object.entries(d)) placed[a] += n;
   }
+  const leftover = {};
+  for (const a of ANIMALS) leftover[a] = pool[a] - placed[a];
+  const petsTotal = Object.values(assign.pets).reduce((x, y) => x + y, 0);
   const balanced = ANIMALS.every((a) => leftover[a] === 0) && petsTotal <= houseCap;
   const overPlaced = ANIMALS.some((a) => leftover[a] < 0) || petsTotal > houseCap;
 
-  const cycleType = (cur, allowNull = true) => {
-    const order = allowNull ? [null, ...ANIMALS] : ANIMALS;
-    return order[(order.indexOf(cur) + 1) % order.length];
+  // Which type a destination click pours: the selected chip, else the
+  // only type that still has unassigned animals.
+  const pourType = () => {
+    if (sel && leftover[sel] > 0) return sel;
+    const types = ANIMALS.filter((a) => leftover[a] > 0);
+    return types.length === 1 ? types[0] : null;
   };
+
+  const update = (fn) => setAssign((prev) => {
+    const next = {
+      pa: prev.pa.map((a) => ({ ...a })), st: { ...prev.st },
+      pets: { ...prev.pets }, cook: { ...prev.cook }, discard: { ...prev.discard },
+    };
+    fn(next);
+    return next;
+  });
+
+  const pourPasture = (i) => {
+    const t = pourType(); if (!t) return;
+    update((n) => {
+      const a = n.pa[i];
+      if (a.type !== t) { a.type = t; a.count = 0; }  // swap returns the old animals to the pool
+      a.count = Math.min(caps[i], a.count + leftover[t]);
+      if (a.count <= 0) { a.type = null; a.count = 0; }
+    });
+  };
+  const pourStable = (i) => {
+    const t = pourType(); if (!t) return;
+    update((n) => { n.st[i] = t; });
+  };
+  const pourDict = (key, cap) => {
+    const t = pourType(); if (!t) return;
+    update((n) => {
+      const room = cap !== undefined
+        ? cap - Object.values(n[key]).reduce((x, y) => x + y, 0) : leftover[t];
+      const add = Math.min(leftover[t], Math.max(0, room));
+      if (add > 0) n[key][t] = (n[key][t] || 0) + add;
+    });
+  };
+  const minusPasture = (i) => update((n) => {
+    const a = n.pa[i];
+    if (a.type && --a.count <= 0) { a.type = null; a.count = 0; }
+  });
+  const minusDict = (key) => update((n) => {
+    const d = n[key];
+    const t = (sel && d[sel]) ? sel
+      : Object.keys(d).sort((x, y) => d[y] - d[x])[0];
+    if (t && --d[t] <= 0) delete d[t];
+  });
 
   const doSubmit = () => {
     const placements = [];
     pastures.forEach((p, i) => {
-      const a = pastureAssign[i];
+      const a = assign.pa[i];
       if (a.type && a.count > 0) placements.push({ cell: p[0], type: a.type, count: a.count });
     });
-    for (const [idx, t] of Object.entries(stableAssign)) {
+    for (const [idx, t] of Object.entries(assign.st)) {
       if (t) placements.push({ cell: +idx, type: t, count: 1 });
     }
     const act = { kind: "accommodate", placements,
-                  pets: Object.fromEntries(Object.entries(pets).filter(([, v]) => v > 0)) };
-    const cookOut = Object.fromEntries(Object.entries(cookN).filter(([, v]) => v > 0));
-    const discOut = Object.fromEntries(Object.entries(discardN).filter(([, v]) => v > 0));
+                  pets: Object.fromEntries(Object.entries(assign.pets).filter(([, v]) => v > 0)) };
+    const cookOut = Object.fromEntries(Object.entries(assign.cook).filter(([, v]) => v > 0));
+    const discOut = Object.fromEntries(Object.entries(assign.discard).filter(([, v]) => v > 0));
     if (Object.keys(cookOut).length) act.cook = cookOut;
     if (Object.keys(discOut).length) act.discard = discOut;
     submit(act);
   };
+
+  // One clickable destination row: pour on click, − / ✕ on the right.
+  const DestRow = ({ label, sub, content, onPour, onMinus, onClear, hasContent }) => (
+    <div onClick={onPour} style={{
+      display: "flex", alignItems: "center", gap: 8, fontSize: 12,
+      marginBottom: 4, padding: "4px 6px", borderRadius: 8,
+      background: hasContent ? "#fef3c7" : "#f5f5f0",
+      border: "1px solid " + (hasContent ? "#f59e0b88" : "#d6d3c1"),
+      cursor: "pointer", userSelect: "none",
+    }}>
+      <span style={{ minWidth: 150 }}>{label}
+        {sub && <span style={{ color: "#78716c" }}> {sub}</span>}
+      </span>
+      <span style={{ flex: 1, fontWeight: 700 }}>{content}</span>
+      {hasContent && (
+        <>
+          <Btn small variant="secondary" onClick={(e) => { e.stopPropagation(); onMinus(); }}>−</Btn>
+          <Btn small variant="secondary" onClick={(e) => { e.stopPropagation(); onClear(); }}>✕</Btn>
+        </>
+      )}
+    </div>
+  );
+
+  const dictContent = (d) => Object.entries(d).filter(([, n]) => n > 0)
+    .map(([t, n]) => `${GOODS[t].icon}×${n}`).join(" ") || "—";
 
   return (
     <div style={{
@@ -1722,84 +1939,81 @@ function AccommodateDialog({ me, gained, submit, error }) {
       <div style={{ background: "#fffbeb", borderRadius: 12, padding: 18, width: 480, maxHeight: "88vh", overflowY: "auto", fontFamily: FONT }}>
         <h3 style={{ margin: "0 0 8px" }}>Accommodate your animals</h3>
         {error && <div style={{ color: "#dc2626", fontSize: 12, marginBottom: 6 }}>{error}</div>}
-        <div style={{ fontSize: 13, marginBottom: 8 }}>
+        <div style={{ fontSize: 13, marginBottom: 6 }}>
           {Object.entries(gained || {}).filter(([, n]) => n > 0).length > 0 && (
             <>Gained: {Object.entries(gained).map(([a, n]) => `${n} ${GOODS[a].icon}`).join(", ")}. </>
           )}
-          To place: {ANIMALS.filter((a) => pool[a] > 0).map((a) => `${pool[a]}${GOODS[a].icon}`).join(" ") || "none"}
+          Everything has been auto-placed — adjust below or just confirm.
+        </div>
+
+        {/* Unassigned pool: click a chip to pick it up, then click a
+            destination to pour as many as fit. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, minHeight: 30 }}>
+          <span style={{ fontSize: 12, fontWeight: 700 }}>Unassigned:</span>
+          {ANIMALS.filter((a) => pool[a] > 0).map((a) => (
+            <Btn key={a} small variant={sel === a ? "primary" : "secondary"}
+              onClick={() => setSel(sel === a ? null : a)}>
+              {GOODS[a].icon}×{Math.max(0, leftover[a])}
+            </Btn>
+          ))}
+          {ANIMALS.every((a) => pool[a] === 0) && <span style={{ fontSize: 12 }}>none</span>}
+          <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+            <Btn small variant="secondary" onClick={() => setAssign(autoArrange())}>Auto-place</Btn>
+            <Btn small variant="secondary" onClick={() => setAssign({
+              pa: pastures.map(() => ({ type: null, count: 0 })),
+              st: Object.fromEntries(stables.map((i) => [i, null])),
+              pets: {}, cook: {}, discard: {},
+            })}>Clear</Btn>
+          </span>
         </div>
 
         {pastures.map((p, i) => {
-          const cap = pastureCapacity(me.cells, p) + pBonus;
-          const a = pastureAssign[i];
+          const a = assign.pa[i];
           return (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, marginBottom: 4 }}>
-              <span style={{ minWidth: 170 }}>Pasture [{p.join(",")}] (cap {cap}):</span>
-              <Btn small variant="secondary" onClick={() => {
-                const next = [...pastureAssign];
-                next[i] = { type: cycleType(a.type), count: a.type ? a.count : 1 };
-                if (!next[i].type) next[i].count = 0;
-                setPastureAssign(next);
-              }}>{a.type ? GOODS[a.type].icon : "—"}</Btn>
-              {a.type && (
-                <Stepper value={a.count} min={1} max={cap} onChange={(v) => {
-                  const next = [...pastureAssign];
-                  next[i] = { ...a, count: v };
-                  setPastureAssign(next);
-                }} />
-              )}
-            </div>
+            <DestRow key={i} label={`Pasture [${p.join(",")}]`}
+              sub={`cap ${caps[i]}`} hasContent={!!a.type}
+              content={a.type ? `${GOODS[a.type].icon}×${a.count}` : "—"}
+              onPour={() => pourPasture(i)} onMinus={() => minusPasture(i)}
+              onClear={() => update((n) => { n.pa[i] = { type: null, count: 0 }; })} />
           );
         })}
         {stables.map((idx) => (
-          <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, marginBottom: 4 }}>
-            <span style={{ minWidth: 170 }}>Unfenced stable (cell {idx}, cap 1):</span>
-            <Btn small variant="secondary" onClick={() =>
-              setStableAssign({ ...stableAssign, [idx]: cycleType(stableAssign[idx]) })
-            }>{stableAssign[idx] ? GOODS[stableAssign[idx]].icon : "—"}</Btn>
-          </div>
+          <DestRow key={idx} label={`Unfenced stable (cell ${idx})`} sub="cap 1"
+            hasContent={!!assign.st[idx]}
+            content={assign.st[idx] ? `${GOODS[assign.st[idx]].icon}×1` : "—"}
+            onPour={() => pourStable(idx)}
+            onMinus={() => update((n) => { n.st[idx] = null; })}
+            onClear={() => update((n) => { n.st[idx] = null; })} />
         ))}
-        <div style={{ fontSize: 12, marginBottom: 8 }}>
-          <div style={{ fontWeight: 700 }}>House pets (capacity {houseCap}):</div>
-          {ANIMALS.map((a) => (
-            <div key={a} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ minWidth: 170 }}>{GOODS[a].icon} in the house</span>
-              <Stepper value={pets[a] || 0} min={0} max={houseCap}
-                onChange={(v) => setPets({ ...pets, [a]: v })} />
-            </div>
-          ))}
-        </div>
-
+        <DestRow label="House pets" sub={`cap ${houseCap}`}
+          hasContent={petsTotal > 0} content={dictContent(assign.pets)}
+          onPour={() => pourDict("pets", houseCap)}
+          onMinus={() => minusDict("pets")}
+          onClear={() => update((n) => { n.pets = {}; })} />
         {cook && (
-          <div style={{ marginBottom: 6 }}>
-            <div style={{ fontSize: 12, fontWeight: 700 }}>Cook (Fireplace/Hearth):</div>
-            {ANIMALS.filter((a) => pool[a] > 0).map((a) => (
-              <div key={a} style={{ display: "flex", gap: 8, fontSize: 12, alignItems: "center" }}>
-                <span style={{ minWidth: 170 }}>{GOODS[a].icon} → {cook[a]} food each</span>
-                <Stepper value={cookN[a] || 0} min={0} max={pool[a]}
-                  onChange={(v) => setCookN({ ...cookN, [a]: v })} />
-              </div>
-            ))}
-          </div>
+          <DestRow label="Cook"
+            sub={ANIMALS.filter((a) => pool[a] > 0).map((a) => `${GOODS[a].icon}→${cook[a]}🍲`).join(" ")}
+            hasContent={Object.values(assign.cook).some((n) => n > 0)}
+            content={dictContent(assign.cook)}
+            onPour={() => pourDict("cook")}
+            onMinus={() => minusDict("cook")}
+            onClear={() => update((n) => { n.cook = {}; })} />
         )}
-        <div style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 12, fontWeight: 700 }}>Return to supply (discard):</div>
-          {ANIMALS.filter((a) => pool[a] > 0).map((a) => (
-            <div key={a} style={{ display: "flex", gap: 8, fontSize: 12, alignItems: "center" }}>
-              <span style={{ minWidth: 170 }}>{GOODS[a].icon} discard</span>
-              <Stepper value={discardN[a] || 0} min={0} max={pool[a]}
-                onChange={(v) => setDiscardN({ ...discardN, [a]: v })} />
-            </div>
-          ))}
-        </div>
+        <DestRow label="Return to supply" hasContent={Object.values(assign.discard).some((n) => n > 0)}
+          content={dictContent(assign.discard)}
+          onPour={() => pourDict("discard")}
+          onMinus={() => minusDict("discard")}
+          onClear={() => update((n) => { n.discard = {}; })} />
 
         {!balanced && (
-          <div style={{ color: overPlaced ? "#dc2626" : "#b45309", fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+          <div style={{ color: overPlaced ? "#dc2626" : "#b45309", fontSize: 12, fontWeight: 700, margin: "6px 0" }}>
             {overPlaced ? "Too many animals assigned." :
-              `Unassigned: ${ANIMALS.filter((a) => leftover[a] > 0).map((a) => `${leftover[a]}${GOODS[a].icon}`).join(" ")} — place, cook, or discard them.`}
+              `Unassigned: ${ANIMALS.filter((a) => leftover[a] > 0).map((a) => `${leftover[a]}${GOODS[a].icon}`).join(" ")} — click them, then a destination.`}
           </div>
         )}
-        <Btn onClick={doSubmit} disabled={!balanced}>Confirm</Btn>
+        <div style={{ marginTop: 8 }}>
+          <Btn onClick={doSubmit} disabled={!balanced}>Confirm</Btn>
+        </div>
       </div>
     </div>
   );
@@ -2109,25 +2323,42 @@ function GameBoard({ game }) {
         <AccommodateDialog me={me} gained={prompt.gained} error={error}
           submit={submitAction} />
       )}
-      {choiceMine && me && (
-        <div style={{
-          position: "fixed", inset: 0, background: "#00000066", zIndex: 50,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          <div style={{ background: "#fffbeb", borderRadius: 12, padding: 18, width: 400, fontFamily: FONT }}>
-            <h3 style={{ margin: "0 0 8px" }}>{cardSpec(prompt.card).name}</h3>
-            {error && <div style={{ color: "#dc2626", fontSize: 12, marginBottom: 6 }}>{error}</div>}
-            <div style={{ fontSize: 13, marginBottom: 10 }}>{prompt.prompt}</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {prompt.options.map((opt, i) => (
-                <Btn key={i} onClick={() => submitAction({ kind: "choice", index: i })}>
-                  {opt}
-                </Btn>
-              ))}
+      {choiceMine && me && (() => {
+        // "Cell N" options (Stablehand's free stable etc.) become a
+        // clickable farmyard; anything else stays a button.
+        const cellOpts = new Map();
+        const otherOpts = [];
+        prompt.options.forEach((opt, i) => {
+          const m = /^Cell (\d+)$/.exec(opt);
+          if (m) cellOpts.set(+m[1], i); else otherOpts.push([opt, i]);
+        });
+        return (
+          <div style={{
+            position: "fixed", inset: 0, background: "#00000066", zIndex: 50,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <div style={{ background: "#fffbeb", borderRadius: 12, padding: 18, width: 420, fontFamily: FONT }}>
+              <h3 style={{ margin: "0 0 8px" }}>{cardSpec(prompt.card).name}</h3>
+              {error && <div style={{ color: "#dc2626", fontSize: 12, marginBottom: 6 }}>{error}</div>}
+              <div style={{ fontSize: 13, marginBottom: 10 }}>{prompt.prompt}</div>
+              {cellOpts.size > 0 && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 12, marginBottom: 6 }}>Click a highlighted space:</div>
+                  <FarmYard player={me} mode="cells" validCells={new Set(cellOpts.keys())}
+                    onCellClick={(i) => submitAction({ kind: "choice", index: cellOpts.get(i) })} />
+                </div>
+              )}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {otherOpts.map(([opt, i]) => (
+                  <Btn key={i} onClick={() => submitAction({ kind: "choice", index: i })}>
+                    {opt}
+                  </Btn>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
       {feedAction && me && !pendingMine && !choiceMine && (
         <FeedDialog me={me} state={state} foodNeeded={feedAction.food_needed}
           error={error} submit={submitAction} />
