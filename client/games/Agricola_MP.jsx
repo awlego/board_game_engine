@@ -955,33 +955,74 @@ function RoundSlot({ round, gridPos }) {
 }
 
 // The red supply board holding the major improvements -- physically a
-// separate board, rendered resting on the table in the main board's
-// cut-away corner.
+// separate board, resting on the exposed table in the main board's
+// cut-away corner. Collapsed (the default) it shows just the top
+// strip of each card in the official 5x2 arrangement; clicking it
+// expands the full-size board over the corner.
+const MAJORS_CHROME = {
+  background: "linear-gradient(165deg,#8e3b2c 0%,#7a2f22 60%,#6c2a1e 100%)",
+  border: "1px solid #4e1d13", borderRadius: 8,
+  boxShadow: "inset 0 1px 0 rgba(255,220,190,0.25), 0 3px 6px rgba(30,20,10,0.45)",
+  display: "flex", flexDirection: "column", cursor: "pointer",
+};
 function MajorsBoard({ available }) {
+  const [expanded, setExpanded] = useState(false);
   const openSet = new Set(available);
-  return (
+  const openTitle = (spec) =>
+    `${spec.name} — ${spec.desc} · cost: ${Object.entries(spec.cost).map(([g, n]) => `${n} ${g}`).join(", ")}`;
+  const header = (
     <div style={{
-      width: "fit-content",
-      background: "linear-gradient(165deg,#8e3b2c 0%,#7a2f22 60%,#6c2a1e 100%)",
-      border: "1px solid #4e1d13", borderRadius: 8, padding: "5px 7px 7px",
-      boxShadow: "inset 0 1px 0 rgba(255,220,190,0.25), 0 3px 6px rgba(30,20,10,0.45)",
-      display: "flex", flexDirection: "column",
-    }}>
-      <div style={{
-        fontFamily: BOARD_FONT, fontSize: 10, fontWeight: 700, letterSpacing: 1.5,
-        color: "#f3d9a8", textTransform: "uppercase", textAlign: "center", marginBottom: 4,
-        textShadow: "0 1px 2px rgba(0,0,0,0.6)",
-      }}>Major Improvements</div>
+      fontFamily: BOARD_FONT, fontSize: expanded ? 10 : 8.5, fontWeight: 700,
+      letterSpacing: expanded ? 1.5 : 1, marginBottom: expanded ? 4 : 2,
+      color: "#f3d9a8", textTransform: "uppercase", textAlign: "center",
+      textShadow: "0 1px 2px rgba(0,0,0,0.6)",
+    }}>Major Improvements <span style={{ opacity: 0.7 }}>{expanded ? "⤡" : "⤢"}</span></div>
+  );
+  if (!expanded) return (
+    <div onClick={() => setExpanded(true)}
+      title="Major improvements — click to expand"
+      style={{ ...MAJORS_CHROME, width: "100%", height: "100%", boxSizing: "border-box", padding: "3px 5px 5px" }}>
+      {header}
+      {/* Top strip of each card scan (name banner), cropped by the row */}
+      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gridTemplateRows: "1fr 1fr", gap: 4 }}>
+        {MAJORS_LAYOUT.map((imp) => {
+          const spec = IMPROVEMENTS[imp];
+          return openSet.has(imp) ? (
+            <div key={imp} title={openTitle(spec)} style={{
+              background: `url("${import.meta.env.BASE_URL}agricola/board/${imp}.jpg") top center / 100% auto no-repeat rgba(40,15,8,0.25)`,
+              borderRadius: 3,
+              boxShadow: "inset 0 -8px 8px -5px rgba(40,15,8,0.7), 0 1px 2px rgba(30,20,10,0.4)",
+            }} />
+          ) : (
+            <div key={imp} title={`${spec.name} — built`} style={{
+              border: "1px dashed rgba(240,210,170,0.35)", borderRadius: 3,
+              background: "rgba(40,15,8,0.25)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 6.5, color: "rgba(240,215,180,0.55)", textAlign: "center", padding: 1,
+              fontStyle: "italic", lineHeight: 1.15,
+            }}>{spec.name}</div>
+          );
+        })}
+      </div>
+    </div>
+  );
+  return (
+    <div onClick={() => setExpanded(false)}
+      title="Click to collapse"
+      style={{
+        ...MAJORS_CHROME, padding: "5px 7px 7px", width: "fit-content",
+        position: "absolute", right: 0, bottom: 0, zIndex: 6,
+      }}>
+      {header}
       {/* Card scans (client/public/agricola/board/<improvement_id>.jpg)
           at the action-space card size: contain-fit in the same
           86x130 cell the round cards use, red board at the margins. */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 86px)", gridAutoRows: "130px", gap: 6 }}>
         {MAJORS_LAYOUT.map((imp) => {
           const spec = IMPROVEMENTS[imp];
-          const open = openSet.has(imp);
-          return open ? (
+          return openSet.has(imp) ? (
             <div key={imp}
-              title={`${spec.name} — ${spec.desc} · cost: ${Object.entries(spec.cost).map(([g, n]) => `${n} ${g}`).join(", ")}`}
+              title={openTitle(spec)}
               style={{
                 background: `url("${import.meta.env.BASE_URL}agricola/board/${imp}.jpg") center / contain no-repeat`,
                 filter: "drop-shadow(0 2px 3px rgba(30,20,10,0.5))",
@@ -1094,14 +1135,17 @@ function ActionBoard({ state, validSpaces, onPick, players }) {
             <div style={{
               ...tableStyle, gridColumn: `${4 + off} / span 3`, gridRow: "9 / span 4",
             }} />
-
+            {/* The majors supply board -- physically separate, resting
+                on the exposed table in the cut-away corner; expands
+                over the board from here */}
+            <div style={{
+              gridColumn: `${4 + off} / span 4`, gridRow: "9 / span 4",
+              position: "relative", zIndex: 1,
+            }}>
+              <MajorsBoard available={state.available_improvements || []} />
+            </div>
           </div>
         </div>
-      </div>
-      {/* The majors supply board -- physically separate, laid beside
-          the game board */}
-      <div style={{ display: "flex", marginTop: 8 }}>
-        <MajorsBoard available={state.available_improvements || []} />
       </div>
       {/* Card-created action spaces (Chapel, Forest Inn, ...) */}
       {looseSpaces.length > 0 && (
