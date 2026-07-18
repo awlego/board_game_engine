@@ -32,6 +32,15 @@ class GameEngine(ABC):
     # Subclasses can override to restrict player counts.
     player_count_range: tuple[int, int] = (2, 5)
 
+    # Games that support server-driven bot seats override bot_turn with
+    # a method (state, player_id, rng) -> ActionResult that picks AND
+    # applies one action for that player (like apply_action, except the
+    # engine chooses the action). None means no bot support: the server
+    # refuses to add bots to the room. bot_name is the display name
+    # given to added bot players.
+    bot_turn = None
+    bot_name: str = "Random Bot"
+
     @abstractmethod
     def initial_state(self, player_ids: list[str], player_names: list[str]) -> dict:
         """

@@ -125,6 +125,19 @@ Response: `stats` —
 `enabled` is false (all lists empty) when the server runs without a
 data dir.
 
+### `add_bot` — Host adds a bot seat to the lobby (before game starts)
+```json
+{"type": "add_bot"}
+```
+Adds a server-driven bot player ("Random Bot") to the room. Only games
+whose engine implements the `bot_turn` hook accept bots (currently
+Agricola; its policy is a random legal action each turn). The server
+plays every pending bot turn automatically after the game starts and
+after each human action. Bots appear in `lobby_update` player lists
+with `"is_bot": true`, can't be authed as, and count toward the
+player limit. Remove one pre-start with `kick`. Errors (not host, room
+full, game started, unsupported game) come back as `error`.
+
 ### `kick` — Host kicks a player from lobby (before game starts)
 ```json
 {"type": "kick", "player_id": "p_def456"}

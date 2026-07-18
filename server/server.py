@@ -8,6 +8,7 @@ commands to pluggable game engines. Knows nothing about specific game rules.
 import asyncio
 import json
 import os
+import random
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -39,6 +40,9 @@ class Player:
     username: str = None
     websocket: object = None
     connected: bool = False
+    # Server-driven bot seat (see GameServer._run_bots). Bots have no
+    # websocket and their token is never registered for auth.
+    is_bot: bool = False
 
 
 @dataclass
@@ -71,6 +75,7 @@ class Room:
             {
                 "player_id": p.player_id, "name": p.name,
                 "connected": p.connected, "is_host": p.player_id == self.host_id,
+                "is_bot": p.is_bot,
             }
             for p in self.players.values()
         ]
@@ -89,6 +94,7 @@ class GameServer:
         self.data_dir = data_dir                        # room snapshot dir; None = in-memory only
         self.card_sets = card_sets.CardSetStore(card_set_dir)
         self.stats = stats.StatsStore(stats_db) if stats_db else None
+        self._bot_rng = random.Random()
 
     def register_engine(self, game_name, engine_class):
         """Register a game engine class by name."""
@@ -178,6 +184,36 @@ class GameServer:
         self._save(room)
 
         return player_id, token
+
+    def add_bot(self, code, requester_id):
+        """Host adds a server-driven bot seat to the lobby (pre-start)."""
+        room = self.rooms.get(code)
+        if room is None:
+            raise ValueError("Room not found")
+        if room.host_id != requester_id:
+            raise ValueError("Only the host can add bots")
+        if room.started:
+            raise ValueError("Game already in progress")
+        if room.engine.bot_turn is None:
+            raise ValueError(f"{room.game_name} does not support bots")
+        max_players = room.engine.player_count_range[1]
+        if len(room.players) >= max_players:
+            raise ValueError("Room is full")
+
+        base = room.engine.bot_name
+        names = {p.name for p in room.players.values()}
+        name, n = base, 2
+        while name in names:
+            name, n = f"{base} {n}", n + 1
+
+        player_id = f"p_{generate_token()[:8]}"
+        # The token satisfies the dataclass but is deliberately NOT
+        # registered in self.tokens — nobody can auth as the bot.
+        bot = Player(player_id=player_id, name=name, token=generate_token(),
+                     is_bot=True, connected=True)
+        room.players[player_id] = bot
+        self._save(room)
+        return bot
 
     def spectate_room(self, code, name):
         room = self.rooms.get(code)
@@ -339,6 +375,9 @@ class GameServer:
 
                 if msg_type == "start":
                     await self._handle_start(room, player_id)
+
+                elif msg_type == "add_bot":
+                    await self._handle_add_bot(room, player_id)
 
                 elif msg_type == "action":
                     await self._handle_action(room, player_id, msg.get("action", {}))
@@ -599,6 +638,20 @@ class GameServer:
         """Reconnect with a token — delegates to auth."""
         return await self._handle_auth(websocket, msg, username)
 
+    async def _handle_add_bot(self, room, player_id):
+        try:
+            bot = self.add_bot(room.code, player_id)
+            await self._broadcast(room, {
+                "type": "lobby_update",
+                "players": room.player_list,
+                "spectator_count": len([s for s in room.spectators.values() if s.connected]),
+                "reason": f"{bot.name} joined",
+            })
+        except ValueError as e:
+            player = room.players.get(player_id)
+            if player and player.websocket:
+                await self._send(player.websocket, {"type": "error", "message": str(e)})
+
     async def _handle_start(self, room, player_id):
         try:
             self.start_game(room.code, player_id)
@@ -608,6 +661,7 @@ class GameServer:
             })
             # Send each player their personalized view
             await self._broadcast_game_state(room)
+            await self._run_bots(room)
         except ValueError as e:
             player = room.players.get(player_id)
             if player and player.websocket:
@@ -638,11 +692,63 @@ class GameServer:
             if result.game_over:
                 self._record_finish(room)
                 await self._broadcast(room, {"type": "game_over"})
+            else:
+                await self._run_bots(room)
 
         except ValueError as e:
             player = room.players.get(player_id)
             if player and player.websocket:
                 await self._send(player.websocket, {"type": "action_error", "message": str(e)})
+
+    # Backstop against a bot policy that stops making progress: far
+    # above anything a real game needs between two human actions.
+    BOT_STEP_LIMIT = 500
+
+    async def _run_bots(self, room):
+        """Let bot seats act until the game waits on a human (or ends).
+
+        Called after every state change; a no-op for rooms without bots
+        or games whose engine has no bot_turn hook."""
+        if not room.started or not room.game_state:
+            return
+        engine = room.engine
+        if engine.bot_turn is None:
+            return
+        for _ in range(self.BOT_STEP_LIMIT):
+            waiting = engine.get_waiting_for(room.game_state)
+            bot = next((room.players[pid] for pid in waiting
+                        if pid in room.players and room.players[pid].is_bot),
+                       None)
+            if bot is None:
+                return
+            try:
+                result = engine.bot_turn(room.game_state, bot.player_id,
+                                         self._bot_rng)
+            except Exception as e:
+                # Never let a broken bot kill the connection handler —
+                # tell the room and hand control back to the humans.
+                print(f"bot: {bot.name} in {room.code} failed: {e}")
+                await self._broadcast(room, {
+                    "type": "game_log",
+                    "messages": [f"⚠ {bot.name} is stuck and has stopped acting: {e}"],
+                })
+                return
+            room.game_state = result.new_state
+            self._save(room)
+            if result.log:
+                await self._broadcast(room, {"type": "game_log", "messages": result.log})
+            await self._broadcast_game_state(room)
+            if result.game_over:
+                self._record_finish(room)
+                await self._broadcast(room, {"type": "game_over"})
+                return
+        print(f"bot: step limit hit in room {room.code}")
+
+    async def resume_bots(self):
+        """Run pending bot turns for restored rooms (a restart can land
+        mid-bot-turn: the room snapshot is saved before bots act)."""
+        for room in list(self.rooms.values()):
+            await self._run_bots(room)
 
     def _record_finish(self, room):
         """Store a finished game's outcome. Strictly downstream of
@@ -833,6 +939,7 @@ async def run_server(host="0.0.0.0", port=8765, data_dir="data/rooms"):
     server.register_engine("agricola", AgricolaEngine)
 
     server.load_persisted_rooms()
+    await server.resume_bots()
 
     print(f"Game server starting on ws://{host}:{port}")
     print(f"Registered games: {list(server.engines.keys())}")

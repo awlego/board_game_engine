@@ -339,6 +339,8 @@ function useGameConnection() {
 
   const startGame = () => send({ type: "start" });
   const submitAction = (action) => send({ type: "action", action });
+  const addBot = () => send({ type: "add_bot" });
+  const kickPlayer = (pid) => send({ type: "kick", player_id: pid });
 
   return {
     connected, roomCode, playerId, isHost, lobby,
@@ -346,6 +348,7 @@ function useGameConnection() {
     gameLogs, gameOver, error, pendingIntent,
     cancelPending: () => setPendingIntent(null),
     createRoom, joinRoom, spectateRoom, startGame, submitAction,
+    addBot, kickPlayer,
   };
 }
 
@@ -2251,14 +2254,28 @@ function Lobby({ game }) {
             {game.lobby.map((p, i) => (
               <div key={p.player_id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 14 }}>
                 <span style={{ width: 12, height: 12, borderRadius: "50%", background: PLAYER_COLORS[i % 4].bg }} />
-                {p.name} {p.is_host && "👑"}
+                {p.name} {p.is_host && "👑"}{p.is_bot && "🤖"}
+                {game.isHost && p.is_bot && (
+                  <a href="#" title="Remove bot"
+                    style={{ marginLeft: "auto", color: "#a8a29e", textDecoration: "none", fontSize: 13 }}
+                    onClick={(e) => { e.preventDefault(); game.kickPlayer(p.player_id); }}>
+                    ✕
+                  </a>
+                )}
               </div>
             ))}
           </div>
           {game.isHost ? (
-            <Btn onClick={game.startGame} disabled={game.lobby.length < 1 || game.lobby.length > 4}>
-              Start game ({game.lobby.length} player{game.lobby.length === 1 ? " — solo" : "s"})
-            </Btn>
+            <>
+              <div style={{ marginBottom: 10 }}>
+                <Btn variant="secondary" onClick={game.addBot} disabled={game.lobby.length >= 4}>
+                  + Add Random Bot
+                </Btn>
+              </div>
+              <Btn onClick={game.startGame} disabled={game.lobby.length < 1 || game.lobby.length > 4}>
+                Start game ({game.lobby.length} player{game.lobby.length === 1 ? " — solo" : "s"})
+              </Btn>
+            </>
           ) : (
             <div style={{ fontSize: 13, color: "#57534e" }}>Waiting for host to start…</div>
           )}

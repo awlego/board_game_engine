@@ -42,7 +42,7 @@ def save_room(data_dir, room):
         "stats_game_id": room.stats_game_id,
         "players": [
             {"player_id": p.player_id, "name": p.name, "token": p.token,
-             "username": p.username}
+             "username": p.username, "is_bot": p.is_bot}
             for p in room.players.values()
         ],
         "spectators": [
@@ -116,11 +116,16 @@ def load_rooms(data_dir, engines, room_factory, player_factory, spectator_factor
             stats_game_id=snap.get("stats_game_id"),
         )
         for p in snap["players"]:
-            room.players[p["player_id"]] = player_factory(
+            player = player_factory(
                 player_id=p["player_id"], name=p["name"], token=p["token"],
-                username=p.get("username"),
+                username=p.get("username"), is_bot=p.get("is_bot", False),
             )
-            tokens[p["token"]] = (room.code, p["player_id"])
+            room.players[p["player_id"]] = player
+            if player.is_bot:
+                # Bots are always "present" and can never be authed as.
+                player.connected = True
+            else:
+                tokens[p["token"]] = (room.code, p["player_id"])
         for s in snap["spectators"]:
             room.spectators[s["token"]] = spectator_factory(
                 token=s["token"], name=s["name"],

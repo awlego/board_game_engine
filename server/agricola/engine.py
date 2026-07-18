@@ -30,6 +30,7 @@ from server.agricola.state import (
     validate_animal_placement, animal_counts,
     plowable_cells,
 )
+from server.agricola import bot
 from server.agricola import cards
 from server.agricola import draft
 from server.agricola import sub_actions
@@ -270,6 +271,10 @@ class AgricolaEngine(GameEngine):
                 cards.card_actions(state, p)
 
         return []
+
+    def bot_turn(self, state, player_id, rng):
+        """Random Bot: pick and apply one random legal action (bot.py)."""
+        return bot.bot_turn(self, state, player_id, rng)
 
     def apply_action(self, state, player_id, action):
         state = deepcopy(state)
