@@ -442,13 +442,18 @@ function GameSelector({ onSelect, onStats }) {
 
 // ─── Main App ──────────────────────────────────────────
 function MainApp() {
-  const [selectedGame, setSelectedGame] = useState(null);
-  const [gameMode, setGameMode] = useState(null); // null | "browse" | "playing" | "spectating"
+  // A page refresh mid-game lands back here with the seat token still in
+  // sessionStorage; restore straight into the game so its hook reconnects.
+  const restoredGame = sessionStorage.getItem("game_token")
+    ? sessionStorage.getItem("active_game") : null;
+  const [selectedGame, setSelectedGame] = useState(restoredGame);
+  const [gameMode, setGameMode] = useState(restoredGame ? "playing" : null); // null | "browse" | "playing" | "spectating"
   const [joinInfo, setJoinInfo] = useState(null); // { roomCode, playerName }
   const [showStats, setShowStats] = useState(false);
 
   const handleBack = useCallback(() => {
     sessionStorage.removeItem("game_token");
+    sessionStorage.removeItem("active_game");
     sessionStorage.removeItem("pending_action");
     sessionStorage.removeItem("pending_spectate");
     setSelectedGame(null);
@@ -484,6 +489,7 @@ function MainApp() {
             ...(options ? { options } : {}),
           }));
           sessionStorage.removeItem("game_token");
+          sessionStorage.setItem("active_game", game.id);
           setJoinInfo({ roomCode, playerName });
           setGameMode("playing");
         }}
@@ -491,6 +497,7 @@ function MainApp() {
           sessionStorage.setItem("pending_spectate", JSON.stringify({
             gameId: game.id, roomCode,
           }));
+          sessionStorage.setItem("active_game", game.id);
           setGameMode("spectating");
         }}
         onBack={handleBack}
