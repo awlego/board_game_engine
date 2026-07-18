@@ -284,8 +284,134 @@ function RoomBrowser({ gameId, gameName, createForm, tools, onJoin, onSpectate, 
 }
 
 
+// ─── Stats ─────────────────────────────────────────────
+const gameDisplayName = (id) => (GAMES.find(g => g.id === id) || { name: id }).name;
+const pct = (wins, plays) => plays ? `${Math.round((wins / plays) * 100)}%` : "—";
+
+const T = {
+  table: { width: "100%", borderCollapse: "collapse", fontSize: 13, marginBottom: 28 },
+  th: { textAlign: "left", color: "#888", fontWeight: 400, fontSize: 11, letterSpacing: 1, textTransform: "uppercase", padding: "6px 10px", borderBottom: "1px solid #30363d" },
+  td: { padding: "7px 10px", borderBottom: "1px solid rgba(48,54,61,0.5)", color: "#ccc" },
+  num: { textAlign: "right" },
+};
+
+function StatsPage({ onBack }) {
+  const [stats, setStats] = useState(null);   // null = loading
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const ws = new WebSocket(WS_URL);
+    ws.onopen = () => { ws.send(JSON.stringify({ type: "stats" })); };
+    ws.onmessage = (evt) => {
+      const msg = JSON.parse(evt.data);
+      if (msg.type === "stats") setStats(msg);
+      else setError(true);
+      ws.close();
+    };
+    ws.onerror = () => { setError(true); ws.close(); };
+    return () => ws.close();
+  }, []);
+
+  const empty = stats && !stats.games.length;
+  return (
+    <div style={S.app}>
+      <div style={S.overlay} />
+      <div style={S.content}>
+        <div style={S.header}>
+          <h1 style={{ ...S.title, fontSize: 36, marginBottom: 8 }}>Hall of Records</h1>
+          <p style={S.subtitle}>Every game played, every victory claimed</p>
+        </div>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 24 }}>
+          <button style={{ ...S.btn, color: "#888" }} onClick={onBack}>← Back</button>
+        </div>
+
+        {!stats && !error && <div style={{ textAlign: "center", color: "#555" }}>Consulting the archives...</div>}
+        {error && <div style={{ textAlign: "center", color: "#a05555" }}>Stats are unavailable right now.</div>}
+        {empty && <div style={{ textAlign: "center", color: "#555" }}>No completed games yet — play something!</div>}
+
+        {stats && !empty && (
+          <>
+            <div style={S.sectionTitle}>Player Records</div>
+            <table style={T.table}>
+              <thead><tr>
+                <th style={T.th}>Player</th><th style={T.th}>Game</th>
+                <th style={{ ...T.th, ...T.num }}>Plays</th>
+                <th style={{ ...T.th, ...T.num }}>Wins</th>
+                <th style={{ ...T.th, ...T.num }}>Win rate</th>
+                <th style={{ ...T.th, ...T.num }}>Avg score</th>
+                <th style={{ ...T.th, ...T.num }}>Best</th>
+              </tr></thead>
+              <tbody>
+                {stats.players.map((p, i) => (
+                  <tr key={i}>
+                    <td style={{ ...T.td, color: "#e8d5a3", fontWeight: 600 }}>{p.who}</td>
+                    <td style={T.td}>{gameDisplayName(p.game_name)}</td>
+                    <td style={{ ...T.td, ...T.num }}>{p.plays}</td>
+                    <td style={{ ...T.td, ...T.num }}>{p.wins}</td>
+                    <td style={{ ...T.td, ...T.num, color: "#c9a84c" }}>{pct(p.wins, p.plays)}</td>
+                    <td style={{ ...T.td, ...T.num }}>{p.avg_score ?? "—"}</td>
+                    <td style={{ ...T.td, ...T.num }}>{p.best_score ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div style={S.sectionTitle}>Games</div>
+            <table style={T.table}>
+              <thead><tr>
+                <th style={T.th}>Game</th>
+                <th style={{ ...T.th, ...T.num }}>Started</th>
+                <th style={{ ...T.th, ...T.num }}>Finished</th>
+                <th style={{ ...T.th, ...T.num }}>Abandoned</th>
+                <th style={{ ...T.th, ...T.num }}>Last played</th>
+              </tr></thead>
+              <tbody>
+                {stats.games.map((g) => (
+                  <tr key={g.game_name}>
+                    <td style={{ ...T.td, color: "#e8d5a3" }}>{gameDisplayName(g.game_name)}</td>
+                    <td style={{ ...T.td, ...T.num }}>{g.starts}</td>
+                    <td style={{ ...T.td, ...T.num }}>{g.finished}</td>
+                    <td style={{ ...T.td, ...T.num }}>{g.abandoned}</td>
+                    <td style={{ ...T.td, ...T.num }}>{g.last_played ? new Date(g.last_played).toLocaleDateString() : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {stats.recent.length > 0 && (
+              <>
+                <div style={S.sectionTitle}>Recent Games</div>
+                {stats.recent.map((g, i) => (
+                  <div key={i} style={S.roomCard}>
+                    <div>
+                      <span style={{ fontWeight: 700, color: "#e8d5a3", fontSize: 14 }}>{gameDisplayName(g.game_name)}</span>
+                      <span style={{ color: "#888", fontSize: 12, marginLeft: 12 }}>
+                        {g.players.map((p, j) => (
+                          <span key={j}>
+                            {j > 0 && " · "}
+                            <span style={p.is_winner ? { color: "#c9a84c", fontWeight: 700 } : {}}>
+                              {p.is_winner ? "♛ " : ""}{p.username || p.name}{p.score != null ? ` (${p.score})` : ""}
+                            </span>
+                          </span>
+                        ))}
+                      </span>
+                    </div>
+                    <span style={{ color: "#555", fontSize: 12 }}>
+                      {g.finished_at ? new Date(g.finished_at).toLocaleDateString() : ""}
+                    </span>
+                  </div>
+                ))}
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Game Selector ─────────────────────────────────────
-function GameSelector({ onSelect }) {
+function GameSelector({ onSelect, onStats }) {
   const gipfGames = GAMES.filter(g => g.series === "gipf");
   const otherGames = GAMES.filter(g => g.series === "other");
 
@@ -296,6 +422,8 @@ function GameSelector({ onSelect }) {
         <div style={S.header}>
           <h1 style={S.title}>Board Game Engine</h1>
           <p style={S.subtitle}>Choose a game to play</p>
+          <button style={{ ...S.btn, fontSize: 12, marginTop: 12, color: "#c9a84c", borderColor: "rgba(201,168,76,0.4)" }}
+            onClick={onStats}>♛ Hall of Records</button>
         </div>
 
         <div style={S.sectionTitle}>The GIPF Project</div>
@@ -317,6 +445,7 @@ function MainApp() {
   const [selectedGame, setSelectedGame] = useState(null);
   const [gameMode, setGameMode] = useState(null); // null | "browse" | "playing" | "spectating"
   const [joinInfo, setJoinInfo] = useState(null); // { roomCode, playerName }
+  const [showStats, setShowStats] = useState(false);
 
   const handleBack = useCallback(() => {
     sessionStorage.removeItem("game_token");
@@ -327,9 +456,14 @@ function MainApp() {
     setJoinInfo(null);
   }, []);
 
+  if (showStats) {
+    return <StatsPage onBack={() => setShowStats(false)} />;
+  }
+
   // Game selector
   if (!selectedGame) {
-    return <GameSelector onSelect={(id) => { setSelectedGame(id); setGameMode("browse"); }} />;
+    return <GameSelector onSelect={(id) => { setSelectedGame(id); setGameMode("browse"); }}
+      onStats={() => setShowStats(true)} />;
   }
 
   const game = GAMES.find(g => g.id === selectedGame);

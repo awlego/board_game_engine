@@ -83,6 +83,54 @@ class GameEngine(ABC):
         """
         ...
 
+    def final_results(self, state: dict) -> dict:
+        """
+        Return the outcome of a finished game for the results store:
+        {"winners": [player_id, ...], "scores": {player_id: number} | None}.
+        An empty winners list means a draw.
+
+        The default reads the common state conventions — a "winners" list
+        or "winner" value (either server player_ids or indices into a
+        "players" list of dicts, with "draw"/None meaning no winner), a
+        "scores" list of {"player_index", "total", ...} dicts or per-player
+        numeric "score" fields. Override if a game stores outcomes
+        differently.
+        """
+        players = state.get("players")
+
+        def to_player_id(w):
+            if isinstance(w, int) and isinstance(players, list) \
+                    and 0 <= w < len(players) and isinstance(players[w], dict):
+                return players[w].get("player_id")
+            return w if isinstance(w, str) and w != "draw" else None
+
+        raw = state.get("winners")
+        if raw is None:
+            raw = [state.get("winner")]
+        winners = [pid for pid in (to_player_id(w) for w in raw or []) if pid]
+
+        scores = None
+        details = None
+        raw_scores = state.get("scores")
+        if isinstance(raw_scores, list):
+            scores, details = {}, {}
+            for s in raw_scores:
+                pid = to_player_id(s.get("player_index")) if isinstance(s, dict) else None
+                if pid is not None and "total" in s:
+                    scores[pid] = s["total"]
+                    details[pid] = {k: v for k, v in s.items()
+                                    if k not in ("name", "player_index")}
+        elif isinstance(raw_scores, dict):
+            scores = {pid: v for pid, v in raw_scores.items()
+                      if isinstance(v, (int, float))}
+        elif isinstance(players, list):
+            found = {p.get("player_id"): p["score"] for p in players
+                     if isinstance(p, dict) and isinstance(p.get("score"), (int, float))}
+            scores = found or None
+
+        return {"winners": winners, "scores": scores or None,
+                "score_details": details or None}
+
     def get_spectator_view(self, state: dict) -> dict:
         """
         Return a view of the state suitable for spectators (non-players).

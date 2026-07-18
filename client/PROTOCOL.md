@@ -102,6 +102,29 @@ shared — there is no ownership. Responses: `card_set_list`
 (`{game, sets: [...]}`), `card_set_saved` (`{game, set}` with the
 stored record incl. its id), `card_set_deleted` (`{game, id}`).
 
+### `stats` — Play/win statistics (pre-auth, no token needed)
+```json
+{"type": "stats"}
+```
+Aggregates from the results store (every started game is recorded at
+start, its outcome at game over; games whose room was cleaned up
+unfinished count as abandoned). Players are identified by the site
+login `username` a trusted reverse proxy appends to the connection URL
+(`?user=...`), falling back to the room display name when absent.
+Response: `stats` —
+```json
+{"type": "stats", "enabled": true,
+ "players": [{"who": "alex", "game_name": "agricola", "plays": 4,
+              "wins": 2, "avg_score": 38.5, "best_score": 47}],
+ "games": [{"game_name": "agricola", "starts": 5, "finished": 4,
+            "abandoned": 1, "last_played": "2026-07-17T02:11:08Z"}],
+ "recent": [{"game_name": "agricola", "finished_at": "2026-07-17T02:11:08Z",
+             "players": [{"name": "Alex", "username": "alex",
+                          "score": 47, "is_winner": true}]}]}
+```
+`enabled` is false (all lists empty) when the server runs without a
+data dir.
+
 ### `kick` — Host kicks a player from lobby (before game starts)
 ```json
 {"type": "kick", "player_id": "p_def456"}

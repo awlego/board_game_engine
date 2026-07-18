@@ -11,10 +11,11 @@ import os
 import secrets
 import time
 from dataclasses import dataclass, field
+from urllib.parse import parse_qs, urlparse
 
 import websockets
 
-from server import card_sets, persistence
+from server import card_sets, persistence, stats
 from server.game_engine import GameEngine
 
 
@@ -33,6 +34,9 @@ class Player:
     player_id: str
     name: str
     token: str
+    # Site login identity stamped by the trusted reverse proxy (see
+    # handle_connection); None when connecting directly (dev).
+    username: str = None
     websocket: object = None
     connected: bool = False
 
@@ -58,6 +62,8 @@ class Room:
     created_at: float = field(default_factory=time.time)
     game_name: str = "unknown"
     options: dict = None
+    # games.id row in the results store, set when the game starts.
+    stats_game_id: int = None
 
     @property
     def player_list(self):
@@ -76,12 +82,13 @@ class GameServer:
     Game-agnostic — delegates all game logic to the engine.
     """
 
-    def __init__(self, data_dir=None, card_set_dir=None):
+    def __init__(self, data_dir=None, card_set_dir=None, stats_db=None):
         self.rooms: dict[str, Room] = {}               # code -> Room
         self.tokens: dict[str, tuple] = {}             # token -> (room_code, player_id_or_"spectator")
         self.engines: dict[str, type] = {}              # game_name -> GameEngine class
         self.data_dir = data_dir                        # room snapshot dir; None = in-memory only
         self.card_sets = card_sets.CardSetStore(card_set_dir)
+        self.stats = stats.StatsStore(stats_db) if stats_db else None
 
     def register_engine(self, game_name, engine_class):
         """Register a game engine class by name."""
@@ -96,17 +103,26 @@ class GameServer:
 
     def load_persisted_rooms(self):
         """Restore saved rooms. Call after all engines are registered."""
-        if not self.data_dir:
-            return
-        self.rooms, self.tokens = persistence.load_rooms(
-            self.data_dir, self.engines, Room, Player, Spectator,
-        )
-        if self.rooms:
-            print(f"Restored {len(self.rooms)} room(s) from {self.data_dir}")
+        if self.data_dir:
+            self.rooms, self.tokens = persistence.load_rooms(
+                self.data_dir, self.engines, Room, Player, Spectator,
+            )
+            if self.rooms:
+                print(f"Restored {len(self.rooms)} room(s) from {self.data_dir}")
+        # Any recorded game whose room did not survive the restart can
+        # never finish — flip it to abandoned so stats stay honest.
+        if self.stats:
+            try:
+                n = self.stats.mark_orphans_abandoned(
+                    [r.stats_game_id for r in self.rooms.values()])
+                if n:
+                    print(f"Marked {n} orphaned game(s) as abandoned")
+            except Exception as e:
+                print(f"stats: abandon sweep failed: {e}")
 
     # ── Room Management ──────────────────────────────────────────────
 
-    def create_room(self, game_name, host_name, options=None):
+    def create_room(self, game_name, host_name, options=None, username=None):
         if game_name not in self.engines:
             raise ValueError(f"Unknown game: {game_name}. Available: {list(self.engines.keys())}")
 
@@ -128,7 +144,8 @@ class GameServer:
         engine = self.engines[game_name]()
         player_id = f"p_{generate_token()[:8]}"
         token = generate_token()
-        host = Player(player_id=player_id, name=host_name, token=token)
+        host = Player(player_id=player_id, name=host_name, token=token,
+                      username=username)
 
         room = Room(code=code, host_id=player_id, engine=engine,
                     game_name=game_name, options=options or None)
@@ -140,7 +157,7 @@ class GameServer:
 
         return code, player_id, token
 
-    def join_room(self, code, name):
+    def join_room(self, code, name, username=None):
         room = self.rooms.get(code)
         if room is None:
             raise ValueError(f"Room {code} not found")
@@ -154,7 +171,8 @@ class GameServer:
 
         player_id = f"p_{generate_token()[:8]}"
         token = generate_token()
-        player = Player(player_id=player_id, name=name, token=token)
+        player = Player(player_id=player_id, name=name, token=token,
+                        username=username)
         room.players[player_id] = player
         self.tokens[token] = (code, player_id)
         self._save(room)
@@ -196,11 +214,30 @@ class GameServer:
         except TypeError:
             room.game_state = room.engine.initial_state(player_ids, player_names)
         room.started = True
+        if self.stats:
+            try:
+                room.stats_game_id = self.stats.record_start(room)
+            except Exception as e:
+                print(f"stats: failed to record game start: {e}")
         self._save(room)
 
         return room.game_state
 
     # ── WebSocket Handler ────────────────────────────────────────────
+
+    @staticmethod
+    def _connection_username(websocket):
+        """Site login identity from the connection URL's ?user= param.
+
+        The reverse proxy that fronts the engine authenticates the
+        session and appends the username when dialing upstream. The
+        engine binds localhost behind that proxy, so the param is
+        trusted; direct connections (dev) simply have none."""
+        request = getattr(websocket, "request", None)
+        if request is None:
+            return None
+        values = parse_qs(urlparse(request.path).query).get("user")
+        return values[0] if values and values[0] else None
 
     async def handle_connection(self, websocket):
         """Main handler for a single WebSocket connection."""
@@ -208,6 +245,7 @@ class GameServer:
         player_id = None
         is_spectator = False
         spectator_token = None
+        username = self._connection_username(websocket)
 
         try:
             async for raw in websocket:
@@ -221,11 +259,11 @@ class GameServer:
 
                 # ── Pre-auth messages ────────────────────────────
                 if msg_type == "create":
-                    await self._handle_create(websocket, msg)
+                    await self._handle_create(websocket, msg, username)
                     continue
 
                 if msg_type == "join":
-                    await self._handle_join(websocket, msg)
+                    await self._handle_join(websocket, msg, username)
                     continue
 
                 if msg_type == "spectate":
@@ -237,6 +275,10 @@ class GameServer:
 
                 if msg_type == "list_rooms":
                     await self._handle_list_rooms(websocket, msg)
+                    continue
+
+                if msg_type == "stats":
+                    await self._handle_stats(websocket)
                     continue
 
                 # Card sets are shared pre-game config (like list_rooms,
@@ -254,7 +296,7 @@ class GameServer:
                     continue
 
                 if msg_type == "reconnect":
-                    result = await self._handle_reconnect(websocket, msg)
+                    result = await self._handle_reconnect(websocket, msg, username)
                     if result:
                         if result[1] == "spectator":
                             room_code = result[0]
@@ -265,7 +307,7 @@ class GameServer:
                     continue
 
                 if msg_type == "auth":
-                    result = await self._handle_auth(websocket, msg)
+                    result = await self._handle_auth(websocket, msg, username)
                     if result:
                         if result[1] == "spectator":
                             room_code = result[0]
@@ -346,12 +388,13 @@ class GameServer:
 
     # ── Message Handlers ─────────────────────────────────────────────
 
-    async def _handle_create(self, websocket, msg):
+    async def _handle_create(self, websocket, msg, username=None):
         game_name = msg.get("game", "dragon")
         host_name = msg.get("name", "Host")
         options = msg.get("options") if isinstance(msg.get("options"), dict) else None
         try:
-            code, player_id, token = self.create_room(game_name, host_name, options)
+            code, player_id, token = self.create_room(
+                game_name, host_name, options, username=username)
             await self._send(websocket, {
                 "type": "created",
                 "room_code": code,
@@ -362,11 +405,11 @@ class GameServer:
         except ValueError as e:
             await self._send(websocket, {"type": "error", "message": str(e)})
 
-    async def _handle_join(self, websocket, msg):
+    async def _handle_join(self, websocket, msg, username=None):
         code = msg.get("room_code", "").upper()
         name = msg.get("name", "Player")
         try:
-            player_id, token = self.join_room(code, name)
+            player_id, token = self.join_room(code, name, username=username)
             await self._send(websocket, {
                 "type": "joined",
                 "room_code": code,
@@ -481,7 +524,7 @@ class GameServer:
             await self._send(websocket, {
                 "type": "error", "message": "Card set not found"})
 
-    async def _handle_auth(self, websocket, msg):
+    async def _handle_auth(self, websocket, msg, username=None):
         """Authenticate with a token and bind this websocket to a room/player."""
         token = msg.get("token")
         if not token or token not in self.tokens:
@@ -523,6 +566,11 @@ class GameServer:
         player = room.players[player_id]
         player.websocket = websocket
         player.connected = True
+        # Stamp the login identity on reconnects too, so seats from
+        # rooms created before identity existed get attributed.
+        if username and player.username != username:
+            player.username = username
+            self._save(room)
 
         await self._send(websocket, {
             "type": "authenticated",
@@ -547,9 +595,9 @@ class GameServer:
 
         return (room_code, player_id)
 
-    async def _handle_reconnect(self, websocket, msg):
+    async def _handle_reconnect(self, websocket, msg, username=None):
         """Reconnect with a token — delegates to auth."""
-        return await self._handle_auth(websocket, msg)
+        return await self._handle_auth(websocket, msg, username)
 
     async def _handle_start(self, room, player_id):
         try:
@@ -588,12 +636,40 @@ class GameServer:
             await self._broadcast_game_state(room)
 
             if result.game_over:
+                self._record_finish(room)
                 await self._broadcast(room, {"type": "game_over"})
 
         except ValueError as e:
             player = room.players.get(player_id)
             if player and player.websocket:
                 await self._send(player.websocket, {"type": "action_error", "message": str(e)})
+
+    def _record_finish(self, room):
+        """Store a finished game's outcome. Strictly downstream of
+        gameplay — any stats failure is logged, never raised."""
+        if not self.stats or room.stats_game_id is None:
+            return
+        try:
+            results = room.engine.final_results(room.game_state)
+            self.stats.record_finish(room.stats_game_id, results)
+        except Exception as e:
+            print(f"stats: failed to record game result: {e}")
+
+    async def _handle_stats(self, websocket):
+        """Aggregate play/win stats from the results store."""
+        if not self.stats:
+            await self._send(websocket, {
+                "type": "stats", "enabled": False,
+                "players": [], "games": [], "recent": [],
+            })
+            return
+        try:
+            summary = self.stats.summary()
+        except Exception as e:
+            print(f"stats: summary failed: {e}")
+            await self._send(websocket, {"type": "error", "message": "Stats unavailable"})
+            return
+        await self._send(websocket, {"type": "stats", "enabled": True, **summary})
 
     async def _handle_kick(self, room, requester_id, msg):
         """Host kicks a player from the lobby (before game starts)."""
@@ -719,6 +795,9 @@ async def run_server(host="0.0.0.0", port=8765, data_dir="data/rooms"):
     # persistence disabled they are memory-only like everything else.
     card_set_dir = os.path.join(os.path.dirname(data_dir), "card_sets") \
         if data_dir else None
+    # Game results/stats DB lives beside them; disabled together too.
+    stats_db = os.path.join(os.path.dirname(data_dir), "stats.db") \
+        if data_dir else None
     from server.dragon.engine import DragonEngine
     from server.battleline.engine import BattleLineEngine
     from server.arboretum.engine import ArboretumEngine
@@ -735,7 +814,8 @@ async def run_server(host="0.0.0.0", port=8765, data_dir="data/rooms"):
     from server.shards.engine import ShardsEngine
     from server.agricola.engine import AgricolaEngine
 
-    server = GameServer(data_dir=data_dir, card_set_dir=card_set_dir)
+    server = GameServer(data_dir=data_dir, card_set_dir=card_set_dir,
+                        stats_db=stats_db)
     server.register_engine("dragon", DragonEngine)
     server.register_engine("battleline", BattleLineEngine)
     server.register_engine("arboretum", ArboretumEngine)

@@ -39,8 +39,10 @@ def save_room(data_dir, room):
         "started": room.started,
         "locked": room.locked,
         "created_at": room.created_at,
+        "stats_game_id": room.stats_game_id,
         "players": [
-            {"player_id": p.player_id, "name": p.name, "token": p.token}
+            {"player_id": p.player_id, "name": p.name, "token": p.token,
+             "username": p.username}
             for p in room.players.values()
         ],
         "spectators": [
@@ -111,10 +113,12 @@ def load_rooms(data_dir, engines, room_factory, player_factory, spectator_factor
             locked=snap["locked"],
             created_at=snap["created_at"],
             game_state=snap["game_state"],
+            stats_game_id=snap.get("stats_game_id"),
         )
         for p in snap["players"]:
             room.players[p["player_id"]] = player_factory(
                 player_id=p["player_id"], name=p["name"], token=p["token"],
+                username=p.get("username"),
             )
             tokens[p["token"]] = (room.code, p["player_id"])
         for s in snap["spectators"]:
