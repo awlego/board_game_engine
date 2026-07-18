@@ -5,13 +5,14 @@ fields."""
 
 import asyncio
 import json
+import sqlite3
 
 import pytest
 
 from server import persistence
 from server.game_engine import ActionResult, GameEngine
 from server.server import GameServer, Player, Room, Spectator
-from server.stats import StatsStore
+from server.stats import MIGRATIONS, StatsStore
 
 
 class ClickerEngine(GameEngine):
@@ -119,9 +120,34 @@ def test_store_reopen_keeps_schema_and_data(tmp_path):
     server.stats.close()
 
     reopened = StatsStore(str(tmp_path / "stats.db"))
-    assert reopened.db.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert reopened.db.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS)
     assert reopened.summary()["games"][0]["finished"] == 1
     reopened.close()
+
+
+def test_migration_upgrades_a_v1_db_in_place(tmp_path):
+    """A production stats.db written before the is_bot column must
+    upgrade on open with its data intact (defaulting to human seats)."""
+    path = str(tmp_path / "stats.db")
+    db = sqlite3.connect(path)
+    db.executescript(MIGRATIONS[0])
+    db.execute("PRAGMA user_version = 1")
+    db.execute(
+        "INSERT INTO games (room_code, game_name, started_at, finished_at,"
+        " status) VALUES ('AAAAA', 'clicker', '2026-01-01T00:00:00Z',"
+        " '2026-01-01T01:00:00Z', 'finished')")
+    db.execute(
+        "INSERT INTO game_players (game_id, seat, player_id, name, score,"
+        " is_winner) VALUES (1, 0, 'p1', 'Alex', 5, 1)")
+    db.commit()
+    db.close()
+
+    store = StatsStore(path)
+    assert store.db.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS)
+    summary = store.summary()
+    assert summary["players"][0]["who"] == "Alex"
+    assert summary["recent"][0]["players"][0]["is_bot"] is False
+    store.close()
 
 
 # ── final_results default hook ───────────────────────────────────────

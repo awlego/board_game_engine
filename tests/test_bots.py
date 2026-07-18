@@ -146,6 +146,26 @@ def test_broken_bot_reports_and_yields_instead_of_crashing():
     assert room.started and not room.game_state["game_over"]
 
 
+def test_bot_seats_stay_out_of_the_leaderboard(tmp_path):
+    server = make_server(stats_db=str(tmp_path / "stats.db"))
+    code, host_id, _ = server.create_room("agricola", "Alex", username="alex")
+    bot = server.add_bot(code, host_id)
+    server.start_game(code, host_id)
+    room = server.rooms[code]
+
+    server.stats.record_finish(room.stats_game_id, {
+        "winners": [bot.player_id],
+        "scores": {host_id: 20, bot.player_id: 30},
+    })
+    summary = server.stats.summary()
+    # Bots never appear in the per-player aggregates...
+    assert [p["who"] for p in summary["players"]] == ["alex"]
+    # ...but past games still show their full seating, flagged.
+    (recent,) = summary["recent"]
+    assert [(p["name"], p["is_bot"], p["is_winner"]) for p in recent["players"]] \
+        == [("Alex", False, False), ("Random Bot", True, True)]
+
+
 # ── Persistence and restart resume ───────────────────────────────────
 
 def start_room_waiting_on_bot(server, tries=64):

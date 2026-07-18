@@ -390,7 +390,7 @@ function StatsPage({ onBack }) {
                           <span key={j}>
                             {j > 0 && " · "}
                             <span style={p.is_winner ? { color: "#c9a84c", fontWeight: 700 } : {}}>
-                              {p.is_winner ? "♛ " : ""}{p.username || p.name}{p.score != null ? ` (${p.score})` : ""}
+                              {p.is_winner ? "♛ " : ""}{p.is_bot ? "🤖 " : ""}{p.username || p.name}{p.score != null ? ` (${p.score})` : ""}
                             </span>
                           </span>
                         ))}

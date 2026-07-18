@@ -120,8 +120,11 @@ Response: `stats` —
             "abandoned": 1, "last_played": "2026-07-17T02:11:08Z"}],
  "recent": [{"game_name": "agricola", "finished_at": "2026-07-17T02:11:08Z",
              "players": [{"name": "Alex", "username": "alex",
-                          "score": 47, "is_winner": true}]}]}
+                          "score": 47, "is_winner": true,
+                          "is_bot": false}]}]}
 ```
+Bot seats are recorded (so `recent` shows a game's full seating, with
+`is_bot` true) but excluded from the `players` aggregates.
 `enabled` is false (all lists empty) when the server runs without a
 data dir.
 

@@ -46,6 +46,12 @@ MIGRATIONS = [
     CREATE INDEX idx_players_username ON game_players(username);
     CREATE INDEX idx_games_name_time  ON games(game_name, started_at);
     """,
+    # Bot seats (server-driven players, e.g. Agricola's Random Bot) are
+    # recorded so past games show their full seating, but excluded from
+    # the per-player aggregates.
+    """
+    ALTER TABLE game_players ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 
@@ -91,10 +97,11 @@ class StatsStore:
             )
             game_id = cur.lastrowid
             self.db.executemany(
-                "INSERT INTO game_players (game_id, seat, player_id, name, username)"
-                " VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO game_players (game_id, seat, player_id, name,"
+                " username, is_bot) VALUES (?, ?, ?, ?, ?, ?)",
                 [
-                    (game_id, seat, p.player_id, p.name, p.username)
+                    (game_id, seat, p.player_id, p.name, p.username,
+                     1 if p.is_bot else 0)
                     for seat, p in enumerate(room.players.values())
                 ],
             )
@@ -158,7 +165,7 @@ class StatsStore:
                        ROUND(AVG(gp.score), 1) AS avg_score,
                        MAX(gp.score) AS best_score
                 FROM game_players gp JOIN games g ON g.id = gp.game_id
-                WHERE g.status = 'finished'
+                WHERE g.status = 'finished' AND gp.is_bot = 0
                 GROUP BY who, g.game_name
                 ORDER BY who, g.game_name
                 """
@@ -181,15 +188,16 @@ class StatsStore:
             " ORDER BY finished_at DESC LIMIT ?", (recent_limit,)
         ).fetchall():
             seats = self.db.execute(
-                "SELECT name, username, score, is_winner FROM game_players"
-                " WHERE game_id = ? ORDER BY seat", (g["id"],)
+                "SELECT name, username, score, is_winner, is_bot"
+                " FROM game_players WHERE game_id = ? ORDER BY seat", (g["id"],)
             ).fetchall()
             recent.append({
                 "game_name": g["game_name"],
                 "finished_at": g["finished_at"],
                 "players": [
                     {"name": s["name"], "username": s["username"],
-                     "score": s["score"], "is_winner": bool(s["is_winner"])}
+                     "score": s["score"], "is_winner": bool(s["is_winner"]),
+                     "is_bot": bool(s["is_bot"])}
                     for s in seats
                 ],
             })
