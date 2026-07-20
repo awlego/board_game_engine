@@ -1042,6 +1042,41 @@ function MajorsBoard({ available }) {
   );
 }
 
+// Scales its fixed-size child (the action board) to fill the container's
+// width, since the board grid is laid out in absolute pixels.
+function FitWidth({ children, style }) {
+  const outerRef = useRef(null);
+  const innerRef = useRef(null);
+  const [fit, setFit] = useState({ scale: 1, height: null });
+
+  useEffect(() => {
+    const outer = outerRef.current, inner = innerRef.current;
+    if (!outer || !inner) return;
+    const update = () => {
+      const w = inner.offsetWidth;
+      if (!w) return;
+      const scale = outer.clientWidth / w;
+      setFit({ scale, height: inner.offsetHeight * scale });
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(outer);
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div ref={outerRef} style={{ ...style, height: fit.height ?? "auto" }}>
+      <div ref={innerRef} style={{
+        width: "fit-content",
+        transform: `scale(${fit.scale})`, transformOrigin: "top left",
+      }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function ActionBoard({ state, validSpaces, onPick, players }) {
   const byId = {};
   state.action_spaces.forEach((sp) => { byId[sp.id] = sp; });
@@ -2211,11 +2246,18 @@ function DraftScreen({ game }) {
 function GameBoard({ game }) {
   const { gameState: state, gameLogs, submitAction, error, playerId } = game;
   const [planner, setPlanner] = useState(null);
+  const [logOpen, setLogOpen] = useState(
+    () => localStorage.getItem("agricola_log_open") !== "0");
   const logRef = useRef(null);
+
+  const toggleLog = () => {
+    localStorage.setItem("agricola_log_open", logOpen ? "0" : "1");
+    setLogOpen(!logOpen);
+  };
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [gameLogs]);
+  }, [gameLogs, logOpen]);
   useEffect(() => { setPlanner(null); }, [state?.current_player, state?.round, state?.phase]);
 
   if (!state || !state.players) {
@@ -2285,26 +2327,48 @@ function GameBoard({ game }) {
           </div>
         )}
 
-        {/* Board row: the action board with the log beside it */}
+        {/* Board row: the action board with the (collapsible) log beside it.
+            The board is fixed-size internally, so FitWidth scales it to
+            whatever width the log leaves free. */}
         <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-          <ActionBoard state={state} validSpaces={planner ? new Set() : validSpaces}
-            onPick={pick} players={state.players} />
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: "#57534e", textTransform: "uppercase", marginBottom: 4 }}>
-              Game log
+          <FitWidth style={{ flex: 1, minWidth: 480 }}>
+            <ActionBoard state={state} validSpaces={planner ? new Set() : validSpaces}
+              onPick={pick} players={state.players} />
+          </FitWidth>
+          {logOpen ? (
+            <div style={{ flex: "0 0 300px", minWidth: 220 }}>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "#57534e", textTransform: "uppercase" }}>
+                  Game log
+                </div>
+                <button onClick={toggleLog} title="Collapse the log"
+                  style={{
+                    marginLeft: "auto", border: "1px solid #d6d3c1", borderRadius: 6,
+                    background: "#fefce8", color: "#57534e", cursor: "pointer",
+                    fontSize: 11, lineHeight: 1.2, padding: "1px 7px",
+                  }}>»</button>
+              </div>
+              <div ref={logRef} style={{
+                background: "#fefce8", border: "1px solid #d6d3c1", borderRadius: 8,
+                padding: 8, height: 548, overflowY: "auto", fontSize: 11, lineHeight: 1.5,
+              }}>
+                {gameLogs.map((m, i) => (
+                  <div key={i} style={{
+                    borderBottom: "1px solid #f5f5f0", padding: "2px 0",
+                    fontWeight: m.startsWith("—") ? 800 : 400,
+                  }}>{m}</div>
+                ))}
+              </div>
             </div>
-            <div ref={logRef} style={{
-              background: "#fefce8", border: "1px solid #d6d3c1", borderRadius: 8,
-              padding: 8, height: 548, overflowY: "auto", fontSize: 11, lineHeight: 1.5,
-            }}>
-              {gameLogs.map((m, i) => (
-                <div key={i} style={{
-                  borderBottom: "1px solid #f5f5f0", padding: "2px 0",
-                  fontWeight: m.startsWith("—") ? 800 : 400,
-                }}>{m}</div>
-              ))}
-            </div>
-          </div>
+          ) : (
+            <button onClick={toggleLog} title="Show the game log"
+              style={{
+                flex: "0 0 auto", border: "1px solid #d6d3c1", borderRadius: 8,
+                background: "#fefce8", color: "#57534e", cursor: "pointer",
+                writingMode: "vertical-rl", padding: "10px 4px",
+                fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1,
+              }}>« Game log</button>
+          )}
         </div>
 
         {/* Farms + hand below the board */}
