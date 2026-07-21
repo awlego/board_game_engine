@@ -583,6 +583,14 @@ function FarmYard({ player, mode, selection, onCellClick, onEdgeClick, plannedFe
 // PLAYER PANEL
 // ============================================================
 
+// Played cards render as overlapping stacks so they hug the board:
+// occupations cascade vertically to the right of the farm (each name
+// band stays visible), improvements cascade left-to-right below it.
+const STACK_CARD_W = 120;
+const STACK_CARD_H = Math.round(STACK_CARD_W * 1.545);
+const STACK_REVEAL_Y = 30;
+const STACK_REVEAL_X = 34;
+
 function PlayerPanel({ player, color, isYou, isCurrent, isStarting, state, children }) {
   const totals = animalTotals(player);
   const [showCards, setShowCards] = useState(true);
@@ -615,10 +623,53 @@ function PlayerPanel({ player, color, isYou, isCurrent, isStarting, state, child
         ))}
         {ANIMALS.map((a) => <GoodChip key={a} good={a} count={totals[a]} small />)}
       </div>
-      {children}
+      <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+        {children}
+        {showCards && (player.occupations || []).length > 0 && (
+          <div>
+            {(player.occupations || []).map((inst, i) => (
+              <div key={inst.id} style={{ position: "relative", marginTop: i ? STACK_REVEAL_Y - STACK_CARD_H : 0 }}>
+                <HandCard cid={inst.id} width={STACK_CARD_W} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {showCards && (player.improvements.length > 0 || (player.minors || []).length > 0) && (
+        <div style={{ display: "flex", alignItems: "flex-start", marginTop: 6 }}>
+          {player.improvements.map((imp, i) => {
+            const ent = {
+              key: imp, kind: "art", name: IMPROVEMENTS[imp].name,
+              url: `${import.meta.env.BASE_URL}agricola/board/${imp}.jpg`,
+            };
+            return (
+              <div key={imp} style={{ position: "relative", marginLeft: i ? STACK_REVEAL_X - STACK_CARD_W : 0 }}>
+                <img src={ent.url} alt={ent.name} title={IMPROVEMENTS[imp].desc}
+                  onMouseEnter={() => focus.show(ent)} onMouseLeave={() => focus.clear(imp)}
+                  onClick={() => focus.pin(ent)}
+                  style={{ width: STACK_CARD_W, borderRadius: 8, display: "block", cursor: "zoom-in" }} />
+              </div>
+            );
+          })}
+          {(player.minors || []).map((inst, i) => (
+            <div key={inst.id} style={{
+              position: "relative",
+              marginLeft: (i + player.improvements.length) ? STACK_REVEAL_X - STACK_CARD_W : 0,
+            }}>
+              <HandCard cid={inst.id} width={STACK_CARD_W} extra={inst.crops ? (
+                <span title={`Planted: ${inst.crops.count} ${GOODS[inst.crops.type].label}`} style={{
+                  position: "absolute", left: 4, bottom: 4, background: "#fffbeb",
+                  border: "1px solid #d6d3c1", borderRadius: 6, padding: "0 5px",
+                  fontSize: 12, fontWeight: 700,
+                }}>{GOODS[inst.crops.type].icon}×{inst.crops.count}</span>
+              ) : null} />
+            </div>
+          ))}
+        </div>
+      )}
       {(player.improvements.length > 0 || played.length > 0) && (
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
-          {player.improvements.map((imp) => {
+          {!showCards && player.improvements.map((imp) => {
             const ent = {
               key: imp, kind: "art", name: IMPROVEMENTS[imp].name,
               url: `${import.meta.env.BASE_URL}agricola/board/${imp}.jpg`,
@@ -662,24 +713,9 @@ function PlayerPanel({ player, color, isYou, isCurrent, isStarting, state, child
                 }}>{spec.name}{inst.crops ? ` ${GOODS[inst.crops.type].icon}×${inst.crops.count}` : ""}</span>
             );
           })}
-          {played.length > 0 && (
-            <Btn small variant="secondary" onClick={() => setShowCards(!showCards)}>
-              {showCards ? "Hide cards" : `Show cards (${played.length})`}
-            </Btn>
-          )}
-        </div>
-      )}
-      {showCards && played.length > 0 && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-          {played.map((inst) => (
-            <HandCard key={inst.id} cid={inst.id} extra={inst.crops ? (
-              <span title={`Planted: ${inst.crops.count} ${GOODS[inst.crops.type].label}`} style={{
-                position: "absolute", left: 4, bottom: 4, background: "#fffbeb",
-                border: "1px solid #d6d3c1", borderRadius: 6, padding: "0 5px",
-                fontSize: 12, fontWeight: 700,
-              }}>{GOODS[inst.crops.type].icon}×{inst.crops.count}</span>
-            ) : null} />
-          ))}
+          <Btn small variant="secondary" onClick={() => setShowCards(!showCards)}>
+            {showCards ? "Hide cards" : `Show cards (${played.length + player.improvements.length})`}
+          </Btn>
         </div>
       )}
     </div>
@@ -816,7 +852,7 @@ function CardZoom({ rect, cid, spec }) {
   );
 }
 
-function HandCard({ cid, spec: specOverride, playable, selected, onClick, extra }) {
+function HandCard({ cid, spec: specOverride, playable, selected, onClick, extra, width = HAND_CARD_W }) {
   const [zoomRect, setZoomRect] = useState(null);
   const zoomTimer = useRef(null);
   const spec = specOverride || cardSpec(cid);
@@ -831,7 +867,7 @@ function HandCard({ cid, spec: specOverride, playable, selected, onClick, extra 
       }}
       onMouseLeave={() => { focus.clear(cid); clearTimeout(zoomTimer.current); setZoomRect(null); }}
       onClick={() => focus.pin(entity)}>
-      <AgricolaCard cid={cid} spec={spec} width={HAND_CARD_W}
+      <AgricolaCard cid={cid} spec={spec} width={width}
         playable={playable} selected={selected} onClick={onClick} />
       {extra}
       {zoomRect && <CardZoom rect={zoomRect} cid={cid} spec={spec} />}
