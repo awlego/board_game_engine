@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { createContext, useContext, useState, useRef, useCallback, useEffect, useMemo } from "react";
 
 import { WS_URL } from "../ws.js";
 import CARD_CATALOG from "./agricola_cards.json";
@@ -586,6 +586,7 @@ function PlayerPanel({ player, color, isYou, isCurrent, isStarting, state, child
   const totals = animalTotals(player);
   const [showCards, setShowCards] = useState(true);
   const played = inPlay(player);
+  const focus = useContext(FocusCtx);
   return (
     <div style={{
       background: "#fefce8", border: `2px solid ${isCurrent ? color.bg : "#d6d3c1"}`,
@@ -616,24 +617,50 @@ function PlayerPanel({ player, color, isYou, isCurrent, isStarting, state, child
       {children}
       {(player.improvements.length > 0 || played.length > 0) && (
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
-          {player.improvements.map((imp) => (
-            <span key={imp} title={IMPROVEMENTS[imp].desc} style={{
-              fontSize: 10, background: "#fecaca55", border: "1px solid #f87171",
-              borderRadius: 6, padding: "1px 6px", fontWeight: 700, color: "#7f1d1d",
-            }}>{IMPROVEMENTS[imp].name}</span>
-          ))}
-          {!showCards && (player.occupations || []).map((inst) => (
-            <span key={inst.id} title={cardSpec(inst.id).text} style={{
-              fontSize: 10, background: "#fef9c3", border: "1px solid #eab308",
-              borderRadius: 6, padding: "1px 6px", fontWeight: 700, color: "#713f12",
-            }}>{cardSpec(inst.id).name}</span>
-          ))}
-          {!showCards && (player.minors || []).map((inst) => (
-            <span key={inst.id} title={cardSpec(inst.id).text + (inst.crops ? ` — planted: ${inst.crops.count} ${inst.crops.type}` : "")} style={{
-              fontSize: 10, background: "#ffedd5", border: "1px solid #fb923c",
-              borderRadius: 6, padding: "1px 6px", fontWeight: 700, color: "#7c2d12",
-            }}>{cardSpec(inst.id).name}{inst.crops ? ` ${GOODS[inst.crops.type].icon}×${inst.crops.count}` : ""}</span>
-          ))}
+          {player.improvements.map((imp) => {
+            const ent = {
+              key: imp, kind: "art", name: IMPROVEMENTS[imp].name,
+              url: `${import.meta.env.BASE_URL}agricola/board/${imp}.jpg`,
+            };
+            return (
+              <span key={imp} title={IMPROVEMENTS[imp].desc}
+                onMouseEnter={() => focus.show(ent)} onMouseLeave={() => focus.clear(imp)}
+                onClick={() => focus.pin(ent)}
+                style={{
+                  fontSize: 10, background: "#fecaca55", border: "1px solid #f87171",
+                  borderRadius: 6, padding: "1px 6px", fontWeight: 700, color: "#7f1d1d",
+                  cursor: "zoom-in",
+                }}>{IMPROVEMENTS[imp].name}</span>
+            );
+          })}
+          {!showCards && (player.occupations || []).map((inst) => {
+            const spec = cardSpec(inst.id);
+            const ent = { key: inst.id, kind: "spec", cid: inst.id, spec, name: spec.name };
+            return (
+              <span key={inst.id} title={spec.text}
+                onMouseEnter={() => focus.show(ent)} onMouseLeave={() => focus.clear(inst.id)}
+                onClick={() => focus.pin(ent)}
+                style={{
+                  fontSize: 10, background: "#fef9c3", border: "1px solid #eab308",
+                  borderRadius: 6, padding: "1px 6px", fontWeight: 700, color: "#713f12",
+                  cursor: "zoom-in",
+                }}>{spec.name}</span>
+            );
+          })}
+          {!showCards && (player.minors || []).map((inst) => {
+            const spec = cardSpec(inst.id);
+            const ent = { key: inst.id, kind: "spec", cid: inst.id, spec, name: spec.name };
+            return (
+              <span key={inst.id} title={spec.text + (inst.crops ? ` — planted: ${inst.crops.count} ${inst.crops.type}` : "")}
+                onMouseEnter={() => focus.show(ent)} onMouseLeave={() => focus.clear(inst.id)}
+                onClick={() => focus.pin(ent)}
+                style={{
+                  fontSize: 10, background: "#ffedd5", border: "1px solid #fb923c",
+                  borderRadius: 6, padding: "1px 6px", fontWeight: 700, color: "#7c2d12",
+                  cursor: "zoom-in",
+                }}>{spec.name}{inst.crops ? ` ${GOODS[inst.crops.type].icon}×${inst.crops.count}` : ""}</span>
+            );
+          })}
           {played.length > 0 && (
             <Btn small variant="secondary" onClick={() => setShowCards(!showCards)}>
               {showCards ? "Hide cards" : `Show cards (${played.length})`}
@@ -654,6 +681,116 @@ function PlayerPanel({ player, color, isYou, isCurrent, isStarting, state, child
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Focused-card inspector ──────────────────────────────────
+// Any card-like entity on screen can be shown (hover) or pinned
+// (click) into the inspector at the top of the log column. Hover is
+// transient: on mouse-out the display falls back to the pinned card.
+// Entities are either spec-rendered ({kind:"spec", cid, spec}) or a
+// board scan ({kind:"art", url}). Sources rendered outside GameBoard
+// (the draft screen) get the no-op default.
+const FocusCtx = createContext({ show: () => {}, clear: () => {}, pin: () => {} });
+
+const FOCUS_CARD_W = 254;
+
+// A brass tack dropped through the top of a pinned card.
+function BrassPin() {
+  return (
+    <div style={{
+      position: "absolute", top: -7, left: "50%",
+      width: 17, height: 17, borderRadius: "50%",
+      transform: "translate(-50%,0) rotate(8deg)",
+      animation: "agriPinDrop .22s ease-out",
+      background: "radial-gradient(circle at 35% 30%, #ffe9b0 0%, #d9a944 45%, #8a6420 100%)",
+      border: "1px solid #6b4d16",
+      boxShadow: "0 3px 4px rgba(10,8,2,0.5), inset 0 -2px 3px rgba(80,55,10,0.5)",
+    }} />
+  );
+}
+
+// The easel: a wooden frame around a felt inset where the focused
+// card rests. Same timber as the action board's frame so it reads as
+// part of the table.
+function FocusCardPanel({ hovered, pinned, unpin, onCollapse }) {
+  const shown = hovered || pinned;
+  const showingPinned = !hovered && !!pinned;
+  const cardH = Math.round(FOCUS_CARD_W * 1.545);
+  return (
+    <div style={{
+      position: "relative",
+      background: "linear-gradient(160deg,#7c5a37 0%,#654728 55%,#54391f 100%)",
+      borderRadius: 14, padding: 8, marginBottom: 10,
+      boxShadow: "0 6px 16px rgba(30,25,10,0.35), inset 0 1px 0 rgba(255,230,190,0.35)",
+    }}>
+      {onCollapse && (
+        <button onClick={onCollapse} title="Collapse the card inspector"
+          style={{
+            position: "absolute", top: 14, right: 14, zIndex: 3,
+            border: "1px solid rgba(60,40,15,0.6)", borderRadius: 6,
+            background: "rgba(254,252,232,0.88)", color: "#57534e", cursor: "pointer",
+            fontSize: 11, lineHeight: 1.2, padding: "1px 7px",
+            boxShadow: "0 1px 3px rgba(20,14,5,0.4)",
+          }}>»</button>
+      )}
+      <style>{`
+        @keyframes agriFocusIn {
+          from { opacity: 0; transform: translateY(7px) rotate(-1.6deg) scale(0.955); }
+          to   { opacity: 1; transform: none; }
+        }
+        @keyframes agriPinDrop {
+          from { transform: translate(-50%,-14px) rotate(14deg) scale(1.5); opacity: 0; }
+          to   { transform: translate(-50%,0) rotate(8deg) scale(1); opacity: 1; }
+        }
+      `}</style>
+      <div style={{
+        position: "relative", borderRadius: 8, padding: "14px 0 9px",
+        background: `${GRASS_NOISE}, radial-gradient(230px 280px at 50% 32%, #47603a 0%, #35492b 62%, #2a3a22 100%)`,
+        boxShadow: "inset 0 2px 10px rgba(10,18,6,0.55)",
+        display: "flex", flexDirection: "column", alignItems: "center",
+      }}>
+        {shown ? (
+          <div key={shown.key}
+            onClick={unpin}
+            title={showingPinned ? "Click to release the pin" : undefined}
+            style={{
+              position: "relative", animation: "agriFocusIn .26s cubic-bezier(.2,1.3,.5,1)",
+              filter: "drop-shadow(0 7px 14px rgba(8,14,5,0.55))",
+              cursor: showingPinned ? "pointer" : "default",
+            }}>
+            {shown.kind === "spec"
+              ? <AgricolaCard cid={shown.cid} spec={shown.spec} width={FOCUS_CARD_W} />
+              : <img src={shown.url} alt={shown.name} draggable={false}
+                  style={{ width: FOCUS_CARD_W, borderRadius: 10, display: "block" }} />}
+            {showingPinned && <BrassPin />}
+          </div>
+        ) : (
+          <div style={{
+            width: FOCUS_CARD_W, height: cardH, boxSizing: "border-box",
+            border: "1.5px dashed rgba(240,235,205,0.35)", borderRadius: 10,
+            display: "flex", flexDirection: "column", alignItems: "center",
+            justifyContent: "center", gap: 6, color: "rgba(240,235,205,0.6)",
+          }}>
+            <div style={{ fontSize: 22, opacity: 0.7 }}>🔍</div>
+            <div style={{ fontFamily: BOARD_FONT, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase" }}>
+              Card inspector
+            </div>
+            <div style={{ fontSize: 10, fontStyle: "italic", opacity: 0.85 }}>
+              hover a card to read it · click to pin
+            </div>
+          </div>
+        )}
+        <div style={{
+          marginTop: 7, minHeight: 15, textAlign: "center", padding: "0 8px",
+          fontFamily: BOARD_FONT, fontSize: 11, letterSpacing: 1, lineHeight: 1.2,
+          color: "#f3d9a8", textShadow: "0 1px 2px rgba(0,0,0,0.6)", textTransform: "uppercase",
+        }}>
+          {shown ? shown.name : ""}
+          {showingPinned && <span style={{ opacity: 0.65 }}> · pinned</span>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -682,13 +819,17 @@ function HandCard({ cid, spec: specOverride, playable, selected, onClick, extra 
   const [zoomRect, setZoomRect] = useState(null);
   const zoomTimer = useRef(null);
   const spec = specOverride || cardSpec(cid);
+  const focus = useContext(FocusCtx);
+  const entity = { key: cid, kind: "spec", cid, spec, name: spec.name };
   return (
     <div style={{ position: "relative", flexShrink: 0 }}
       onMouseEnter={(e) => {
+        focus.show(entity);
         const rect = e.currentTarget.getBoundingClientRect();
         zoomTimer.current = setTimeout(() => setZoomRect(rect), 250);
       }}
-      onMouseLeave={() => { clearTimeout(zoomTimer.current); setZoomRect(null); }}>
+      onMouseLeave={() => { focus.clear(cid); clearTimeout(zoomTimer.current); setZoomRect(null); }}
+      onClick={() => focus.pin(entity)}>
       <AgricolaCard cid={cid} spec={spec} width={HAND_CARD_W}
         playable={playable} selected={selected} onClick={onClick} />
       {extra}
@@ -854,6 +995,11 @@ function BoardSpace({ sp, valid, onPick, players, round, gridPos }) {
   const occupied = sp.occupied_by !== null && sp.occupied_by !== undefined;
   const isRoundCard = round !== undefined;
   const art = boardArt(sp, players.length);
+  const focus = useContext(FocusCtx);
+  // Portrait card scans are tiny on the board — offer them to the
+  // inspector. Landscape crops of the printed board aren't cards.
+  const focusEnt = art && !art.landscape
+    ? { key: sp.id, kind: "art", url: art.url, name: sp.name } : null;
   const base = sp.accumulates
     ? "linear-gradient(170deg,#efdfb4 0%,#e2cd94 55%,#d5bc7e 100%)"
     : isRoundCard
@@ -862,7 +1008,10 @@ function BoardSpace({ sp, valid, onPick, players, round, gridPos }) {
   return (
     <div
       className={valid ? "agri-valid" : undefined}
-      onClick={valid ? () => onPick(sp.id) : undefined}
+      onClick={valid ? () => onPick(sp.id)
+        : focusEnt ? () => focus.pin(focusEnt) : undefined}
+      onMouseEnter={focusEnt ? () => focus.show(focusEnt) : undefined}
+      onMouseLeave={focusEnt ? () => focus.clear(sp.id) : undefined}
       title={`${sp.name} — ${sp.desc}`}
       style={{
         gridColumn: gridPos[0], gridRow: gridPos[1],
@@ -968,6 +1117,11 @@ const MAJORS_CHROME = {
 function MajorsBoard({ available }) {
   const [expanded, setExpanded] = useState(false);
   const openSet = new Set(available);
+  const focus = useContext(FocusCtx);
+  const majorEnt = (imp) => ({
+    key: imp, kind: "art", name: IMPROVEMENTS[imp].name,
+    url: `${import.meta.env.BASE_URL}agricola/board/${imp}.jpg`,
+  });
   const openTitle = (spec) =>
     `${spec.name} — ${spec.desc} · cost: ${Object.entries(spec.cost).map(([g, n]) => `${n} ${g}`).join(", ")}`;
   const header = (
@@ -987,14 +1141,18 @@ function MajorsBoard({ available }) {
       <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gridTemplateRows: "1fr 1fr", gap: 4 }}>
         {MAJORS_LAYOUT.map((imp) => {
           const spec = IMPROVEMENTS[imp];
+          const hover = {
+            onMouseEnter: () => focus.show(majorEnt(imp)),
+            onMouseLeave: () => focus.clear(imp),
+          };
           return openSet.has(imp) ? (
-            <div key={imp} title={openTitle(spec)} style={{
+            <div key={imp} title={openTitle(spec)} {...hover} style={{
               background: `url("${import.meta.env.BASE_URL}agricola/board/${imp}.jpg") top center / 100% auto no-repeat rgba(40,15,8,0.25)`,
               borderRadius: 3,
               boxShadow: "inset 0 -8px 8px -5px rgba(40,15,8,0.7), 0 1px 2px rgba(30,20,10,0.4)",
             }} />
           ) : (
-            <div key={imp} title={`${spec.name} — built`} style={{
+            <div key={imp} title={`${spec.name} — built`} {...hover} style={{
               border: "1px dashed rgba(240,210,170,0.35)", borderRadius: 3,
               background: "rgba(40,15,8,0.25)",
               display: "flex", alignItems: "center", justifyContent: "center",
@@ -1020,15 +1178,21 @@ function MajorsBoard({ available }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 86px)", gridAutoRows: "130px", gap: 6 }}>
         {MAJORS_LAYOUT.map((imp) => {
           const spec = IMPROVEMENTS[imp];
+          const inspect = {
+            onMouseEnter: () => focus.show(majorEnt(imp)),
+            onMouseLeave: () => focus.clear(imp),
+            // Pin without collapsing the board — collapse via the header.
+            onClick: (e) => { e.stopPropagation(); focus.pin(majorEnt(imp)); },
+          };
           return openSet.has(imp) ? (
             <div key={imp}
-              title={openTitle(spec)}
+              title={openTitle(spec)} {...inspect}
               style={{
                 background: `url("${import.meta.env.BASE_URL}agricola/board/${imp}.jpg") center / contain no-repeat`,
                 filter: "drop-shadow(0 2px 3px rgba(30,20,10,0.5))",
               }} />
           ) : (
-            <div key={imp} title={`${spec.name} — built`} style={{
+            <div key={imp} title={`${spec.name} — built`} {...inspect} style={{
               border: "1px dashed rgba(240,210,170,0.35)", borderRadius: 5,
               background: "rgba(40,15,8,0.25)",
               display: "flex", alignItems: "center", justifyContent: "center",
@@ -2254,6 +2418,21 @@ function GameBoard({ game }) {
     localStorage.setItem("agricola_log_open", logOpen ? "0" : "1");
     setLogOpen(!logOpen);
   };
+  const [inspectorOpen, setInspectorOpen] = useState(
+    () => localStorage.getItem("agricola_inspector_open") !== "0");
+  const toggleInspector = () => {
+    localStorage.setItem("agricola_inspector_open", inspectorOpen ? "0" : "1");
+    setInspectorOpen(!inspectorOpen);
+  };
+
+  // Focused-card inspector: hover shows transiently, click pins.
+  const [focusHovered, setFocusHovered] = useState(null);
+  const [focusPinned, setFocusPinned] = useState(null);
+  const focusApi = useMemo(() => ({
+    show: (ent) => setFocusHovered(ent),
+    clear: (key) => setFocusHovered((h) => (h && h.key === key ? null : h)),
+    pin: (ent) => setFocusPinned((p) => (p && p.key === ent.key ? null : ent)),
+  }), []);
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
@@ -2289,6 +2468,7 @@ function GameBoard({ game }) {
   };
 
   return (
+    <FocusCtx.Provider value={focusApi}>
     <div style={{ minHeight: "100vh", background: "linear-gradient(160deg,#f7fee7,#ecfccb)", fontFamily: FONT, color: "#292524" }}>
       <div style={{ maxWidth: 1400, margin: "0 auto", padding: 14 }}>
         {/* Header */}
@@ -2335,39 +2515,62 @@ function GameBoard({ game }) {
             <ActionBoard state={state} validSpaces={planner ? new Set() : validSpaces}
               onPick={pick} players={state.players} />
           </FitWidth>
-          {logOpen ? (
+          {(inspectorOpen || logOpen) && (
             <div style={{ flex: "0 0 300px", minWidth: 220 }}>
-              <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: "#57534e", textTransform: "uppercase" }}>
-                  Game log
-                </div>
-                <button onClick={toggleLog} title="Collapse the log"
-                  style={{
-                    marginLeft: "auto", border: "1px solid #d6d3c1", borderRadius: 6,
-                    background: "#fefce8", color: "#57534e", cursor: "pointer",
-                    fontSize: 11, lineHeight: 1.2, padding: "1px 7px",
-                  }}>»</button>
-              </div>
-              <div ref={logRef} style={{
-                background: "#fefce8", border: "1px solid #d6d3c1", borderRadius: 8,
-                padding: 8, height: 548, overflowY: "auto", fontSize: 11, lineHeight: 1.5,
-              }}>
-                {gameLogs.map((m, i) => (
-                  <div key={i} style={{
-                    borderBottom: "1px solid #f5f5f0", padding: "2px 0",
-                    fontWeight: m.startsWith("—") ? 800 : 400,
-                  }}>{m}</div>
-                ))}
-              </div>
+              {inspectorOpen && (
+                <FocusCardPanel hovered={focusHovered} pinned={focusPinned}
+                  unpin={() => setFocusPinned(null)} onCollapse={toggleInspector} />
+              )}
+              {logOpen && (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: "#57534e", textTransform: "uppercase" }}>
+                      Game log
+                    </div>
+                    <button onClick={toggleLog} title="Collapse the log"
+                      style={{
+                        marginLeft: "auto", border: "1px solid #d6d3c1", borderRadius: 6,
+                        background: "#fefce8", color: "#57534e", cursor: "pointer",
+                        fontSize: 11, lineHeight: 1.2, padding: "1px 7px",
+                      }}>»</button>
+                  </div>
+                  <div ref={logRef} style={{
+                    background: "#fefce8", border: "1px solid #d6d3c1", borderRadius: 8,
+                    padding: 8, height: inspectorOpen ? 220 : 548, overflowY: "auto",
+                    fontSize: 11, lineHeight: 1.5,
+                  }}>
+                    {gameLogs.map((m, i) => (
+                      <div key={i} style={{
+                        borderBottom: "1px solid #f5f5f0", padding: "2px 0",
+                        fontWeight: m.startsWith("—") ? 800 : 400,
+                      }}>{m}</div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
-          ) : (
-            <button onClick={toggleLog} title="Show the game log"
-              style={{
-                flex: "0 0 auto", border: "1px solid #d6d3c1", borderRadius: 8,
-                background: "#fefce8", color: "#57534e", cursor: "pointer",
-                writingMode: "vertical-rl", padding: "10px 4px",
-                fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1,
-              }}>« Game log</button>
+          )}
+          {(!inspectorOpen || !logOpen) && (
+            <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", gap: 8 }}>
+              {!inspectorOpen && (
+                <button onClick={toggleInspector} title="Show the card inspector"
+                  style={{
+                    border: "1px solid #d6d3c1", borderRadius: 8,
+                    background: "#fefce8", color: "#57534e", cursor: "pointer",
+                    writingMode: "vertical-rl", padding: "10px 4px",
+                    fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1,
+                  }}>« Card inspector</button>
+              )}
+              {!logOpen && (
+                <button onClick={toggleLog} title="Show the game log"
+                  style={{
+                    border: "1px solid #d6d3c1", borderRadius: 8,
+                    background: "#fefce8", color: "#57534e", cursor: "pointer",
+                    writingMode: "vertical-rl", padding: "10px 4px",
+                    fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1,
+                  }}>« Game log</button>
+              )}
+            </div>
           )}
         </div>
 
@@ -2432,6 +2635,7 @@ function GameBoard({ game }) {
           error={error} submit={submitAction} />
       )}
     </div>
+    </FocusCtx.Provider>
   );
 }
 
