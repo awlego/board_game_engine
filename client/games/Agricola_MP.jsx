@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useRef, useCallback, useEffect, us
 
 import { WS_URL } from "../ws.js";
 import CARD_CATALOG from "./agricola_cards.json";
-import { AgricolaCard } from "./agricola_card.jsx";
+import { AgricolaCard, GoodsIcon } from "./agricola_card.jsx";
 import { CreateFormFields, defaultOptions, fetchCardSets, cardSetChoices } from "./create_form.jsx";
 
 // ============================================================
@@ -110,11 +110,6 @@ function pastureBonus(player) {
 
 function hasLasso(player) {
   return inPlay(player).some((inst) => cardSpec(inst.id).lasso);
-}
-
-function costStr(cost) {
-  const parts = Object.entries(cost || {}).map(([g, n]) => `${n}${GOODS[g].icon}`);
-  return parts.length ? parts.join(" ") : "free";
 }
 
 // ── Farmyard geometry (mirror of state.py) ──────────────────
@@ -443,7 +438,7 @@ function GoodChip({ good, count, small }) {
       borderRadius: 10, padding: small ? "0 5px" : "1px 7px", fontSize: small ? 11 : 12,
       fontWeight: 700, color: "#292524",
     }}>
-      {count}{GOODS[good].icon}
+      {count}<GoodsIcon good={good} />
     </span>
   );
 }
@@ -523,7 +518,7 @@ function FarmYard({ player, mode, selection, onCellClick, onEdgeClick, plannedFe
           bgImage = FIELD_TILE;
           content = cell.crops ? (
             <span style={{ fontSize: 13, fontWeight: 800, color: "#fef9c3", textShadow: "0 1px 2px #00000099" }}>
-              {GOODS[cell.crops.type].icon}×{cell.crops.count}
+              <GoodsIcon good={cell.crops.type} />×{cell.crops.count}
             </span>
           ) : null;
         } else {
@@ -531,7 +526,7 @@ function FarmYard({ player, mode, selection, onCellClick, onEdgeClick, plannedFe
           if (cell.stable) bits.push(<span key="s" style={{ fontSize: 16 }}>🛖</span>);
           if (cell.animal) bits.push(
             <span key="a" style={{ fontSize: 12, fontWeight: 800 }}>
-              {GOODS[cell.animal.type].icon}×{cell.animal.count}
+              <GoodsIcon good={cell.animal.type} />×{cell.animal.count}
             </span>);
           content = <>{bits}</>;
         }
@@ -609,7 +604,7 @@ function PlayerPanel({ player, color, isYou, isCurrent, isStarting, state, child
           👤{player.people_total - player.people_placed}/{player.people_total}
         </span>
         {Object.entries(player.pets || {}).map(([t, n]) => n > 0 && (
-          <span key={t} title="House pets" style={{ fontSize: 11 }}>🏠{GOODS[t].icon}{n > 1 ? `×${n}` : ""}</span>
+          <span key={t} title="House pets" style={{ fontSize: 11 }}>🏠<GoodsIcon good={t} />{n > 1 ? `×${n}` : ""}</span>
         ))}
         {player.begging > 0 && <span style={{ fontSize: 11, color: "#dc2626", fontWeight: 700 }}>🥺×{player.begging}</span>}
         <span title="Hand: occupations + minor improvements" style={{ fontSize: 11, color: "#57534e", marginLeft: "auto" }}>
@@ -661,7 +656,7 @@ function PlayerPanel({ player, color, isYou, isCurrent, isStarting, state, child
                   position: "absolute", left: 4, bottom: 4, background: "#fffbeb",
                   border: "1px solid #d6d3c1", borderRadius: 6, padding: "0 5px",
                   fontSize: 12, fontWeight: 700,
-                }}>{GOODS[inst.crops.type].icon}×{inst.crops.count}</span>
+                }}><GoodsIcon good={inst.crops.type} />×{inst.crops.count}</span>
               ) : null} />
             </div>
           ))}
@@ -710,7 +705,7 @@ function PlayerPanel({ player, color, isYou, isCurrent, isStarting, state, child
                   fontSize: 10, background: "#ffedd5", border: "1px solid #fb923c",
                   borderRadius: 6, padding: "1px 6px", fontWeight: 700, color: "#7c2d12",
                   cursor: "zoom-in",
-                }}>{spec.name}{inst.crops ? ` ${GOODS[inst.crops.type].icon}×${inst.crops.count}` : ""}</span>
+                }}>{spec.name}{inst.crops ? <> <GoodsIcon good={inst.crops.type} />×{inst.crops.count}</> : ""}</span>
             );
           })}
           <Btn small variant="secondary" onClick={() => setShowCards(!showCards)}>
@@ -1502,7 +1497,7 @@ function SowPlanner({ me, sow, setSow, extraCells }) {
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {targets.map((t) => (
           <Btn key={t.key} small variant="secondary" onClick={() => cycle(t)}>
-            {t.label}: {sow[t.key] ? GOODS[sow[t.key]].icon : "—"}
+            {t.label}: {sow[t.key] ? <GoodsIcon good={sow[t.key]} /> : "—"}
           </Btn>
         ))}
       </div>
@@ -1716,10 +1711,10 @@ function Planner({ space, state, me, actionInfo, submit, cancel, error }) {
       <>
         <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
           <Btn small variant={mode === "rooms" ? "primary" : "secondary"} onClick={() => setMode("rooms")}>
-            Rooms (5{GOODS[me.house_type === "wood" ? "wood" : me.house_type].icon} + 2🌿 each)
+            Rooms (5<GoodsIcon good={me.house_type === "wood" ? "wood" : me.house_type} /> + 2<GoodsIcon good="reed" /> each)
           </Btn>
           <Btn small variant={mode === "stables" ? "primary" : "secondary"} onClick={() => setMode("stables")}>
-            Stables (2🪵 each)
+            Stables (2<GoodsIcon good="wood" /> each)
           </Btn>
         </div>
         <div style={{ fontSize: 12, marginBottom: 6 }}>
@@ -1748,14 +1743,18 @@ function Planner({ space, state, me, actionInfo, submit, cancel, error }) {
     const fenceCost = fences.size
       ? (state.fence_costs?.[fences.size - 1] ?? { wood: fences.size })
       : null;
-    const fenceCostLabel = !fenceCost ? "0🪵"
-      : Object.entries(fenceCost).map(([g, n]) => `${n}${GOODS[g].icon}`).join(" ") || "free";
+    const fenceCostLabel = !fenceCost ? <>0<GoodsIcon good="wood" /></>
+      : Object.keys(fenceCost).length
+        ? Object.entries(fenceCost).map(([g, n], i) => (
+            <span key={g}>{i > 0 ? " " : ""}{n}<GoodsIcon good={g} /></span>
+          ))
+        : "free";
     body = (
       <>
         {isReno && (
           <div style={{ fontSize: 12, marginBottom: 6 }}>
             Renovates your house to {me.house_type === "wood" ? "clay" : "stone"} first
-            (1🌿 + 1 per room). Then optionally build fences:
+            (1<GoodsIcon good="reed" /> + 1 per room). Then optionally build fences:
           </div>
         )}
         <div style={{ fontSize: 12, marginBottom: 6 }}>
@@ -1804,7 +1803,7 @@ function Planner({ space, state, me, actionInfo, submit, cancel, error }) {
         {isReno && (
           <div style={{ fontSize: 12, marginBottom: 6 }}>
             Renovates your house to {me.house_type === "wood" ? "clay" : "stone"}
-            (1🌿 + 1 per room). Optionally also:
+            (1<GoodsIcon good="reed" /> + 1 per room). Optionally also:
           </div>
         )}
         <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
@@ -1865,10 +1864,10 @@ function Planner({ space, state, me, actionInfo, submit, cancel, error }) {
       <div style={{ display: "flex", gap: 8 }}>
         {["reed", "stone"].map((g) => (
           <Btn key={g} small variant={choice === g ? "primary" : "secondary"} onClick={() => setChoice(g)}>
-            1 {GOODS[g].icon} {GOODS[g].label}
+            1 <GoodsIcon good={g} /> {GOODS[g].label}
           </Btn>
         ))}
-        <span style={{ fontSize: 12, alignSelf: "center" }}>+ 1 🍲</span>
+        <span style={{ fontSize: 12, alignSelf: "center" }}>+ 1 <GoodsIcon good="food" /></span>
       </div>
     );
     action = { kind: "place", space, choice };
@@ -1911,7 +1910,7 @@ function FeedDialog({ me, state, foodNeeded, submit, error }) {
   if (cook) {
     options.push({ key: "veg_cook", label: `Cook vegetable → ${cook.vegetable} food`, good: "vegetable", via: "cook", value: cook.vegetable, max: me.resources.vegetable });
     for (const a of ANIMALS) {
-      options.push({ key: `${a}_cook`, label: `Cook ${GOODS[a].label} ${GOODS[a].icon} → ${cook[a]} food`, good: a, via: "cook", value: cook[a], max: totals[a] });
+      options.push({ key: `${a}_cook`, label: <>Cook {GOODS[a].label} <GoodsIcon good={a} /> → {cook[a]} food</>, good: a, via: "cook", value: cook[a], max: totals[a] });
     }
   }
   for (const [craft, [res, val]] of Object.entries(CRAFT_HARVEST)) {
@@ -1924,8 +1923,11 @@ function FeedDialog({ me, state, foodNeeded, submit, error }) {
     const convs = cardSpec(inst.id).conversions || [];
     convs.forEach((conv, i) => {
       const via = `${inst.id}:${i}`;
-      const giveStr = Object.entries(conv.give).map(([g, n]) => `${n}${GOODS[g].icon}`).join(" ");
-      const getStr = Object.entries(conv.get).map(([g, n]) => `${n}${GOODS[g].icon}`).join(" ");
+      const goodsJsx = (dict) => Object.entries(dict).map(([g, n], i) => (
+        <span key={g}>{i > 0 ? " " : ""}{n}<GoodsIcon good={g} /></span>
+      ));
+      const giveStr = goodsJsx(conv.give);
+      const getStr = goodsJsx(conv.get);
       let max = 99;
       for (const [g, n] of Object.entries(conv.give)) {
         const have = ANIMALS.includes(g) ? totals[g] : me.resources[g];
@@ -1935,7 +1937,7 @@ function FeedDialog({ me, state, foodNeeded, submit, error }) {
       if (conv.per_harvest != null) max = Math.min(max, conv.per_harvest - used);
       if (max > 0) {
         options.push({
-          key: via, label: `${cardSpec(inst.id).name}: ${giveStr} → ${getStr}`,
+          key: via, label: <>{cardSpec(inst.id).name}: {giveStr} → {getStr}</>,
           good: Object.keys(conv.give)[0], via, value: conv.get.food || 0, max,
         });
       }
@@ -1964,7 +1966,7 @@ function FeedDialog({ me, state, foodNeeded, submit, error }) {
         <h3 style={{ margin: "0 0 8px" }}>Feeding phase</h3>
         {error && <div style={{ color: "#dc2626", fontSize: 12, marginBottom: 6 }}>{error}</div>}
         <div style={{ fontSize: 13, marginBottom: 8 }}>
-          You need <b>{foodNeeded}</b> food. You have <b>{me.resources.food}</b> 🍲
+          You need <b>{foodNeeded}</b> food. You have <b>{me.resources.food}</b> <GoodsIcon good="food" />
           {foodGained > 0 && <> + <b>{foodGained}</b> from conversions = <b>{foodTotal}</b></>}.
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
@@ -2173,8 +2175,12 @@ function AccommodateDialog({ me, gained, submit, error }) {
     </div>
   );
 
-  const dictContent = (d) => Object.entries(d).filter(([, n]) => n > 0)
-    .map(([t, n]) => `${GOODS[t].icon}×${n}`).join(" ") || "—";
+  const dictContent = (d) => {
+    const ents = Object.entries(d).filter(([, n]) => n > 0);
+    return ents.length ? ents.map(([t, n], i) => (
+      <span key={t}>{i > 0 ? " " : ""}<GoodsIcon good={t} />×{n}</span>
+    )) : "—";
+  };
 
   return (
     <div style={{
@@ -2186,7 +2192,9 @@ function AccommodateDialog({ me, gained, submit, error }) {
         {error && <div style={{ color: "#dc2626", fontSize: 12, marginBottom: 6 }}>{error}</div>}
         <div style={{ fontSize: 13, marginBottom: 6 }}>
           {Object.entries(gained || {}).filter(([, n]) => n > 0).length > 0 && (
-            <>Gained: {Object.entries(gained).map(([a, n]) => `${n} ${GOODS[a].icon}`).join(", ")}. </>
+            <>Gained: {Object.entries(gained).map(([a, n], i) => (
+              <span key={a}>{i > 0 ? ", " : ""}{n} <GoodsIcon good={a} /></span>
+            ))}. </>
           )}
           Everything has been auto-placed — adjust below or just confirm.
         </div>
@@ -2198,7 +2206,7 @@ function AccommodateDialog({ me, gained, submit, error }) {
           {ANIMALS.filter((a) => pool[a] > 0).map((a) => (
             <Btn key={a} small variant={sel === a ? "primary" : "secondary"}
               onClick={() => setSel(sel === a ? null : a)}>
-              {GOODS[a].icon}×{Math.max(0, leftover[a])}
+              <GoodsIcon good={a} />×{Math.max(0, leftover[a])}
             </Btn>
           ))}
           {ANIMALS.every((a) => pool[a] === 0) && <span style={{ fontSize: 12 }}>none</span>}
@@ -2217,7 +2225,7 @@ function AccommodateDialog({ me, gained, submit, error }) {
           return (
             <DestRow key={i} label={`Pasture [${p.join(",")}]`}
               sub={`cap ${caps[i]}`} hasContent={!!a.type}
-              content={a.type ? `${GOODS[a.type].icon}×${a.count}` : "—"}
+              content={a.type ? <><GoodsIcon good={a.type} />×{a.count}</> : "—"}
               onPour={() => pourPasture(i)} onMinus={() => minusPasture(i)}
               onClear={() => update((n) => { n.pa[i] = { type: null, count: 0 }; })} />
           );
@@ -2225,7 +2233,7 @@ function AccommodateDialog({ me, gained, submit, error }) {
         {stables.map((idx) => (
           <DestRow key={idx} label={`Unfenced stable (cell ${idx})`} sub="cap 1"
             hasContent={!!assign.st[idx]}
-            content={assign.st[idx] ? `${GOODS[assign.st[idx]].icon}×1` : "—"}
+            content={assign.st[idx] ? <><GoodsIcon good={assign.st[idx]} />×1</> : "—"}
             onPour={() => pourStable(idx)}
             onMinus={() => update((n) => { n.st[idx] = null; })}
             onClear={() => update((n) => { n.st[idx] = null; })} />
@@ -2237,7 +2245,9 @@ function AccommodateDialog({ me, gained, submit, error }) {
           onClear={() => update((n) => { n.pets = {}; })} />
         {cook && (
           <DestRow label="Cook"
-            sub={ANIMALS.filter((a) => pool[a] > 0).map((a) => `${GOODS[a].icon}→${cook[a]}🍲`).join(" ")}
+            sub={ANIMALS.filter((a) => pool[a] > 0).map((a, i) => (
+              <span key={a}>{i > 0 ? " " : ""}<GoodsIcon good={a} />→{cook[a]}<GoodsIcon good="food" /></span>
+            ))}
             hasContent={Object.values(assign.cook).some((n) => n > 0)}
             content={dictContent(assign.cook)}
             onPour={() => pourDict("cook")}
@@ -2253,7 +2263,9 @@ function AccommodateDialog({ me, gained, submit, error }) {
         {!balanced && (
           <div style={{ color: overPlaced ? "#dc2626" : "#b45309", fontSize: 12, fontWeight: 700, margin: "6px 0" }}>
             {overPlaced ? "Too many animals assigned." :
-              `Unassigned: ${ANIMALS.filter((a) => leftover[a] > 0).map((a) => `${leftover[a]}${GOODS[a].icon}`).join(" ")} — click them, then a destination.`}
+              <>Unassigned: {ANIMALS.filter((a) => leftover[a] > 0).map((a, i) => (
+                <span key={a}>{i > 0 ? " " : ""}{leftover[a]}<GoodsIcon good={a} /></span>
+              ))} — click them, then a destination.</>}
           </div>
         )}
         <div style={{ marginTop: 8 }}>

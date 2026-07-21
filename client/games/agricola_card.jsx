@@ -96,6 +96,24 @@ function withItalics(str, key) {
   return out;
 }
 
+// The ten physical goods have official token art (public/agricola/goods/,
+// play-agricola.com bit scans); anything else keeps its emoji glyph.
+const GOODS_ART = new Set([
+  "food", "wood", "clay", "reed", "stone", "grain", "vegetable",
+  "sheep", "boar", "cattle",
+]);
+
+export function GoodsIcon({ good, style }) {
+  if (!GOODS_ART.has(good)) {
+    return <span title={ICONS[good]?.label}>{ICONS[good]?.icon || good}</span>;
+  }
+  return (
+    <img src={`${import.meta.env.BASE_URL}agricola/goods/${good}.png`}
+      alt={ICONS[good].label} title={ICONS[good].label} draggable={false}
+      style={{ height: "1.15em", verticalAlign: "-0.2em", objectFit: "contain", ...style }} />
+  );
+}
+
 export function CardText({ text, style }) {
   const parts = [];
   let last = 0, m, key = 0;
@@ -104,7 +122,7 @@ export function CardText({ text, style }) {
     if (m.index > last) parts.push(...withItalics(text.slice(last, m.index), key++));
     const name = m[1].toLowerCase();
     if (ICONS[name]) {
-      parts.push(<span key={key++} title={ICONS[name].label}>{ICONS[name].icon}</span>);
+      parts.push(<GoodsIcon key={key++} good={name} />);
     } else if (name === "vp") {
       parts.push(<VPBadge key={key++} points={m[2] != null ? +m[2] : null} inline />);
     } else if (name === "pass") {
@@ -196,7 +214,7 @@ export function CostChips({ cost, costText }) {
           border: "0.12em solid rgba(0,0,0,0.5)",
           padding: "0.05em 0.4em", fontWeight: 700, fontFamily: SERIF,
           fontSize: "1.05em", color: "#1c1917",
-        }}>{n}{ICONS[good]?.icon || good}</span>
+        }}>{n}<GoodsIcon good={good} /></span>
       ))}
     </span>
   );
@@ -552,7 +570,11 @@ export function CardV2({ spec, cid, width = 250, artUrl, playable, selected, onC
       {costLabel ? (
         <PlateSlot slot={geo.costSlot} title={`Cost: ${costLabel}`}>
           <span style={{ fontSize: fitSize(costLabel.length, [[4, "1.2em"], [9, "0.95em"], [16, "0.75em"], [999, "0.6em"]]) }}>
-            {costLabel}
+            {Object.keys(c.cost).length
+              ? Object.entries(c.cost).map(([g, n], i) => (
+                  <span key={g}>{i > 0 ? " " : ""}{n}<GoodsIcon good={g} /></span>
+                ))
+              : costLabel}
           </span>
         </PlateSlot>
       ) : null}
