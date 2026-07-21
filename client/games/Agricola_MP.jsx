@@ -502,6 +502,7 @@ function FarmYard({ player, mode, selection, onCellClick, onEdgeClick, plannedFe
   }, []);
   const fenceSet = new Set(player.fences);
   const planned = plannedFences || new Set();
+  const fenceColor = PLAYER_COLORS[player.index]?.bg ?? "#7c2d12";
 
   return (
     <div style={{
@@ -569,7 +570,7 @@ function FarmYard({ player, mode, selection, onCellClick, onEdgeClick, plannedFe
             onClick={clickable || (isPlanned && onEdgeClick) ? () => onEdgeClick(edge) : undefined}
             style={{
               position: "absolute", left: x, top: y, width: w, height: h, zIndex: 2,
-              background: has ? "#7c2d12" : isPlanned ? "#f59e0b" : "#7c2d1222",
+              background: has ? fenceColor : isPlanned ? "#f59e0b" : `${fenceColor}22`,
               borderRadius: 3, cursor: clickable || isPlanned ? "pointer" : "default",
             }} />
         );
