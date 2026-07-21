@@ -1423,6 +1423,8 @@ class AgricolaEngine(GameEngine):
         available = animal_counts(p)
         for a, n in gained.items():
             available[a] += n
+        # Gained animals not cooked/discarded below, for the log line.
+        kept = dict(gained)
 
         cook = action.get("cook") or {}
         discard = action.get("discard") or {}
@@ -1444,6 +1446,7 @@ class AgricolaEngine(GameEngine):
             if count > available[animal]:
                 raise ValueError(f"Not enough {animal} to cook")
             available[animal] -= count
+            kept[animal] = max(0, kept.get(animal, 0) - count)
             gained = count * cook_values[animal]
             food += gained
             converted_events.append(({animal: count}, {"food": gained}))
@@ -1457,11 +1460,14 @@ class AgricolaEngine(GameEngine):
             if not isinstance(count, int) or count < 0 or count > available[animal]:
                 raise ValueError(f"Cannot discard that many {animal}")
             available[animal] -= count
+            kept[animal] = max(0, kept.get(animal, 0) - count)
             if count:
                 log.append(f"{p['name']} returns {count} {animal} to the supply")
 
         # Remaining animals must be fully placed.
         self._apply_animal_placement(state, p, placements, pets, available)
+        if any(kept.values()):
+            log.append(f"{p['name']} keeps {cards.goods_str(kept)}")
         lasso = pending.get("after_lasso")
         state["prompts"].pop(0)
 
@@ -1789,7 +1795,10 @@ class AgricolaEngine(GameEngine):
                               in cards.conversion_options(p)
                               if key == via), None)
                 if match is None:
-                    raise ValueError("Unknown card conversion")
+                    keys = [key for key, _c, _i in cards.conversion_options(p)]
+                    raise ValueError(
+                        f"Unknown card conversion {via!r}; your cards offer: "
+                        + (", ".join(keys) if keys else "none"))
                 match_inst = next((i for key, _c, i
                                    in cards.conversion_options(p)
                                    if key == via), None)
@@ -1814,7 +1823,15 @@ class AgricolaEngine(GameEngine):
                 converted_events.append(
                     (total_give, total_get, match_inst["id"]))
             else:
-                raise ValueError("Unknown conversion")
+                valid = ["raw"]
+                if cook_values:
+                    valid.append("cook")
+                valid += [i for i in ("joinery", "pottery", "basketmaker")
+                          if i in p["improvements"]]
+                valid += [key for key, _c, _i in cards.conversion_options(p)]
+                raise ValueError(
+                    f"Unknown conversion via {via!r}; valid via values: "
+                    + ", ".join(valid))
 
         for give, get, conv_via in converted_events:
             self._fire_converted(state, p, give, get, conv_via, log)
