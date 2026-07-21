@@ -720,7 +720,7 @@ function FocusCardPanel({ hovered, pinned, unpin, onCollapse }) {
   const cardH = Math.round(FOCUS_CARD_W * 1.545);
   return (
     <div style={{
-      position: "relative",
+      position: "relative", flexShrink: 0,
       background: "linear-gradient(160deg,#7c5a37 0%,#654728 55%,#54391f 100%)",
       borderRadius: 14, padding: 8, marginBottom: 10,
       boxShadow: "0 6px 16px rgba(30,25,10,0.35), inset 0 1px 0 rgba(255,230,190,0.35)",
@@ -1207,11 +1207,14 @@ function MajorsBoard({ available }) {
 }
 
 // Scales its fixed-size child (the action board) to fill the container's
-// width, since the board grid is laid out in absolute pixels.
-function FitWidth({ children, style }) {
+// width, since the board grid is laid out in absolute pixels. Reports
+// the scaled height through onFit so siblings can match it.
+function FitWidth({ children, style, onFit }) {
   const outerRef = useRef(null);
   const innerRef = useRef(null);
   const [fit, setFit] = useState({ scale: 1, height: null });
+  const onFitRef = useRef(onFit);
+  onFitRef.current = onFit;
 
   useEffect(() => {
     const outer = outerRef.current, inner = innerRef.current;
@@ -1220,7 +1223,9 @@ function FitWidth({ children, style }) {
       const w = inner.offsetWidth;
       if (!w) return;
       const scale = outer.clientWidth / w;
-      setFit({ scale, height: inner.offsetHeight * scale });
+      const height = inner.offsetHeight * scale;
+      setFit({ scale, height });
+      onFitRef.current?.(height);
     };
     update();
     const ro = new ResizeObserver(update);
@@ -2425,6 +2430,10 @@ function GameBoard({ game }) {
     setInspectorOpen(!inspectorOpen);
   };
 
+  // The right column matches the scaled board's height; the log fills
+  // whatever the inspector leaves.
+  const [boardH, setBoardH] = useState(null);
+
   // Focused-card inspector: hover shows transiently, click pins.
   const [focusHovered, setFocusHovered] = useState(null);
   const [focusPinned, setFocusPinned] = useState(null);
@@ -2511,12 +2520,16 @@ function GameBoard({ game }) {
             The board is fixed-size internally, so FitWidth scales it to
             whatever width the log leaves free. */}
         <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-          <FitWidth style={{ flex: 1, minWidth: 480 }}>
+          <FitWidth style={{ flex: 1, minWidth: 480 }} onFit={setBoardH}>
             <ActionBoard state={state} validSpaces={planner ? new Set() : validSpaces}
               onPick={pick} players={state.players} />
           </FitWidth>
           {(inspectorOpen || logOpen) && (
-            <div style={{ flex: "0 0 300px", minWidth: 220 }}>
+            <div style={{
+              flex: "0 0 300px", minWidth: 220,
+              display: "flex", flexDirection: "column",
+              height: boardH ?? "auto",
+            }}>
               {inspectorOpen && (
                 <FocusCardPanel hovered={focusHovered} pinned={focusPinned}
                   unpin={() => setFocusPinned(null)} onCollapse={toggleInspector} />
@@ -2536,7 +2549,7 @@ function GameBoard({ game }) {
                   </div>
                   <div ref={logRef} style={{
                     background: "#fefce8", border: "1px solid #d6d3c1", borderRadius: 8,
-                    padding: 8, height: inspectorOpen ? 220 : 548, overflowY: "auto",
+                    padding: 8, flex: 1, minHeight: 80, overflowY: "auto",
                     fontSize: 11, lineHeight: 1.5,
                   }}>
                     {gameLogs.map((m, i) => (
